@@ -132,6 +132,14 @@ pub fn handle(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> O
         },
         "ui.inspect" => ok(inspect(app, ctx)),
         "ui.parity" => ok(wordcraft_engine::catalog::parity(&app.session.registry)),
+        // Margin: choose a menu-bar item by its path, e.g. {"path": "Format/Bold"}.
+        "ui.menu" => match s("path").and_then(crate::mac_menu::find) {
+            Some(act) => {
+                crate::mac_menu::perform(app, &act);
+                ok(json!({"path": s("path")}))
+            }
+            None => err("unknown menu path"),
+        },
         "ui.click" => {
             let (Some(x), Some(y)) = (f("x"), f("y")) else { return err("missing x/y") };
             let button = match s("button") {

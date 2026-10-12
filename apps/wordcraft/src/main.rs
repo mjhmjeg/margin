@@ -19,6 +19,8 @@ mod file_dialogs;
 #[cfg(any(target_os = "windows", test))]
 mod graphics;
 mod logging;
+#[cfg(target_os = "macos")]
+mod mac_menu;
 mod print;
 mod region;
 
@@ -37,12 +39,17 @@ struct App(
     Option<control_server::KeyFile>,
     file_dialogs::Launcher,
     #[cfg(target_os = "macos")] fmv_macos_events::Inbox,
+    #[cfg(target_os = "macos")] Option<mac_menu::NativeMenu>,
 );
 
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]
         apple_events::poll(&self.4, &mut self.0, ctx);
+        #[cfg(target_os = "macos")]
+        if let Some(menu) = &mut self.5 {
+            menu.poll(&mut self.0);
+        }
         self.0.logic(ctx);
         self.3.show(frame);
         let prev = self.0.ui.window;
@@ -340,6 +347,8 @@ fn main() -> eframe::Result {
                     log::warn!("{f}: {e}");
                 }
             }
+            #[cfg(target_os = "macos")]
+            let menu = mac_menu::NativeMenu::install(&cc.egui_ctx, &app);
             Ok(Box::new(App(
                 app,
                 restored,
@@ -347,6 +356,8 @@ fn main() -> eframe::Result {
                 dialogs,
                 #[cfg(target_os = "macos")]
                 apple_events.connect(&cc.egui_ctx),
+                #[cfg(target_os = "macos")]
+                menu,
             )))
         }),
     )

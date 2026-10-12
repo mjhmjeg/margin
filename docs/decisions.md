@@ -77,3 +77,14 @@ Switch Modes keeps Word's meaning (page only), like Pages' separate dark-documen
   needs `unsafe`, which the workspace forbids.
 - Upstream tests run with Classic ribbon on (they test the ribbon layout); Mac layout has its own
   tests in `mac_ui.rs`.
+
+## 2026-10-12 — Phase 4: native menu bar
+
+- muda =0.21.2 (Tauri's menu crate; safe API over AppKit, reuses objc2 0.6 / objc2-app-kit 0.3
+  already in the build). Pinned like fmv-macos-events. Mac-only, no default (GTK) features.
+- Menu contents are data in `ui-egui/src/mac_menu.rs` (testable, control channel `ui.menu`).
+- A native key equivalent eats the keystroke before winit, so items whose shortcut the app already
+  handles replay it as a synthetic egui event (Keys / Copy / Cut / Paste): identical behaviour in
+  the page and in text fields. Other items run their command.
+- Rejected: predefined AppKit Cut/Copy/Paste (send `copy:` to the first responder, which winit's
+  view doesn't implement); no shortcuts on Edit items (not Mac-like).
