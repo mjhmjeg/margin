@@ -8,7 +8,7 @@ Goal: a Mac-native-feeling UI (slim toolbar, right format inspector, real menu b
 WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs/decisions.md.
 
 ## Now
-- Phase 0: build and run on macOS, baseline screenshots (Sonnet, medium)
+- Phase 0: built + running on macOS (2m15s release build); baseline shots in docs/mac/before/ — awaiting Martijn check ✋
 
 ## Next
 - Phase 1: clickable HTML mockup of the Mac design → Martijn approves (Opus, high) ✋
