@@ -8,7 +8,7 @@ Goal: a Mac-native-feeling UI (slim toolbar, right format inspector, real menu b
 WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs/decisions.md.
 
 ## Now
-- Phase 2: visual pass done (skin.rs: Mac palette, Apple blue, 13 pt / 400 everywhere except Classic ribbon; no Discord/avatar/AutoSave) — awaiting Martijn check in the app ✋
+- Phase 2: visual pass done (skin.rs: Mac palette, Apple blue, 13 pt / 400 everywhere except Classic ribbon; no Discord/avatar/AutoSave) — awaiting Martijn check in the app ✋ (launch: scripts/margin-run.sh)
 
 ## Next
 - Phase 3: toolbar + format inspector + outline sidebar + Pageless (view.webLayout); ribbon behind View › Classic (Opus, high) ✋
@@ -27,4 +27,5 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - Product name: "Margin" chosen 2026-10-12. Near-clash: an early Mac markdown notes app "Margin" (peerlist) and iPad tracker "The Margin". No formal trademark search done.
 
 ## Known bugs
-- none yet
+- 2026-10-12 Incident (twice): app binary not rebuilt after code changes, Martijn saw the old app. Fix: always launch via scripts/margin-run.sh (rebuilds, refuses stale binary); verify the live window via the control channel before reporting.
+- /Applications/WordCraft.app (upstream) is installed too; opening it from Dock/Spotlight shows upstream, not Margin.
