@@ -141,6 +141,7 @@ pub fn in_table_public(app: &WordApp) -> bool {
 }
 
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
+    let _classic = crate::skin::Classic::enter_ui(ui);
     let t = Tokens::get(ui.ctx());
     if app.session.view.read_mode {
         reading_toolbar(app, ui, t);

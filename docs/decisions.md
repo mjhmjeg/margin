@@ -49,3 +49,13 @@ Inspector spacing increased: one checkbox per row, labels above segmented contro
 
 All interface text is 13 px, weight 400 (menus, toolbar, inspector, sidebar, status bar). Hierarchy by
 colour only (text / dim / faint). Document content keeps its own fonts and sizes.
+
+## 2026-10-12 — Phase 2 implementation notes
+
+- All skin code in `crates/ui-egui/src/skin.rs`; upstream files only get hooks (theme.rs token
+  constructors + font helpers, chrome.rs title bar, ribbon.rs scope guard, one test guard).
+- Process-wide switch `skin::on()` (default on). Classic ribbon keeps upstream type sizes
+  (`skin::Classic`), because 13 pt clips its labels; colours stay Margin's there.
+- Accessibility tests upstream (#655 on-accent 4.5:1, #657 input borders 3:1) kept and passing:
+  input borders #8A8A8A / #7A7A7A instead of Mac's fainter hairline; dark mode uses a lighter blue
+  (#3D9BFF) with near-black text on blue buttons instead of Apple's #0A84FF + white (3.65:1).

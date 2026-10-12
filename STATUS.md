@@ -8,11 +8,9 @@ Goal: a Mac-native-feeling UI (slim toolbar, right format inspector, real menu b
 WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs/decisions.md.
 
 ## Now
-- Phase 0: built + running on macOS (2m15s release build); baseline shots in docs/mac/before/ — done 2026-10-12
+- Phase 2: visual pass done (skin.rs: Mac palette, Apple blue, 13 pt / 400 everywhere except Classic ribbon; no Discord/avatar/AutoSave) — awaiting Martijn check in the app ✋
 
 ## Next
-- Phase 1: mockup at docs/mac/mockup.html — awaiting Martijn approval ✋ (Opus, high)
-- Phase 2: visual pass — tokens, Inter, spacing, title bar; drop Discord/avatar/AutoSave (Sonnet, medium) ✋
 - Phase 3: toolbar + format inspector + outline sidebar + Pageless (view.webLayout); ribbon behind View › Classic (Opus, high) ✋
 
 ## Later
@@ -21,6 +19,8 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - Weekly upstream merge (scheduled, Sonnet)
 
 ## Done
+- 2026-10-12 Phase 1: mockup approved (flat, Apple blue, pageless, one type size) — docs/mac/mockup.html
+- 2026-10-12 Phase 0: fork builds and runs on macOS; baseline shots docs/mac/before/
 - 2026-10-12 Research storytold org; chose WordCraft, option B (restructure UI on egui)
 
 ## Open decisions

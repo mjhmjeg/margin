@@ -850,6 +850,7 @@ mod tests {
     /// two lines (checked at compile time) end above the group title row.
     #[test]
     fn big_button_label_lines_fit_their_slot() {
+        let _classic = crate::skin::Classic::enter(); // ribbon buttons keep upstream type sizes
         let ctx = egui::Context::default();
         ctx.set_fonts(crate::theme::font_definitions(false, false));
         ctx.run_ui(egui::RawInput::default(), |_| {}).drop_without_applying_deltas();

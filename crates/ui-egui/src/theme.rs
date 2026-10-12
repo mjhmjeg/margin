@@ -240,7 +240,7 @@ pub struct Tokens {
 
 impl Tokens {
     pub fn light() -> Self {
-        Tokens {
+        crate::skin::light(Tokens {
             dark: false,
             title_bar: Color32::from_rgb(0xF0, 0xF0, 0xF0),
             ribbon: Color32::from_rgb(0xF9, 0xF9, 0xF9),
@@ -277,10 +277,10 @@ impl Tokens {
             red: Color32::from_rgb(0xD1, 0x3B, 0x3B),
             green: Color32::from_rgb(0x2E, 0x8B, 0x57),
             orange: Color32::from_rgb(0xE0, 0x7B, 0x1F),
-        }
+        })
     }
     pub fn dark() -> Self {
-        Tokens {
+        crate::skin::dark(Tokens {
             dark: true,
             title_bar: Color32::from_rgb(0x1F, 0x1F, 0x1F),
             ribbon: Color32::from_rgb(0x29, 0x29, 0x29),
@@ -318,7 +318,7 @@ impl Tokens {
             red: Color32::from_rgb(0xEE, 0x6A, 0x6A),
             green: Color32::from_rgb(0x5B, 0xC0, 0x8A),
             orange: Color32::from_rgb(0xF0, 0xA0, 0x50),
-        }
+        })
     }
     pub fn get(ctx: &egui::Context) -> Tokens {
         if ctx.global_style().visuals.dark_mode { Tokens::dark() } else { Tokens::light() }
@@ -472,13 +472,19 @@ fn system_cjk_font(hans: bool) -> Option<&'static wordcraft_fonts::SystemUiFont>
 }
 
 pub fn medium(size: f32) -> FontId {
+    if crate::skin::flat_type() {
+        return regular(size);
+    }
     FontId::new(size, FontFamily::Name("medium".into()))
 }
 pub fn semibold(size: f32) -> FontId {
+    if crate::skin::flat_type() {
+        return regular(size);
+    }
     FontId::new(size, FontFamily::Name("semibold".into()))
 }
 pub fn regular(size: f32) -> FontId {
-    FontId::proportional(size)
+    FontId::proportional(crate::skin::size(size))
 }
 
 /// A UI type rung: size, weight pairing, and size-specific letter-spacing (large text is
