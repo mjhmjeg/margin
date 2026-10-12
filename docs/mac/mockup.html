@@ -98,9 +98,37 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .notes{width:min(1280px,calc(100% - 32px));margin:0 auto 40px;color:#fff;font-size:13px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .notes button{background:#ffffff26;border:1px solid #ffffff4d;border-radius:6px;padding:5px 10px;color:#fff}
 .notes button:hover{background:#ffffff40}
+
+/* Liquid Glass (default). Real in egui: window vibrancy, floating rounded panels, capsules, translucent fills, light rims.
+   Not real in egui: blur of the document under floating chrome, refraction. */
+body.glass{background:radial-gradient(1200px 700px at 15% 10%,#7FB2FF,transparent 60%),radial-gradient(900px 600px at 90% 80%,#FFB38A,transparent 60%),linear-gradient(135deg,#5B7CFA,#C18CF0 55%,#F7A8B8)}
+.glass{--glass:#FFFFFF8c;--glass-strong:#FFFFFFb8;--rim:#FFFFFFb3;--rim-dark:#0000001a}
+.glass.dark{--glass:#2A2A2E8c;--glass-strong:#2A2A2Eb8;--rim:#FFFFFF2e;--rim-dark:#00000066}
+.glass .window{background:#FFFFFF33;backdrop-filter:blur(40px) saturate(180%);-webkit-backdrop-filter:blur(40px) saturate(180%);border:1px solid var(--rim);border-radius:22px}
+.glass.dark .window{background:#1E1E2266}
+.glass .toolbar{background:transparent;border:0;gap:8px}
+.glass .cap{display:inline-flex;align-items:center;gap:2px;padding:3px;border-radius:999px;background:var(--glass);border:1px solid var(--rim);box-shadow:inset 0 1px 0 #ffffff80,0 1px 3px var(--rim-dark)}
+.glass .cap .tb{border-radius:999px}
+.glass .cap .sep{display:none}
+.glass .stylepop{border-radius:999px;background:transparent;border:0}
+.glass .body{padding:0 10px 0;gap:10px}
+.glass .sidebar,.glass .insp{background:var(--glass);border:1px solid var(--rim);border-radius:18px;box-shadow:inset 0 1px 0 #ffffff80,0 4px 18px var(--rim-dark);margin-bottom:10px}
+.glass .canvas{background:var(--desk);border-radius:14px;margin-bottom:10px;border:1px solid var(--rim-dark)}
+.glass .status{background:transparent;border:0}
+.glass .field,.glass .chips{border-radius:999px;background:var(--glass-strong);border-color:var(--rim)}
+.glass .chips button.on{border-radius:999px}
+.glass .seg{border-radius:999px;background:var(--rim-dark)}
+.glass .seg button{border-radius:999px}
+.glass .seg button.on{background:var(--glass-strong)}
+.glass .nav div{border-radius:10px}
+.glass .menubar{background:#FFFFFF59;backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px)}
+.glass .menu{border-radius:14px;background:#F8F8FAd9;backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px)}
+.glass .menu div{border-radius:8px}
+.notreal{display:none;font-size:11px;color:var(--dim);padding:0 14px}
+.glass .notreal{display:block}
 </style>
 </head>
-<body>
+<body class="glass">
 
 <nav class="menubar">
   <span>&#63743;</span>
@@ -117,20 +145,18 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 <div class="window" id="win">
   <div class="toolbar">
     <div class="lights"><i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#28C840"></i></div>
-    <button class="tb on" id="bLeft" onclick="toggle('left')" title="Outline"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
+    <span class="cap"><button class="tb on" id="bLeft" onclick="toggle('left')" title="Outline"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button></span>
     <span class="title">Open Studio Handbook<small>— Edited</small></span>
     <span class="grow"></span>
-    <span class="stylepop">Body <svg width="10" height="10" viewBox="0 0 24 24" style="stroke:var(--dim);fill:none;stroke-width:2"><path d="M6 9l6 6 6-6"/></svg></span>
-    <span class="sep"></span>
-    <button class="tb" title="Table"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/></svg></button>
+    <span class="cap"><span class="stylepop">Body <svg width="10" height="10" viewBox="0 0 24 24" style="stroke:var(--dim);fill:none;stroke-width:2"><path d="M6 9l6 6 6-6"/></svg></span>
+    </span><span class="cap"><button class="tb" title="Table"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/></svg></button>
     <button class="tb" title="Image"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg></button>
     <button class="tb" title="Shape"><svg viewBox="0 0 24 24"><circle cx="9" cy="9" r="5"/><rect x="11" y="11" width="9" height="9" rx="1"/></svg></button>
     <button class="tb" title="Comment"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg></button>
-    <span class="sep"></span>
-    <button class="tb" title="Track changes"><svg viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 7l3 3"/></svg></button>
-    <span class="grow"></span>
-    <button class="tb" title="Zoom">100% <svg width="10" height="10" viewBox="0 0 24 24" style="stroke-width:2"><path d="M6 9l6 6 6-6"/></svg></button>
-    <button class="tb on" id="bRight" onclick="toggle('right')" title="Inspector"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Format</button>
+    </span><span class="cap"><button class="tb" title="Track changes"><svg viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 7l3 3"/></svg></button>
+    </span><span class="grow"></span>
+    <span class="cap"><button class="tb" title="Zoom">100% <svg width="10" height="10" viewBox="0 0 24 24" style="stroke-width:2"><path d="M6 9l6 6 6-6"/></svg></button>
+    <button class="tb on" id="bRight" onclick="toggle('right')" title="Inspector"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Format</button></span>
   </div>
 
   <div class="ribbon">Classic ribbon (upstream WordCraft ribbon, unchanged) — reachable via View › Classic Ribbon</div>
@@ -207,6 +233,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 </div>
 
 <div class="notes">
+  <button onclick="document.body.classList.toggle('glass')">Liquid Glass / flat</button>
   <button onclick="document.body.classList.toggle('dark')">Light / dark</button>
   <button onclick="document.body.classList.toggle('red')">Accent: system blue / red</button>
   <button onclick="document.body.classList.toggle('classic')">Classic ribbon on / off</button>

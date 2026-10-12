@@ -32,3 +32,10 @@ never truly native (menu bar via native NSMenu is the exception).
 - Pageless option (Google Docs style) in Document tab + View menu, with text width Narrow / Medium / Full.
   Built on the existing `view.webLayout` engine view, so no engine change; text width is a UI setting.
   Print and PDF export still paginate.
+
+## 2026-10-12 — Liquid Glass direction (mockup, pending approval)
+
+**Real in the app:** macOS window vibrancy (NSVisualEffectView behind a transparent eframe window),
+floating rounded sidebar and inspector, capsule toolbar groups, translucent fills, light rims.
+**Not real:** blur of the document under floating chrome, refraction/specular "liquid" effects —
+would need custom wgpu shaders; unlikely upstream. Mockup's flat style kept as a toggle.
