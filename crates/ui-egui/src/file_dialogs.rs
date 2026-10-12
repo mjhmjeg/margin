@@ -271,7 +271,7 @@ impl WordApp {
     }
 
     /// File › Export: ask where to save a copy in this format, then write it.
-    pub(crate) fn export_dialog(&mut self, ext: &str) {
+    pub fn export_dialog(&mut self, ext: &str) {
         let name = format!("{}.{ext}", self.title_stem());
         let _ = self.ask_file(FileDialogRequest::Save { name }, AfterPick::Export { ext: ext.to_string() });
     }

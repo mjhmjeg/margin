@@ -22,6 +22,8 @@ pub enum Act {
     Copy,
     Cut,
     Paste,
+    /// File › Export as PDF: ask where (the engine command needs a path), then write it.
+    ExportPdf,
     Margin(MarginAct),
     /// Standard AppKit items (About, Hide, Quit, Minimize…): the native layer makes them.
     Std(Std),
@@ -89,7 +91,7 @@ const FILE: &[Entry] = &[
     key("Save", Keys("Mod+S"), "CmdOrCtrl+S"),
     key("Save As…", Cmd("file.saveAs"), "CmdOrCtrl+Shift+S"),
     Sep,
-    it("Export as PDF…", Cmd("file.exportPdf")),
+    it("Export as PDF…", ExportPdf),
     Sep,
     key("Print…", Keys("Mod+P"), "CmdOrCtrl+P"),
 ];
@@ -236,6 +238,7 @@ pub fn perform(app: &mut WordApp, act: &Act) {
                 }
             }
         }
+        ExportPdf => app.export_dialog("pdf"),
         Copy => app.synthetic.push(egui::Event::Copy),
         Cut => app.synthetic.push(egui::Event::Cut),
         // As the keyboard does: the clipboard's text, or with none, the bare key (pictures, #45).
@@ -323,6 +326,36 @@ mod tests {
         }
         for (_, m) in MENUS {
             walk(m, &ids);
+        }
+    }
+
+    /// No menu item fails for want of input (#export-pdf, 2026-10-12): each command either runs
+    /// with no params or opens the dialog that asks for them.
+    #[test]
+    fn every_menu_command_runs_or_asks() {
+        fn walk(entries: &[Entry], out: &mut Vec<(&'static str, Act)>) {
+            for e in entries {
+                match e {
+                    Item(l, a @ (Cmd(_) | CmdWith(..)), _) => out.push((l, *a)),
+                    Sub(_, s) => walk(s, out),
+                    _ => {}
+                }
+            }
+        }
+        let mut items = Vec::new();
+        for (_, m) in MENUS {
+            walk(m, &mut items);
+        }
+        for (label, act) in items {
+            let mut a = WordApp::new(crate::Session::new(wordcraft_engine::sample::sample_document()), crate::Services::default());
+            let (id, params) = match act {
+                Cmd(id) => (id, json!({})),
+                CmdWith(id, p) => (id, serde_json::from_str(p).unwrap()),
+                _ => unreachable!(),
+            };
+            if let Err(e) = a.run(id, params) {
+                assert!(!e.contains("bad parameters"), "{label} ({id}) needs input the menu doesn't give: {e}");
+            }
         }
     }
 
