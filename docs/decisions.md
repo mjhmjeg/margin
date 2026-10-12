@@ -44,3 +44,8 @@ would need custom wgpu shaders; unlikely upstream. Mockup's flat style kept as a
 
 Martijn chose flat after trying the glass variant. Glass stays only as a mockup toggle.
 Inspector spacing increased: one checkbox per row, labels above segmented controls, 16 px section padding.
+
+## 2026-10-12 — One type size for the whole UI
+
+All interface text is 13 px, weight 400 (menus, toolbar, inspector, sidebar, status bar). Hierarchy by
+colour only (text / dim / faint). Document content keeps its own fonts and sizes.
