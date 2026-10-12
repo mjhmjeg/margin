@@ -2,6 +2,8 @@
 
 Last updated: 2026-10-12
 
+Repo: https://github.com/mjhmjeg/margin (fork of storytold/wordcraft; remote `upstream`).
+
 Goal: a Mac-native-feeling UI (slim toolbar, right format inspector, real menu bar) on top of the
 WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs/decisions.md.
 
@@ -23,7 +25,6 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 
 ## Open decisions
 - Product name: "Margin" chosen 2026-10-12. Near-clash: an early Mac markdown notes app "Margin" (peerlist) and iPad tracker "The Margin". No formal trademark search done.
-- GitHub org "spert" does not exist for account mjhmjeg — Martijn creates it, then fork is pushed
 
 ## Known bugs
 - none yet
