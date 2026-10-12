@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Margin mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Source+Serif+4:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --accent:#C8102E; --accent-soft:#C8102E1a;
+  --desk:#ECECEC; --chrome:#F6F6F6; --panel:#FAFAFA; --page:#FFFFFF;
+  --line:#00000017; --line-strong:#00000026;
+  --text:#1D1D1F; --dim:#6E6E73; --faint:#A1A1A6;
+  --hover:#0000000d; --sel:#00000014;
+}
+.dark{
+  --desk:#1E1E1E; --chrome:#2A2A2A; --panel:#262626; --page:#FFFFFF;
+  --line:#FFFFFF14; --line-strong:#FFFFFF24;
+  --text:#F2F2F2; --dim:#A1A1A6; --faint:#6E6E73;
+  --hover:#FFFFFF0f; --sel:#FFFFFF1a;
+}
+.blue{ --accent:#0A64D6; --accent-soft:#0A64D61a; }
+*{box-sizing:border-box}
+body{margin:0;font:13px/1.4 Inter,system-ui,sans-serif;color:var(--text);background:#9a9a9a}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+
+.menubar{height:26px;display:flex;align-items:center;gap:18px;padding:0 16px;background:#ffffffcc;color:#000;font-size:13px}
+.menubar b{font-weight:500}
+.menubar span{position:relative;padding:2px 6px;border-radius:4px;cursor:default}
+.menubar span:hover{background:#0000001a}
+.menu{display:none;position:absolute;top:22px;left:0;min-width:220px;background:#fafafaf2;border:1px solid #0000001f;border-radius:8px;padding:5px;z-index:9;box-shadow:0 8px 24px #0003}
+.menubar span:hover .menu{display:block}
+.menu div{display:flex;justify-content:space-between;padding:3px 10px;border-radius:4px;white-space:nowrap}
+.menu div:hover{background:var(--accent);color:#fff}
+.menu hr{border:0;border-top:1px solid #0000001a;margin:4px 0}
+.menu i{font-style:normal;opacity:.55}
+
+.window{margin:24px auto;width:min(1280px,calc(100% - 32px));height:780px;border-radius:12px;overflow:hidden;display:grid;grid-template-rows:52px 1fr 26px;background:var(--desk);box-shadow:0 20px 60px #0005;border:1px solid #0000004d}
+
+.toolbar{display:flex;align-items:center;gap:6px;padding:0 12px;background:var(--chrome);border-bottom:1px solid var(--line)}
+.lights{display:flex;gap:8px;margin-right:14px}
+.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.tb{height:28px;min-width:28px;padding:0 8px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;gap:6px;color:var(--dim)}
+.tb:hover{background:var(--hover);color:var(--text)}
+.tb.on{background:var(--sel);color:var(--text)}
+.tb svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.title{font-weight:500;color:var(--text)}
+.title small{font-weight:400;color:var(--faint);margin-left:6px}
+.sep{width:1px;height:18px;background:var(--line-strong);margin:0 6px}
+.grow{flex:1}
+.stylepop{height:26px;padding:0 10px;border:1px solid var(--line-strong);border-radius:6px;display:inline-flex;align-items:center;gap:20px;color:var(--text);background:var(--panel)}
+
+.body{display:grid;grid-template-columns:var(--left,220px) 1fr var(--right,264px);min-height:0}
+.sidebar{background:var(--panel);border-right:1px solid var(--line);padding:14px 10px;overflow:auto}
+.sidebar h6,.insp h6{margin:0 0 8px 8px;font:500 11px Inter;color:var(--faint);letter-spacing:.02em}
+.nav div{padding:5px 8px;border-radius:6px;color:var(--dim);cursor:pointer}
+.nav div:hover{background:var(--hover)}
+.nav div.cur{background:var(--sel);color:var(--text)}
+.nav .l2{padding-left:22px}
+
+.canvas{overflow:auto;padding:36px 0 60px}
+.page{width:612px;min-height:792px;margin:0 auto;background:var(--page);color:#1d1d1f;padding:72px 84px;box-shadow:0 0 0 1px #0000000f,0 2px 8px #0000001a}
+.page header{display:flex;justify-content:space-between;color:#8a8a8e;font-size:11px;border-bottom:1px solid #e5e5e5;padding-bottom:6px;margin-bottom:28px}
+.page h1{font:600 30px/1.15 "Source Serif 4",Georgia,serif;margin:0 0 6px}
+.page .sub{color:#6e6e73;font-size:15px;margin-bottom:18px}
+.page h2{font:600 19px "Source Serif 4",Georgia,serif;margin:26px 0 8px}
+.page p{font-size:13.5px;line-height:1.65;margin:0 0 12px}
+.page mark{background:var(--accent-soft);color:inherit;outline:1px solid var(--accent);outline-offset:0}
+.page blockquote{margin:16px 0;text-align:center;font-style:italic;color:#555}
+.page ul{padding-left:20px;font-size:13.5px;line-height:1.65}
+
+.insp{background:var(--panel);border-left:1px solid var(--line);overflow:auto}
+.seg{display:flex;margin:12px;padding:2px;border-radius:7px;background:var(--hover)}
+.seg button{flex:1;height:24px;border-radius:5px;color:var(--dim)}
+.seg button.on{background:var(--chrome);color:var(--text);box-shadow:0 1px 2px #0002}
+.sec{padding:12px 14px;border-top:1px solid var(--line)}
+.row{display:flex;gap:6px;align-items:center;margin-bottom:8px}
+.field{height:26px;border:1px solid var(--line-strong);border-radius:6px;padding:0 8px;display:flex;align-items:center;justify-content:space-between;background:var(--chrome);flex:1}
+.chips{display:flex;border:1px solid var(--line-strong);border-radius:6px;overflow:hidden;flex:1}
+.chips button{flex:1;height:26px;border-right:1px solid var(--line)}
+.chips button:last-child{border-right:0}
+.chips button:hover{background:var(--hover)}
+.chips button.on{background:var(--accent);color:#fff}
+.lbl{width:64px;color:var(--dim)}
+.swatch{width:26px;height:26px;border-radius:6px;border:1px solid var(--line-strong)}
+.pane{display:none}.pane.on{display:block}
+
+.status{display:flex;align-items:center;gap:16px;padding:0 14px;background:var(--chrome);border-top:1px solid var(--line);color:var(--faint);font-size:11.5px}
+
+.ribbon{display:none;height:92px;background:var(--chrome);border-bottom:1px solid var(--line);padding:10px 16px;color:var(--dim)}
+.classic .ribbon{display:block}
+.classic .window{grid-template-rows:52px 92px 1fr 26px}
+
+.notes{width:min(1280px,calc(100% - 32px));margin:0 auto 40px;color:#fff;font-size:13px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.notes button{background:#ffffff26;border:1px solid #ffffff4d;border-radius:6px;padding:5px 10px;color:#fff}
+.notes button:hover{background:#ffffff40}
+</style>
+</head>
+<body>
+
+<nav class="menubar">
+  <span>&#63743;</span>
+  <span><b>Margin</b><div class="menu"><div>About Margin</div><hr><div>Settings… <i>⌘,</i></div><hr><div>Quit Margin <i>⌘Q</i></div></div></span>
+  <span>File<div class="menu"><div>New <i>⌘N</i></div><div>Open… <i>⌘O</i></div><div>Open Recent ›</div><hr><div>Save <i>⌘S</i></div><div>Duplicate <i>⇧⌘S</i></div><div>Export To ›</div><hr><div>Print… <i>⌘P</i></div></div></span>
+  <span>Edit<div class="menu"><div>Undo Typing <i>⌘Z</i></div><div>Redo <i>⇧⌘Z</i></div><hr><div>Cut <i>⌘X</i></div><div>Copy <i>⌘C</i></div><div>Paste <i>⌘V</i></div><div>Paste and Match Style <i>⌥⇧⌘V</i></div><hr><div>Find… <i>⌘F</i></div><div>Spelling and Grammar ›</div></div></span>
+  <span>Insert<div class="menu"><div>Table</div><div>Image…</div><div>Shape ›</div><div>Link… <i>⌘K</i></div><hr><div>Page Break</div><div>Footnote</div><div>Table of Contents</div><div>Field ›</div></div></span>
+  <span>Format<div class="menu"><div>Font ›</div><div>Paragraph Style ›</div><div>Text ›</div><div>Lists ›</div><hr><div>Copy Style <i>⌥⌘C</i></div><div>Paste Style <i>⌥⌘V</i></div></div></span>
+  <span>Review<div class="menu"><div>Track Changes <i>⇧⌘E</i></div><div>Accept Change</div><div>Reject Change</div><hr><div>New Comment <i>⇧⌘A</i></div><div>Word Count</div></div></span>
+  <span>View<div class="menu"><div onclick="toggle('left')">Show Outline <i>⌥⌘1</i></div><div onclick="toggle('right')">Show Inspector <i>⌥⌘I</i></div><div>Show Rulers <i>⌘R</i></div><div>Show Invisibles <i>⇧⌘I</i></div><hr><div>Focus Mode</div><div onclick="document.body.classList.toggle('classic')">Classic Ribbon</div><hr><div>Enter Full Screen <i>⌃⌘F</i></div></div></span>
+  <span>Window</span><span>Help</span>
+</nav>
+
+<div class="window" id="win">
+  <div class="toolbar">
+    <div class="lights"><i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#28C840"></i></div>
+    <button class="tb on" id="bLeft" onclick="toggle('left')" title="Outline"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
+    <span class="title">Open Studio Handbook<small>— Edited</small></span>
+    <span class="grow"></span>
+    <span class="stylepop">Body <svg width="10" height="10" viewBox="0 0 24 24" style="stroke:var(--dim);fill:none;stroke-width:2"><path d="M6 9l6 6 6-6"/></svg></span>
+    <span class="sep"></span>
+    <button class="tb" title="Table"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/></svg></button>
+    <button class="tb" title="Image"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg></button>
+    <button class="tb" title="Shape"><svg viewBox="0 0 24 24"><circle cx="9" cy="9" r="5"/><rect x="11" y="11" width="9" height="9" rx="1"/></svg></button>
+    <button class="tb" title="Comment"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg></button>
+    <span class="sep"></span>
+    <button class="tb" title="Track changes"><svg viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 7l3 3"/></svg></button>
+    <span class="grow"></span>
+    <button class="tb" title="Zoom">100% <svg width="10" height="10" viewBox="0 0 24 24" style="stroke-width:2"><path d="M6 9l6 6 6-6"/></svg></button>
+    <button class="tb on" id="bRight" onclick="toggle('right')" title="Inspector"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Format</button>
+  </div>
+
+  <div class="ribbon">Classic ribbon (upstream WordCraft ribbon, unchanged) — reachable via View › Classic Ribbon</div>
+
+  <div class="body" id="body">
+    <aside class="sidebar" id="left">
+      <h6>Outline</h6>
+      <div class="nav">
+        <div class="cur">The Open Studio Handbook</div>
+        <div>Why share a studio?</div>
+        <div class="l2">What we agree on</div>
+        <div class="l2">Shared equipment</div>
+        <div class="l2">Opening the studio</div>
+        <div>Membership</div>
+      </div>
+    </aside>
+
+    <main class="canvas">
+      <article class="page">
+        <header><span>The Open Studio Handbook</span><span>Spring edition</span></header>
+        <h1>The Open Studio Handbook</h1>
+        <div class="sub">How a small community of makers shares space, tools and time</div>
+        <p>Every Thursday evening the old print shop on Alder Street fills with people who make things. <b>Painters</b> set up by the north windows, <i>letterpress</i> regulars claim the back room, and somebody always brings bread. This handbook collects what we have learned about running a shared studio: the routines that keep it <mark>pleasant</mark>, the tools we pool, and the small agreements that let thirty strangers become a crew.</p>
+        <h2>Why share a studio?</h2>
+        <p>Rent is the obvious reason, but it is not the best one. A shared room puts your work next to work you would never have seen otherwise. A ceramicist explains glaze chemistry to a comic artist; a photographer borrows a weaver's loom for a still life. The cross-talk is the point.</p>
+        <blockquote>A studio is a place where unfinished things are welcome.</blockquote>
+        <h2>What we agree on</h2>
+        <ul><li><b>Clean as you go.</b> Leave a table the way you would like to find it.</li><li><b>Label what is yours.</b> Unlabelled supplies on the commons shelf are fair game.</li><li><b>Ask before you borrow.</b> Even from the shelf, a quick note helps.</li></ul>
+      </article>
+    </main>
+
+    <aside class="insp" id="right">
+      <div class="seg">
+        <button class="on" onclick="tab(this,'pText')">Text</button>
+        <button onclick="tab(this,'pLayout')">Layout</button>
+        <button onclick="tab(this,'pDoc')">Document</button>
+      </div>
+      <div class="pane on" id="pText">
+        <div class="sec"><h6>Paragraph style</h6><div class="row"><div class="field">Body <span style="color:var(--faint)">⌄</span></div></div></div>
+        <div class="sec"><h6>Font</h6>
+          <div class="row"><div class="field">Inter <span style="color:var(--faint)">⌄</span></div></div>
+          <div class="row"><div class="field" style="flex:0 0 70px">Regular</div><div class="field">13.5 pt</div><span class="swatch" style="background:#1d1d1f"></span></div>
+          <div class="row"><div class="chips"><button style="font-weight:600">B</button><button style="font-style:italic">I</button><button style="text-decoration:underline">U</button><button style="text-decoration:line-through">S</button></div></div>
+        </div>
+        <div class="sec"><h6>Alignment</h6>
+          <div class="row"><div class="chips"><button class="on">Left</button><button>Center</button><button>Right</button><button>Justify</button></div></div>
+        </div>
+        <div class="sec"><h6>Spacing</h6>
+          <div class="row"><span class="lbl">Line</span><div class="field">1.15</div></div>
+          <div class="row"><span class="lbl">Before</span><div class="field">0 pt</div></div>
+          <div class="row"><span class="lbl">After</span><div class="field">8 pt</div></div>
+        </div>
+        <div class="sec"><h6>Bullets and lists</h6><div class="row"><div class="field">None <span style="color:var(--faint)">⌄</span></div></div></div>
+      </div>
+      <div class="pane" id="pLayout">
+        <div class="sec"><h6>Indents</h6><div class="row"><span class="lbl">Left</span><div class="field">0 cm</div></div><div class="row"><span class="lbl">Right</span><div class="field">0 cm</div></div><div class="row"><span class="lbl">First line</span><div class="field">0 cm</div></div></div>
+        <div class="sec"><h6>Columns</h6><div class="row"><div class="chips"><button class="on">1</button><button>2</button><button>3</button></div></div></div>
+        <div class="sec"><h6>Pagination</h6><div class="row" style="color:var(--dim)">☐ Keep with next</div><div class="row" style="color:var(--dim)">☑ Keep lines together</div></div>
+      </div>
+      <div class="pane" id="pDoc">
+        <div class="sec"><h6>Page</h6><div class="row"><div class="field">A4 <span style="color:var(--faint)">⌄</span></div></div><div class="row"><div class="chips"><button class="on">Portrait</button><button>Landscape</button></div></div></div>
+        <div class="sec"><h6>Margins</h6><div class="row"><span class="lbl">Top</span><div class="field">2.5 cm</div></div><div class="row"><span class="lbl">Bottom</span><div class="field">2.5 cm</div></div><div class="row"><span class="lbl">Inside</span><div class="field">2.5 cm</div></div></div>
+        <div class="sec"><h6>Headers and footers</h6><div class="row" style="color:var(--dim)">☑ Header &nbsp; ☐ Footer &nbsp; ☐ Page numbers</div></div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="status"><span>Page 1 of 2</span><span>357 words</span><span class="grow"></span><span>English (Switzerland)</span><span>100%</span></div>
+</div>
+
+<div class="notes">
+  <button onclick="document.body.classList.toggle('dark')">Light / dark</button>
+  <button onclick="document.body.classList.toggle('blue')">Accent: red / system blue</button>
+  <button onclick="document.body.classList.toggle('classic')">Classic ribbon on / off</button>
+  <span>Hover the menu bar for menus. Toolbar icons left and right toggle the panels.</span>
+</div>
+
+<script>
+function toggle(side){
+  const b=document.getElementById('body').style, cur=getComputedStyle(document.getElementById('body')).getPropertyValue('--'+side).trim();
+  const open = cur!=='0px';
+  b.setProperty('--'+side, open?'0px':(side==='left'?'220px':'264px'));
+  document.getElementById(side).style.display=open?'none':'';
+  document.getElementById(side==='left'?'bLeft':'bRight').classList.toggle('on',!open);
+}
+function tab(btn,id){
+  btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
+  document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.id===id));
+}
+</script>
+</body>
+</html>
