@@ -221,7 +221,8 @@ fn services(file_dialog: file_dialogs::Hook, ctx: &egui::Context) -> Services {
 /// Window, Dock and taskbar icon.
 fn app_icon() -> Option<egui::IconData> {
     #[cfg(target_os = "macos")]
-    let png: &[u8] = include_bytes!("../../../assets/app-icon/wordcraft-macos-512.png");
+    // Margin fork: its own icon (assets/app-icon/margin.svg via packaging/macos/margin-icon.sh).
+    let png: &[u8] = include_bytes!("../../../assets/app-icon/margin-macos-512.png");
     #[cfg(not(target_os = "macos"))]
     let png: &[u8] = include_bytes!("../../../assets/app-icon/hicolor/256x256/apps/ai.storyteller.wordcraft.png");
     eframe::icon_data::from_png_bytes(png).map_err(|e| log::warn!("app icon: {e}")).ok()
@@ -267,7 +268,7 @@ fn main() -> eframe::Result {
     }
     let mut options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("WordCraft")
+            .with_title(wordcraft_ui_egui::skin::APP_NAME)
             .with_app_id("ai.storyteller.wordcraft")
             .with_inner_size([1440.0, 920.0])
             .with_min_inner_size([760.0, 480.0])
@@ -307,7 +308,7 @@ fn main() -> eframe::Result {
     #[cfg(target_os = "macos")]
     let apple_events = &apple_events;
     eframe::run_native(
-        "WordCraft",
+        wordcraft_ui_egui::skin::APP_NAME,
         options,
         Box::new(move |cc| {
             // The system region picks the new document's paper, the units and the decimal

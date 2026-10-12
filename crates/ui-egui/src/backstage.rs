@@ -25,7 +25,12 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         .exact_size(200.0)
         // Fixed width, as in Word: without this egui shows a resize handle that does nothing (#502).
         .resizable(false)
-        .frame(egui::Frame::NONE.fill(APP_COLOR).inner_margin(egui::Margin { left: 0, right: 0, top: if mac { 0 } else { 12 }, bottom: 12 }))
+        .frame(egui::Frame::NONE.fill(if crate::skin::on() { crate::skin::ACCENT } else { APP_COLOR }).inner_margin(egui::Margin {
+            left: 0,
+            right: 0,
+            top: if mac { 0 } else { 12 },
+            bottom: 12,
+        }))
         .show(ui, |ui| {
             let back = if mac {
                 // macOS (#222): the Backstage covers the title bar, so its top band is the title
@@ -98,7 +103,10 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 }
             }
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                for (label, id) in [("About", "about"), ("Discord community", "discord")] {
+                // Margin: no community button.
+                let links: &[(&str, &str)] =
+                    if crate::skin::on() { &[("About", "about")] } else { &[("About", "about"), ("Discord community", "discord")] };
+                for &(label, id) in links {
                     let (r, resp) = ui.allocate_exact_size(vec2(200.0, 32.0), Sense::click());
                     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), tl!(label)));
                     if resp.hovered() {

@@ -1539,7 +1539,8 @@ impl WordApp {
         if let Some(url) = self.canvas.open_url.take() {
             ctx.open_url(egui::OpenUrl::new_tab(url));
         }
-        let title = format!("{}{} - WordCraft", self.title_stem(), if self.session.dirty { " •" } else { "" });
+        let app_name = if crate::skin::on() { crate::skin::APP_NAME } else { "WordCraft" };
+        let title = format!("{}{} - {app_name}", self.title_stem(), if self.session.dirty { " •" } else { "" });
         if title != self.sent_title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.sent_title = title;

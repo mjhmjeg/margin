@@ -57,6 +57,9 @@ pub fn set(on: bool) {
     ON.store(on, Ordering::Relaxed);
 }
 
+/// The product name shown in the window title and menus.
+pub const APP_NAME: &str = "Margin";
+
 /// The one interface type size, in points.
 pub const UI_SIZE: f32 = 13.0;
 

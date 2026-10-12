@@ -88,3 +88,13 @@ Switch Modes keeps Word's meaning (page only), like Pages' separate dark-documen
   the page and in text fields. Other items run their command.
 - Rejected: predefined AppKit Cut/Copy/Paste (send `copy:` to the first responder, which winit's
   view doesn't implement); no shortcuts on Edit items (not Mac-like).
+
+## 2026-10-12 — Phase 5: packaging
+
+- `packaging/macos/package.sh` takes branding from env (APP_NAME, BUNDLE_ID, APP_ICNS, FILE_PREFIX,
+  COPYRIGHT; WordCraft defaults) and notarizes with a `notarytool` keychain profile
+  (NOTARY_PROFILE) so no Apple password passes through env or the agent. Upstreamable.
+- Margin icon: original SVG (page + one blue margin rule), rendered by packaging/macos/margin-icon.sh.
+- App name "Margin" in window title, menus, eframe app name; bundle id ai.spert.margin.
+- README.md is Margin's; upstream's kept as README-WordCraft.md.
+- Version follows upstream (0.6.0) for now.
