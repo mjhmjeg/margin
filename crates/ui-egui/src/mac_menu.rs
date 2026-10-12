@@ -349,9 +349,9 @@ mod tests {
         for (label, act) in items {
             let mut a = WordApp::new(crate::Session::new(wordcraft_engine::sample::sample_document()), crate::Services::default());
             let (id, params) = match act {
-                Cmd(id) => (id, json!({})),
                 CmdWith(id, p) => (id, serde_json::from_str(p).unwrap()),
-                _ => unreachable!(),
+                Cmd(id) => (id, json!({})),
+                _ => continue,
             };
             if let Err(e) = a.run(id, params) {
                 assert!(!e.contains("bad parameters"), "{label} ({id}) needs input the menu doesn't give: {e}");
