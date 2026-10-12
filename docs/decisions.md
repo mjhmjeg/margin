@@ -39,3 +39,8 @@ never truly native (menu bar via native NSMenu is the exception).
 floating rounded sidebar and inspector, capsule toolbar groups, translucent fills, light rims.
 **Not real:** blur of the document under floating chrome, refraction/specular "liquid" effects —
 would need custom wgpu shaders; unlikely upstream. Mockup's flat style kept as a toggle.
+
+## 2026-10-12 — Flat, not Liquid Glass
+
+Martijn chose flat after trying the glass variant. Glass stays only as a mockup toggle.
+Inspector spacing increased: one checkbox per row, labels above segmented controls, 16 px section padding.

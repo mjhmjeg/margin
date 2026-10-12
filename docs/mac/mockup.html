@@ -52,7 +52,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 .body{display:grid;grid-template-columns:var(--left,220px) 1fr var(--right,264px);min-height:0}
 .sidebar{background:var(--panel);border-right:1px solid var(--line);padding:14px 10px;overflow:auto}
-.sidebar h6,.insp h6{margin:0 0 8px 8px;font:500 11px Inter;color:var(--faint);letter-spacing:.02em}
+.sidebar h6,.insp h6{margin:0 0 10px 2px;font:500 11px Inter;color:var(--faint);letter-spacing:.02em}
 .nav div{padding:5px 8px;border-radius:6px;color:var(--dim);cursor:pointer}
 .nav div:hover{background:var(--hover)}
 .nav div.cur{background:var(--sel);color:var(--text)}
@@ -73,8 +73,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .seg{display:flex;margin:12px;padding:2px;border-radius:7px;background:var(--hover)}
 .seg button{flex:1;height:24px;border-radius:5px;color:var(--dim)}
 .seg button.on{background:var(--chrome);color:var(--text);box-shadow:0 1px 2px #0002}
-.sec{padding:12px 14px;border-top:1px solid var(--line)}
-.row{display:flex;gap:6px;align-items:center;margin-bottom:8px}
+.sec{padding:16px 16px 14px;border-top:1px solid var(--line)}
+.row{display:flex;gap:8px;align-items:center;margin-bottom:10px}
 .field{height:26px;border:1px solid var(--line-strong);border-radius:6px;padding:0 8px;display:flex;align-items:center;justify-content:space-between;background:var(--chrome);flex:1}
 .chips{display:flex;border:1px solid var(--line-strong);border-radius:6px;overflow:hidden;flex:1}
 .chips button{flex:1;height:26px;border-right:1px solid var(--line)}
@@ -88,7 +88,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .pageless .canvas{background:var(--page);padding-top:40px}
 .pageless .page{box-shadow:none;min-height:0;padding:0 24px;width:var(--tw,640px)}
 .pageless .page header{display:none}
-.tw{display:none}.pageless .tw{display:flex}
+.tw{display:none}.pageless .tw{display:block}
 .status{display:flex;align-items:center;gap:16px;padding:0 14px;background:var(--chrome);border-top:1px solid var(--line);color:var(--faint);font-size:11.5px}
 
 .ribbon{display:none;height:92px;background:var(--chrome);border-bottom:1px solid var(--line);padding:10px 16px;color:var(--dim)}
@@ -126,9 +126,15 @@ body.glass{background:radial-gradient(1200px 700px at 15% 10%,#7FB2FF,transparen
 .glass .menu div{border-radius:8px}
 .notreal{display:none;font-size:11px;color:var(--dim);padding:0 14px}
 .glass .notreal{display:block}
+.check{display:flex;align-items:center;gap:10px;padding:6px 0;color:var(--text);cursor:pointer}
+.check input{appearance:none;width:16px;height:16px;margin:0;border:1px solid var(--line-strong);border-radius:4px;background:var(--chrome);display:grid;place-items:center;flex:none}
+.check input:checked{background:var(--accent);border-color:var(--accent)}
+.check input:checked::after{content:"";width:8px;height:4px;border:2px solid #fff;border-top:0;border-right:0;transform:rotate(-45deg) translate(1px,-1px)}
+.stack{display:block}.stack .lbl{display:block;width:auto;margin-bottom:6px}
+.hint{color:var(--faint);font-size:11.5px;line-height:1.5;margin-top:2px}
 </style>
 </head>
-<body class="glass">
+<body>
 
 <nav class="menubar">
   <span>&#63743;</span>
@@ -214,17 +220,17 @@ body.glass{background:radial-gradient(1200px 700px at 15% 10%,#7FB2FF,transparen
       <div class="pane" id="pLayout">
         <div class="sec"><h6>Indents</h6><div class="row"><span class="lbl">Left</span><div class="field">0 cm</div></div><div class="row"><span class="lbl">Right</span><div class="field">0 cm</div></div><div class="row"><span class="lbl">First line</span><div class="field">0 cm</div></div></div>
         <div class="sec"><h6>Columns</h6><div class="row"><div class="chips"><button class="on">1</button><button>2</button><button>3</button></div></div></div>
-        <div class="sec"><h6>Pagination</h6><div class="row" style="color:var(--dim)">☐ Keep with next</div><div class="row" style="color:var(--dim)">☑ Keep lines together</div></div>
+        <div class="sec"><h6>Pagination</h6><label class="check"><input type="checkbox">Keep with next</label><label class="check"><input type="checkbox" checked>Keep lines together</label></div>
       </div>
       <div class="pane" id="pDoc">
         <div class="sec"><h6>Format</h6>
           <div class="row"><div class="chips"><button class="on" id="fPages" onclick="pageless(false)">Pages</button><button id="fPageless" onclick="pageless(true)">Pageless</button></div></div>
-          <div class="row tw"><span class="lbl">Text width</span><div class="chips"><button onclick="tw(this,'560px')">Narrow</button><button class="on" onclick="tw(this,'640px')">Medium</button><button onclick="tw(this,'calc(100% - 48px)')">Full</button></div></div>
-          <div class="row" style="color:var(--faint);font-size:11.5px">Pageless hides page breaks, headers and footers. They come back when you print or export to PDF.</div>
+          <div class="tw stack" style="margin-bottom:10px"><span class="lbl">Text width</span><div class="chips"><button onclick="tw(this,'560px')">Narrow</button><button class="on" onclick="tw(this,'640px')">Medium</button><button onclick="tw(this,'calc(100% - 48px)')">Full</button></div></div>
+          <div class="hint">Pageless hides page breaks, headers and footers. They come back when you print or export to PDF.</div>
         </div>
         <div class="sec"><h6>Page</h6><div class="row"><div class="field">A4 <span style="color:var(--faint)">⌄</span></div></div><div class="row"><div class="chips"><button class="on">Portrait</button><button>Landscape</button></div></div></div>
         <div class="sec"><h6>Margins</h6><div class="row"><span class="lbl">Top</span><div class="field">2.5 cm</div></div><div class="row"><span class="lbl">Bottom</span><div class="field">2.5 cm</div></div><div class="row"><span class="lbl">Inside</span><div class="field">2.5 cm</div></div></div>
-        <div class="sec"><h6>Headers and footers</h6><div class="row" style="color:var(--dim)">☑ Header &nbsp; ☐ Footer &nbsp; ☐ Page numbers</div></div>
+        <div class="sec"><h6>Headers and footers</h6><label class="check"><input type="checkbox" checked>Header</label><label class="check"><input type="checkbox">Footer</label><label class="check"><input type="checkbox">Page numbers</label></div>
       </div>
     </aside>
   </div>
@@ -233,7 +239,7 @@ body.glass{background:radial-gradient(1200px 700px at 15% 10%,#7FB2FF,transparen
 </div>
 
 <div class="notes">
-  <button onclick="document.body.classList.toggle('glass')">Liquid Glass / flat</button>
+  <button onclick="document.body.classList.toggle('glass')">Flat / Liquid Glass</button>
   <button onclick="document.body.classList.toggle('dark')">Light / dark</button>
   <button onclick="document.body.classList.toggle('red')">Accent: system blue / red</button>
   <button onclick="document.body.classList.toggle('classic')">Classic ribbon on / off</button>
