@@ -24,3 +24,11 @@ never truly native (menu bar via native NSMenu is the exception).
 **Decision.** Martijn picked "Margin" (from Feder, Folio, Margin, Quire, Leaf).
 **Known near-clashes.** An early-stage macOS markdown notes app called Margin (peerlist.io), and
 "The Margin", an iPad writing tracker. Neither is a word processor. No formal trademark search done.
+
+## 2026-10-12 — Mockup feedback (phase 1)
+
+- Accent: Apple system blue (#0A64D6). Red kept only as a mockup toggle.
+- Layout: outline left, format inspector right (Text / Layout / Document) — approved.
+- Pageless option (Google Docs style) in Document tab + View menu, with text width Narrow / Medium / Full.
+  Built on the existing `view.webLayout` engine view, so no engine change; text width is a UI setting.
+  Print and PDF export still paginate.

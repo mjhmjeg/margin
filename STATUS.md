@@ -13,7 +13,7 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 ## Next
 - Phase 1: mockup at docs/mac/mockup.html — awaiting Martijn approval ✋ (Opus, high)
 - Phase 2: visual pass — tokens, Inter, spacing, title bar; drop Discord/avatar/AutoSave (Sonnet, medium) ✋
-- Phase 3: toolbar + format inspector + outline sidebar; ribbon behind View › Classic (Opus, high) ✋
+- Phase 3: toolbar + format inspector + outline sidebar + Pageless (view.webLayout); ribbon behind View › Classic (Opus, high) ✋
 
 ## Later
 - Phase 4: native macOS menu bar mapped to engine commands (Sonnet, high)

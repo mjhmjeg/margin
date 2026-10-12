@@ -7,7 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Source+Serif+4:wght@400;600&display=swap" rel="stylesheet">
 <style>
 :root{
-  --accent:#C8102E; --accent-soft:#C8102E1a;
+  --accent:#0A64D6; --accent-soft:#0A64D61a;
   --desk:#ECECEC; --chrome:#F6F6F6; --panel:#FAFAFA; --page:#FFFFFF;
   --line:#00000017; --line-strong:#00000026;
   --text:#1D1D1F; --dim:#6E6E73; --faint:#A1A1A6;
@@ -19,7 +19,7 @@
   --text:#F2F2F2; --dim:#A1A1A6; --faint:#6E6E73;
   --hover:#FFFFFF0f; --sel:#FFFFFF1a;
 }
-.blue{ --accent:#0A64D6; --accent-soft:#0A64D61a; }
+.red{ --accent:#C8102E; --accent-soft:#C8102E1a; }
 *{box-sizing:border-box}
 body{margin:0;font:13px/1.4 Inter,system-ui,sans-serif;color:var(--text);background:#9a9a9a}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
@@ -85,6 +85,10 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .swatch{width:26px;height:26px;border-radius:6px;border:1px solid var(--line-strong)}
 .pane{display:none}.pane.on{display:block}
 
+.pageless .canvas{background:var(--page);padding-top:40px}
+.pageless .page{box-shadow:none;min-height:0;padding:0 24px;width:var(--tw,640px)}
+.pageless .page header{display:none}
+.tw{display:none}.pageless .tw{display:flex}
 .status{display:flex;align-items:center;gap:16px;padding:0 14px;background:var(--chrome);border-top:1px solid var(--line);color:var(--faint);font-size:11.5px}
 
 .ribbon{display:none;height:92px;background:var(--chrome);border-bottom:1px solid var(--line);padding:10px 16px;color:var(--dim)}
@@ -106,7 +110,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   <span>Insert<div class="menu"><div>Table</div><div>Image…</div><div>Shape ›</div><div>Link… <i>⌘K</i></div><hr><div>Page Break</div><div>Footnote</div><div>Table of Contents</div><div>Field ›</div></div></span>
   <span>Format<div class="menu"><div>Font ›</div><div>Paragraph Style ›</div><div>Text ›</div><div>Lists ›</div><hr><div>Copy Style <i>⌥⌘C</i></div><div>Paste Style <i>⌥⌘V</i></div></div></span>
   <span>Review<div class="menu"><div>Track Changes <i>⇧⌘E</i></div><div>Accept Change</div><div>Reject Change</div><hr><div>New Comment <i>⇧⌘A</i></div><div>Word Count</div></div></span>
-  <span>View<div class="menu"><div onclick="toggle('left')">Show Outline <i>⌥⌘1</i></div><div onclick="toggle('right')">Show Inspector <i>⌥⌘I</i></div><div>Show Rulers <i>⌘R</i></div><div>Show Invisibles <i>⇧⌘I</i></div><hr><div>Focus Mode</div><div onclick="document.body.classList.toggle('classic')">Classic Ribbon</div><hr><div>Enter Full Screen <i>⌃⌘F</i></div></div></span>
+  <span>View<div class="menu"><div onclick="toggle('left')">Show Outline <i>⌥⌘1</i></div><div onclick="toggle('right')">Show Inspector <i>⌥⌘I</i></div><div>Show Rulers <i>⌘R</i></div><div>Show Invisibles <i>⇧⌘I</i></div><div onclick="pageless(!document.body.classList.contains('pageless'))">Pageless</div><hr><div>Focus Mode</div><div onclick="document.body.classList.toggle('classic')">Classic Ribbon</div><hr><div>Enter Full Screen <i>⌃⌘F</i></div></div></span>
   <span>Window</span><span>Help</span>
 </nav>
 
@@ -187,6 +191,11 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
         <div class="sec"><h6>Pagination</h6><div class="row" style="color:var(--dim)">☐ Keep with next</div><div class="row" style="color:var(--dim)">☑ Keep lines together</div></div>
       </div>
       <div class="pane" id="pDoc">
+        <div class="sec"><h6>Format</h6>
+          <div class="row"><div class="chips"><button class="on" id="fPages" onclick="pageless(false)">Pages</button><button id="fPageless" onclick="pageless(true)">Pageless</button></div></div>
+          <div class="row tw"><span class="lbl">Text width</span><div class="chips"><button onclick="tw(this,'560px')">Narrow</button><button class="on" onclick="tw(this,'640px')">Medium</button><button onclick="tw(this,'calc(100% - 48px)')">Full</button></div></div>
+          <div class="row" style="color:var(--faint);font-size:11.5px">Pageless hides page breaks, headers and footers. They come back when you print or export to PDF.</div>
+        </div>
         <div class="sec"><h6>Page</h6><div class="row"><div class="field">A4 <span style="color:var(--faint)">⌄</span></div></div><div class="row"><div class="chips"><button class="on">Portrait</button><button>Landscape</button></div></div></div>
         <div class="sec"><h6>Margins</h6><div class="row"><span class="lbl">Top</span><div class="field">2.5 cm</div></div><div class="row"><span class="lbl">Bottom</span><div class="field">2.5 cm</div></div><div class="row"><span class="lbl">Inside</span><div class="field">2.5 cm</div></div></div>
         <div class="sec"><h6>Headers and footers</h6><div class="row" style="color:var(--dim)">☑ Header &nbsp; ☐ Footer &nbsp; ☐ Page numbers</div></div>
@@ -194,13 +203,14 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
     </aside>
   </div>
 
-  <div class="status"><span>Page 1 of 2</span><span>357 words</span><span class="grow"></span><span>English (Switzerland)</span><span>100%</span></div>
+  <div class="status"><span id="pg">Page 1 of 2</span><span>357 words</span><span class="grow"></span><span>English (Switzerland)</span><span>100%</span></div>
 </div>
 
 <div class="notes">
   <button onclick="document.body.classList.toggle('dark')">Light / dark</button>
-  <button onclick="document.body.classList.toggle('blue')">Accent: red / system blue</button>
+  <button onclick="document.body.classList.toggle('red')">Accent: system blue / red</button>
   <button onclick="document.body.classList.toggle('classic')">Classic ribbon on / off</button>
+  <button onclick="pageless(!document.body.classList.contains('pageless'))">Pages / pageless</button>
   <span>Hover the menu bar for menus. Toolbar icons left and right toggle the panels.</span>
 </div>
 
@@ -211,6 +221,16 @@ function toggle(side){
   b.setProperty('--'+side, open?'0px':(side==='left'?'220px':'264px'));
   document.getElementById(side).style.display=open?'none':'';
   document.getElementById(side==='left'?'bLeft':'bRight').classList.toggle('on',!open);
+}
+function pageless(on){
+  document.body.classList.toggle('pageless',on);
+  document.getElementById('fPages').classList.toggle('on',!on);
+  document.getElementById('fPageless').classList.toggle('on',on);
+  document.getElementById('pg').textContent=on?'Pageless':'Page 1 of 2';
+}
+function tw(btn,w){
+  btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
+  document.querySelector('.page').style.setProperty('--tw',w);
 }
 function tab(btn,id){
   btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
