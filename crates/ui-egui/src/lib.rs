@@ -266,7 +266,8 @@ impl Default for UiState {
             recent: Vec::new(),
             recent_symbols: Vec::new(),
             recent_colors: Vec::new(),
-            theme: theme::Appearance::default(),
+            // Margin follows the macOS appearance out of the box, like a native Mac app.
+            theme: if crate::skin::on() { theme::Appearance::System } else { theme::Appearance::default() },
             interface_size: theme::InterfaceSize::default(),
             animations: theme::Animations::default(),
             legacy_dark: None,
@@ -3629,7 +3630,11 @@ mod tests {
     #[test]
     fn interface_theme_migrates_and_survives_a_restart() {
         use theme::Appearance;
-        for (saved, want) in [(r#"{"dark": false}"#, Appearance::Light), (r#"{"dark": true}"#, Appearance::Dark), ("{}", Appearance::Light)] {
+        for (saved, want) in [
+            (r#"{"dark": false}"#, Appearance::Light),
+            (r#"{"dark": true}"#, Appearance::Dark),
+            ("{}", if crate::skin::on() { Appearance::System } else { Appearance::Light }),
+        ] {
             let mut a = app();
             a.apply_prefs(serde_json::from_str(saved).unwrap());
             assert_eq!(a.ui.theme, want, "{saved}");

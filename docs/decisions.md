@@ -59,3 +59,9 @@ colour only (text / dim / faint). Document content keeps its own fonts and sizes
 - Accessibility tests upstream (#655 on-accent 4.5:1, #657 input borders 3:1) kept and passing:
   input borders #8A8A8A / #7A7A7A instead of Mac's fainter hairline; dark mode uses a lighter blue
   (#3D9BFF) with near-black text on blue buttons instead of Apple's #0A84FF + white (3.65:1).
+
+## 2026-10-12 — Follow the macOS appearance by default
+
+Upstream defaults to a fixed Light interface; Martijn's Mac is in Dark mode and only the page went
+dark (Switch Modes = dark page, Word semantics). Margin defaults the interface theme to System.
+Switch Modes keeps Word's meaning (page only), like Pages' separate dark-document option.

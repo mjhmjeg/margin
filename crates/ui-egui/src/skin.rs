@@ -164,4 +164,9 @@ mod tests {
         assert_eq!(Tokens::light().accent, ACCENT);
         assert_eq!(Tokens::dark().accent, ACCENT_DARK);
     }
+
+    #[test]
+    fn new_windows_follow_the_mac_appearance() {
+        assert_eq!(crate::UiState::default().theme, crate::theme::Appearance::System);
+    }
 }
