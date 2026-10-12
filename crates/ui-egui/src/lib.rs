@@ -56,6 +56,7 @@ pub mod icons;
 pub mod ink;
 pub mod keys;
 pub mod keytips;
+pub mod mac_ui;
 pub mod mini_toolbar;
 pub mod objects;
 pub mod options;
@@ -160,6 +161,8 @@ pub type Inbox = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct UiState {
+    /// Margin's Mac layout (toolbar, inspector, Classic ribbon, pageless width).
+    pub margin: mac_ui::MarginPrefs,
     pub tab: String,
     pub backstage: bool,
     pub backstage_page: String,
@@ -258,6 +261,7 @@ pub const MAX_DICTIONARY: usize = 10_000;
 impl Default for UiState {
     fn default() -> Self {
         UiState {
+            margin: mac_ui::MarginPrefs::default(),
             tab: "Home".into(),
             backstage: false,
             backstage_page: "home".into(),
@@ -1504,11 +1508,20 @@ impl WordApp {
         if self.ui.backstage {
             backstage::show(self, ui);
         } else {
-            chrome::title_bar(self, ui);
-            ribbon::show(self, ui);
+            let mac = mac_ui::active(self);
+            if mac {
+                mac_ui::toolbar(self, ui);
+            } else {
+                chrome::title_bar(self, ui);
+                ribbon::show(self, ui);
+            }
             chrome::status_bar(self, ui);
+            if mac && self.ui.margin.inspector {
+                mac_ui::inspector(self, ui);
+            }
             panes::show(self, ui);
-            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |ui| {
+            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(mac_ui::canvas_fill(self, t.canvas))).show(ui, |ui| {
+                mac_ui::before_canvas(self, ui.available_width());
                 canvas::show(self, ui);
             });
         }
@@ -1520,6 +1533,7 @@ impl WordApp {
         zotero::show_alert(self, &ctx);
         read_aloud::show(self, &ctx);
         crate::keytips::show(self, &ctx, ui);
+        mac_ui::shortcuts(self, &ctx);
         keys::global_shortcuts(self, &ctx);
         if let Some(url) = self.canvas.open_url.take() {
             ctx.open_url(egui::OpenUrl::new_tab(url));
@@ -1865,8 +1879,12 @@ mod tests {
         assert!(cjk.canvas.ime_faces.is_empty(), "CJK collections are not copied into the fallback list");
     }
 
+    /// Upstream's tests exercise the ribbon layout: run them with Margin's Classic ribbon on
+    /// (`mac_ui` tests the Mac layout).
     fn app() -> WordApp {
-        WordApp::new(Session::new(wordcraft_doc::Document::new()), Services::default())
+        let mut a = WordApp::new(Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.ui.margin.classic_ribbon = true;
+        a
     }
 
     /// File › Options › Advanced › Animation: the caret's animation is a UI command, kept between

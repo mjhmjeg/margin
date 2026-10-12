@@ -65,3 +65,15 @@ colour only (text / dim / faint). Document content keeps its own fonts and sizes
 Upstream defaults to a fixed Light interface; Martijn's Mac is in Dark mode and only the page went
 dark (Switch Modes = dark page, Word semantics). Margin defaults the interface theme to System.
 Switch Modes keeps Word's meaning (page only), like Pages' separate dark-document option.
+
+## 2026-10-12 — Phase 3: Mac layout
+
+- New file `crates/ui-egui/src/mac_ui.rs`; `lib.rs` swaps title bar + ribbon for it when the skin is
+  on and Classic ribbon is off. Prefs live in `UiState.margin` (saved in ui.json).
+- Outline sidebar = upstream's Navigation pane (headings + search), toggled from the toolbar.
+- Pageless = `view.webLayout` at 100 % zoom, column width set via `session.view.web_width`
+  (Narrow 520 pt, Medium 680 pt, Full = window). No engine change.
+- Toolbar lives in the 28 pt traffic-light band: AppKit fixes the lights there and moving them
+  needs `unsafe`, which the workspace forbids.
+- Upstream tests run with Classic ribbon on (they test the ribbon layout); Mac layout has its own
+  tests in `mac_ui.rs`.
