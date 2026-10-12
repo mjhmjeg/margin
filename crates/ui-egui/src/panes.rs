@@ -200,16 +200,24 @@ fn nav(app: &mut WordApp, ui: &mut Ui) {
 
 /// Constrain each heading to the available pane width so long document text cannot
 /// enlarge the panel. The full heading stays accessible on hover.
+/// One heading row: left-aligned, indented by level, truncated with an ellipsis (a full-width
+/// `Button` would centre its text).
 fn nav_heading(ui: &mut Ui, level: u8, text: &str, selected: bool) -> egui::Response {
-    ui.horizontal(|ui| {
-        ui.add_space(level as f32 * 14.0);
-        ui.add_sized(
-            vec2(ui.available_width(), ui.spacing().interact_size.y),
-            egui::Button::selectable(selected, egui::RichText::new(text).font(if level == 0 { semibold(12.5) } else { regular(12.5) })).truncate(),
-        )
-        .on_hover_text(text)
-    })
-    .inner
+    let t = Tokens::get(ui.ctx());
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ui.spacing().interact_size.y + 2.0), egui::Sense::click());
+    if selected {
+        ui.painter().rect_filled(r, 4.0, t.checked);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(r, 4.0, t.hover);
+    }
+    let font = if level == 0 { semibold(12.5) } else { regular(12.5) };
+    let left = r.min.x + 6.0 + level as f32 * 14.0;
+    let mut job = egui::text::LayoutJob::simple_singleline(text.to_string(), font, t.text);
+    job.wrap = egui::text::TextWrapping::truncate_at_width((r.max.x - left - 4.0).max(0.0));
+    let galley = ui.painter().layout_job(job);
+    ui.painter().galley(egui::pos2(left, r.center().y - galley.size().y / 2.0), galley, t.text);
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, text));
+    resp.on_hover_text(text)
 }
 
 /// Items collected by Copy and Cut, newest first; clicking one pastes it at the caret.

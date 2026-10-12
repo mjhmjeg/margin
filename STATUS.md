@@ -27,10 +27,9 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - Product name: "Margin" chosen 2026-10-12. Near-clash: an early Mac markdown notes app "Margin" (peerlist) and iPad tracker "The Margin". No formal trademark search done.
 
 ## Known bugs
-- Start screen (File › Home) is still WordCraft's layout, only recoloured (Apple blue, no Discord). A Pages-style template chooser is a later item.
+- Start screen: light Mac sidebar now; the page content (greeting, template row, Recent) is still WordCraft's layout.
 - Margin shares the settings folder (~/Library/Application Support/WordCraft) with an installed WordCraft.
 - Upstream warning: contributors/people.toml TOML parse error at line 71 (theirs).
-- Pageless: faint page-shadow lines left and right of the column (canvas draws the page edge).
 - Toolbar sits in the 28 pt traffic-light band (AppKit fixes the lights; moving them needs unsafe code, forbidden upstream) — slimmer than the 52 pt mockup.
 - Pageless and the inspector settings are app-wide, not saved per document.
 - 2026-10-12 Incident (twice): app binary not rebuilt after code changes, Martijn saw the old app. Fix: always launch via scripts/margin-run.sh (rebuilds, refuses stale binary); verify the live window via the control channel before reporting.

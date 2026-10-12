@@ -23,6 +23,11 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `docs/mac/phase3/2-document.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Margin design record (before/after, phase screenshots) |
 | `docs/mac/phase3/3-pageless.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Margin design record (before/after, phase screenshots) |
 | `docs/mac/hero.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Margin README hero image |
+| `docs/mac/phase5/1-text.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Margin design record (before/after, phase screenshots) |
+| `docs/mac/phase5/2-document.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Margin design record (before/after, phase screenshots) |
+| `docs/mac/phase5/3-pageless.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Margin design record (before/after, phase screenshots) |
+| `docs/mac/phase5/home.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Margin design record (before/after, phase screenshots) |
+| `docs/mac/phase5/pageless-outline.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Margin design record (before/after, phase screenshots) |
 | `assets/app-icon/margin.svg` | Margin fork contributors | original artwork drawn in SVG (`assets/app-icon/margin.svg`), rendered by `packaging/macos/margin-icon.sh` | MIT OR Apache-2.0 | Margin app icon (macOS fork) |
 | `assets/app-icon/margin-1024.png` | Margin fork contributors | original artwork drawn in SVG (`assets/app-icon/margin.svg`), rendered by `packaging/macos/margin-icon.sh` | MIT OR Apache-2.0 | Margin app icon (macOS fork) |
 | `assets/app-icon/margin-macos-512.png` | Margin fork contributors | original artwork drawn in SVG (`assets/app-icon/margin.svg`), rendered by `packaging/macos/margin-icon.sh` | MIT OR Apache-2.0 | Margin app icon (macOS fork) |

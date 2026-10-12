@@ -21,11 +21,19 @@ const PAGES: [(&str, &str); 9] = [
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let mac = app.integrated_titlebar;
+    // Margin: a light Mac sidebar (like Finder or Pages) instead of Word's full-colour band.
+    let skin = crate::skin::on();
+    let (nav_fill, ink, sel, hov) = if skin {
+        (t.panel, t.text, t.pressed, t.hover)
+    } else {
+        (APP_COLOR, egui::Color32::WHITE, egui::Color32::from_white_alpha(46), egui::Color32::from_white_alpha(26))
+    };
+    let pill = |r: Rect| if skin { (r.shrink2(vec2(10.0, 2.0)), 6.0) } else { (r, 0.0) };
     egui::Panel::left("backstage_nav")
         .exact_size(200.0)
         // Fixed width, as in Word: without this egui shows a resize handle that does nothing (#502).
         .resizable(false)
-        .frame(egui::Frame::NONE.fill(if crate::skin::on() { crate::skin::ACCENT } else { APP_COLOR }).inner_margin(egui::Margin {
+        .frame(egui::Frame::NONE.fill(nav_fill).stroke(if skin { Stroke::new(1.0, t.border) } else { Stroke::NONE }).inner_margin(egui::Margin {
             left: 0,
             right: 0,
             top: if mac { 0 } else { 12 },
@@ -43,17 +51,11 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 // The chevron's stroke starts at the content edge.
                 let c = pos2(band.min.x + crate::chrome::MAC_CONTENT_LEFT + 3.0, band.center().y);
                 let resp = ui.interact(Rect::from_center_size(c, vec2(22.0, band.height())), ui.id().with("backstage_back"), Sense::click());
-                icons::paint(ui.painter(), Rect::from_center_size(c, vec2(18.0, 18.0)), "chevronLeft", egui::Color32::WHITE, egui::Color32::WHITE);
+                icons::paint(ui.painter(), Rect::from_center_size(c, vec2(18.0, 18.0)), "chevronLeft", ink, ink);
                 resp
             } else {
                 let (r, resp) = ui.allocate_exact_size(vec2(200.0, 40.0), Sense::click());
-                icons::paint(
-                    ui.painter(),
-                    Rect::from_center_size(pos2(r.min.x + 26.0, r.center().y), vec2(18.0, 18.0)),
-                    "chevronLeft",
-                    egui::Color32::WHITE,
-                    egui::Color32::WHITE,
-                );
+                icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 26.0, r.center().y), vec2(18.0, 18.0)), "chevronLeft", ink, ink);
                 resp
             };
             // Escape in the built-in file browser closes only the browser.
@@ -67,16 +69,18 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), tl!(label)));
                 let active = app.ui.backstage_page == id;
                 if active {
-                    ui.painter().rect_filled(r, 0.0, egui::Color32::from_white_alpha(46));
+                    let (pr, rad) = pill(r);
+                    ui.painter().rect_filled(pr, rad, sel);
                 } else if resp.hovered() {
-                    ui.painter().rect_filled(r, 0.0, egui::Color32::from_white_alpha(26));
+                    let (pr, rad) = pill(r);
+                    ui.painter().rect_filled(pr, rad, hov);
                 }
                 ui.painter().text(
                     pos2(r.min.x + 22.0, r.center().y),
                     Align2::LEFT_CENTER,
                     tl!(label),
                     if active { semibold(14.0) } else { medium(14.0) },
-                    egui::Color32::WHITE,
+                    ink,
                 );
                 if resp.clicked() {
                     match id {
@@ -110,9 +114,10 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     let (r, resp) = ui.allocate_exact_size(vec2(200.0, 32.0), Sense::click());
                     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), tl!(label)));
                     if resp.hovered() {
-                        ui.painter().rect_filled(r, 0.0, egui::Color32::from_white_alpha(26));
+                        let (pr, rad) = pill(r);
+                        ui.painter().rect_filled(pr, rad, hov);
                     }
-                    ui.painter().text(pos2(r.min.x + 22.0, r.center().y), Align2::LEFT_CENTER, tl!(label), regular(13.0), egui::Color32::WHITE);
+                    ui.painter().text(pos2(r.min.x + 22.0, r.center().y), Align2::LEFT_CENTER, tl!(label), regular(13.0), ink);
                     if resp.clicked() {
                         if id == "discord" {
                             let _ = app.run("ui.discord", json!({}));
