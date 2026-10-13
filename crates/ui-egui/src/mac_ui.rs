@@ -105,7 +105,7 @@ pub fn toolbar(app: &mut WordApp, ui: &mut Ui) {
             ui.spacing_mut().item_spacing = vec2(4.0, 0.0);
 
             let nav = app.session.view.nav_pane;
-            if tool(ui, app, "navPane", "Show outline", nav).clicked() {
+            if tool(ui, app, "sidebarLeft", "Show outline", nav).clicked() {
                 run_from_ribbon(app, "view.navigationPane", json!({}));
             }
             ui.add_space(8.0);
@@ -252,7 +252,7 @@ fn zoom_menu(ui: &mut Ui, app: &mut WordApp) {
     ui.painter().galley(pos2(r.min.x + 10.0, r.center().y - galley.size().y / 2.0), galley.clone(), t.text);
     crate::icons::paint(
         ui.painter(),
-        Rect::from_center_size(pos2(r.max.x - 14.0, r.center().y), vec2(13.0, 13.0)),
+        Rect::from_center_size(pos2(r.max.x - 14.0, r.center().y), vec2(14.0, 14.0)),
         "chevronDown",
         t.text_dim,
         t.text_dim,
@@ -549,7 +549,7 @@ fn outline_row(ui: &mut Ui, level: u8, text: &str, current: bool, chevron: Optio
     let x = r.min.x + 8.0 + 14.0 * f32::from(level);
     if let Some(collapsed) = chevron {
         let icon = if collapsed { "chevronRight" } else { "chevronDown" };
-        crate::icons::paint(ui.painter(), Rect::from_center_size(pos2(x + 6.0, r.center().y), vec2(13.0, 13.0)), icon, t.text_dim, t.text_dim);
+        crate::icons::paint(ui.painter(), Rect::from_center_size(pos2(x + 6.0, r.center().y), vec2(14.0, 14.0)), icon, t.text_dim, t.text_dim);
     }
     let tx = x + 18.0;
     let mut job = egui::text::LayoutJob::simple_singleline(text.to_string(), font(), t.text);

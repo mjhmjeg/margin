@@ -1,6 +1,9 @@
 //! WordCraft's icon set, drawn in code (original artwork; no external icon assets).
 //!
 //! Icons are designed on a 20×20 grid in two colours: line work (`c`) and an accent (`a`).
+//!
+//! The Margin handoff set (HANDOFF §11) lives in [`handoff`]: one colour, 24 grid, stroke 1.5,
+//! round caps and joins. Names that exist in both sets draw the handoff shape.
 
 use egui::{Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, pos2, vec2};
 
@@ -73,6 +76,10 @@ impl Pen<'_> {
 
 /// Paint icon `name` into `r`. `c` is the line colour; the accent comes from the theme.
 pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
+    if let Some(items) = handoff::shapes(name) {
+        handoff::paint(p, r, items, c);
+        return;
+    }
     let pen = Pen { p, r, c, a: accent, w: 1.25 };
     let a = accent;
     let red = Color32::from_rgb(0xD1, 0x3B, 0x3B);
@@ -1497,6 +1504,485 @@ pub fn library(p: &Painter, r: Rect, icon: &wordcraft_render::icon_lib::Icon, c:
                 p.circle_filled(*end, stroke.width / 2.0, c);
             }
             p.add(Shape::line(pts, stroke));
+        }
+    }
+}
+
+/// The Margin icon set from the design handoff (`docs/design-handoff/claude-design/icons`):
+/// 24 × 24 grid, stroke 1.5, round caps and joins, one colour. The geometry below is the SVG
+/// data verbatim (a test compares it with the SVG files); a small SVG path interpreter turns it
+/// into egui shapes.
+mod handoff {
+    use egui::{Color32, Painter, Pos2, Rect, Shape, Stroke, pos2, vec2};
+
+    const GRID: f32 = 24.0;
+    const STROKE: f32 = 1.5;
+
+    #[derive(Clone, Copy)]
+    pub(super) enum Item {
+        /// `<path d>` stroked.
+        Path(&'static str),
+        /// `<path d stroke-dasharray="dash gap">`.
+        Dashed(&'static str, f32, f32),
+        /// `<rect x y width height rx>` stroked.
+        Rect(f32, f32, f32, f32, f32),
+        /// `<circle cx cy r>` stroked.
+        Circle(f32, f32, f32),
+        /// `<circle cx cy r>` filled.
+        Dot(f32, f32, f32),
+    }
+    use Item::{Circle, Dashed, Dot, Path, Rect as R};
+
+    /// Handoff icon for a name call sites use (camelCase, as in the rest of this file, plus the
+    /// handoff's own names), or `None` when the name belongs to the older set.
+    pub(super) fn shapes(name: &str) -> Option<&'static [Item]> {
+        Some(match name {
+            "accept" => &[Path("M5 12.5l4.5 4.5L19 7.5")],
+            "alignCenter" => &[Path("M4 6h16M7 10h10M4 14h16M7 18h10")],
+            "justify" => &[Path("M4 6h16M4 10h16M4 14h16M4 18h16")],
+            "alignLeft" => &[Path("M4 6h16M4 10h10M4 14h16M4 18h10")],
+            "alignRight" => &[Path("M4 6h16M10 10h10M4 14h16M10 18h10")],
+            "assistant" => &[Path("M8 4.5v15"), R(8.0, 4.5, 9.5, 5.0, 1.5)],
+            "chevronDown" => &[Path("M7 10l5 5 5-5")],
+            "chevronRight" => &[Path("M10 7l5 5-5 5")],
+            "chevronUp" => &[Path("M7 14l5-5 5 5")],
+            "comment" | "newComment" => &[Path("M4.5 6.5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H11l-4.5 3.5v-3.5a2 2 0 0 1-2-2z")],
+            "share" | "export" => &[Path("M12 15V4M8 8l4-4 4 4"), Path("M5 12.5V18a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 18v-5.5")],
+            "focus" => &[Path(
+                "M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15",
+            )],
+            "picture" | "image" => &[R(3.5, 4.5, 17.0, 15.0, 2.0), Circle(9.0, 9.5, 1.5), Path("M4 17l5-4.5 3.5 3 3-2.5 4.5 4")],
+            "inspector" => &[R(3.5, 4.5, 17.0, 15.0, 2.0), Path("M15 4.5v15")],
+            "link" => &[Path("M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"), Path("M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1")],
+            "lock" => &[R(5.5, 10.5, 13.0, 9.0, 2.0), Path("M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5")],
+            "more" => &[Dot(6.0, 12.0, 1.4), Dot(12.0, 12.0, 1.4), Dot(18.0, 12.0, 1.4)],
+            "newDocument" => &[
+                Path("M13.5 3.5H7a1.5 1.5 0 0 0-1.5 1.5v14A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V8.5z"),
+                Path("M13.5 3.5v5h5"),
+                Path("M12 11.5v5M9.5 14h5"),
+            ],
+            "open" => &[Path("M3.5 7a1.5 1.5 0 0 1 1.5-1.5h4l2 2h8a1.5 1.5 0 0 1 1.5 1.5v8.5a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 17z")],
+            "popup" => &[Path("M8 9l4-4 4 4M8 15l4 4 4-4")],
+            "print" => &[
+                Path("M7 9V4.5h10V9"),
+                Path("M7 16.5H5.5A1.5 1.5 0 0 1 4 15v-4.5A1.5 1.5 0 0 1 5.5 9h13a1.5 1.5 0 0 1 1.5 1.5V15a1.5 1.5 0 0 1-1.5 1.5H17"),
+                R(7.0, 13.5, 10.0, 6.0, 1.0),
+            ],
+            "recent" => &[Circle(12.0, 12.0, 8.5), Path("M12 7.5V12l3 2")],
+            "reject" => &[Path("M7 7l10 10M17 7L7 17")],
+            "resolve" => &[Circle(12.0, 12.0, 8.5), Path("M8.5 12.5l2.5 2.5 4.5-5")],
+            "review" => &[Path("M6.5 3.5h7l4 4v13h-11z"), Path("M9 13.5l2 2 4-4")],
+            "saveAs" => &[Path("M12 4v10M8 10l4 4 4-4M5 19.5h14")],
+            "search" => &[Circle(11.0, 11.0, 6.0), Path("M15.5 15.5L20 20")],
+            "send" => &[Path("M12 19V5M6 11l6-6 6 6")],
+            "settings" => &[Path("M4 7h9M17 7h3M4 17h3M11 17h9"), Circle(15.0, 7.0, 2.0), Circle(9.0, 17.0, 2.0)],
+            "shapes" | "shape" => &[Circle(9.0, 9.0, 5.0), R(10.5, 10.5, 9.0, 9.0, 1.5)],
+            "sidebarLeft" => &[R(3.5, 4.5, 17.0, 15.0, 2.0), Path("M9 4.5v15")],
+            "stop" => &[R(7.0, 7.0, 10.0, 10.0, 2.0)],
+            "table" => &[R(3.5, 4.5, 17.0, 15.0, 2.0), Path("M3.5 9.5h17M3.5 14.5h17M9.5 9.5v10M15 9.5v10")],
+            "trackChanges" => &[Path("M4 20h4L18.5 9.5a2.12 2.12 0 0 0-3-3L5 17v3z"), Path("M13.5 8.5l3 3"), Dashed("M13 20h7", 2.0, 2.5)],
+            "viewGrid" => &[R(4.0, 4.0, 6.5, 6.5, 1.0), R(13.5, 4.0, 6.5, 6.5, 1.0), R(4.0, 13.5, 6.5, 6.5, 1.0), R(13.5, 13.5, 6.5, 6.5, 1.0)],
+            "viewList" => &[Path("M8.5 6.5h11.5M8.5 12h11.5M8.5 17.5h11.5M4 6.5h.5M4 12h.5M4 17.5h.5")],
+            "viewPageless" => &[R(5.5, 3.0, 13.0, 18.0, 1.0), Path("M8.5 8h7M8.5 11.5h7M8.5 15h5")],
+            "viewPages" => &[R(5.5, 3.0, 13.0, 8.5, 1.0), R(5.5, 13.5, 13.0, 8.0, 1.0)],
+            _ => return None,
+        })
+    }
+
+    /// A polyline in grid units; `closed` for `z` and rectangles.
+    struct Poly {
+        pts: Vec<(f32, f32)>,
+        closed: bool,
+    }
+
+    struct Num<'a> {
+        b: &'a [u8],
+        i: usize,
+    }
+
+    impl Num<'_> {
+        fn skip(&mut self) {
+            while self.b.get(self.i).is_some_and(|c| c.is_ascii_whitespace() || *c == b',') {
+                self.i += 1;
+            }
+        }
+        /// The next command letter, if one is next.
+        fn cmd(&mut self) -> Option<u8> {
+            self.skip();
+            let c = *self.b.get(self.i)?;
+            if c.is_ascii_alphabetic() {
+                self.i += 1;
+                Some(c)
+            } else {
+                None
+            }
+        }
+        fn has_num(&mut self) -> bool {
+            self.skip();
+            self.b.get(self.i).is_some_and(|c| c.is_ascii_digit() || matches!(*c, b'-' | b'+' | b'.'))
+        }
+        fn num(&mut self) -> Option<f32> {
+            self.skip();
+            let start = self.i;
+            if matches!(self.b.get(self.i), Some(b'-' | b'+')) {
+                self.i += 1;
+            }
+            let mut dot = false;
+            while let Some(&c) = self.b.get(self.i) {
+                if c.is_ascii_digit() {
+                    self.i += 1;
+                } else if c == b'.' && !dot {
+                    dot = true;
+                    self.i += 1;
+                } else {
+                    break;
+                }
+            }
+            std::str::from_utf8(self.b.get(start..self.i)?).ok()?.parse().ok()
+        }
+    }
+
+    /// SVG elliptical arc from `p0` to `p1` (endpoint form), appended as points (after `p0`).
+    #[allow(clippy::too_many_arguments)]
+    fn arc(out: &mut Vec<(f32, f32)>, p0: (f32, f32), rx: f32, ry: f32, rot_deg: f32, large: bool, sweep: bool, p1: (f32, f32)) {
+        if (p0.0 - p1.0).abs() < 1e-6 && (p0.1 - p1.1).abs() < 1e-6 {
+            return;
+        }
+        let (mut rx, mut ry) = (rx.abs(), ry.abs());
+        if rx < 1e-6 || ry < 1e-6 {
+            out.push(p1);
+            return;
+        }
+        let phi = rot_deg.to_radians();
+        let (sp, cp) = phi.sin_cos();
+        let dx = (p0.0 - p1.0) / 2.0;
+        let dy = (p0.1 - p1.1) / 2.0;
+        let x1 = cp * dx + sp * dy;
+        let y1 = -sp * dx + cp * dy;
+        let lam = (x1 * x1) / (rx * rx) + (y1 * y1) / (ry * ry);
+        if lam > 1.0 {
+            let k = lam.sqrt();
+            rx *= k;
+            ry *= k;
+        }
+        let num = rx * rx * ry * ry - rx * rx * y1 * y1 - ry * ry * x1 * x1;
+        let den = rx * rx * y1 * y1 + ry * ry * x1 * x1;
+        let mut co = if den.abs() < 1e-9 { 0.0 } else { (num / den).max(0.0).sqrt() };
+        if large == sweep {
+            co = -co;
+        }
+        let cxp = co * rx * y1 / ry;
+        let cyp = -co * ry * x1 / rx;
+        let cx = cp * cxp - sp * cyp + (p0.0 + p1.0) / 2.0;
+        let cy = sp * cxp + cp * cyp + (p0.1 + p1.1) / 2.0;
+        let ang = |ux: f32, uy: f32, vx: f32, vy: f32| (ux * vy - uy * vx).atan2(ux * vx + uy * vy);
+        let th1 = ang(1.0, 0.0, (x1 - cxp) / rx, (y1 - cyp) / ry);
+        let mut dth = ang((x1 - cxp) / rx, (y1 - cyp) / ry, (-x1 - cxp) / rx, (-y1 - cyp) / ry);
+        if !sweep && dth > 0.0 {
+            dth -= std::f32::consts::TAU;
+        } else if sweep && dth < 0.0 {
+            dth += std::f32::consts::TAU;
+        }
+        let n = ((dth.abs() / (std::f32::consts::PI / 16.0)).ceil() as usize).max(2);
+        for k in 1..=n {
+            let t = th1 + dth * (k as f32 / n as f32);
+            let (st, ct) = t.sin_cos();
+            out.push((cp * rx * ct - sp * ry * st + cx, sp * rx * ct + cp * ry * st + cy));
+        }
+        if let Some(last) = out.last_mut() {
+            *last = p1;
+        }
+    }
+
+    /// Flatten SVG path data (`M L H V A Z`, absolute and relative) into polylines.
+    fn flatten(d: &str) -> Vec<Poly> {
+        let mut polys: Vec<Poly> = Vec::new();
+        let mut cur = (0.0f32, 0.0f32);
+        let mut start = cur;
+        let mut t = Num { b: d.as_bytes(), i: 0 };
+        let mut cmd = b'M';
+        while t.i < t.b.len() {
+            if let Some(c) = t.cmd() {
+                cmd = c;
+                if matches!(cmd, b'z' | b'Z') {
+                    if let Some(p) = polys.last_mut() {
+                        p.closed = true;
+                    }
+                    cur = start;
+                    continue;
+                }
+            } else if !t.has_num() {
+                break;
+            }
+            let rel = cmd.is_ascii_lowercase();
+            let (ox, oy) = if rel { cur } else { (0.0, 0.0) };
+            match cmd.to_ascii_uppercase() {
+                b'M' | b'L' => {
+                    let (Some(x), Some(y)) = (t.num(), t.num()) else { break };
+                    cur = (ox + x, oy + y);
+                    if cmd.eq_ignore_ascii_case(&b'M') {
+                        start = cur;
+                        polys.push(Poly { pts: vec![cur], closed: false });
+                        cmd = if rel { b'l' } else { b'L' };
+                    } else if let Some(p) = polys.last_mut() {
+                        p.pts.push(cur);
+                    }
+                }
+                b'H' => {
+                    let Some(x) = t.num() else { break };
+                    cur.0 = ox + x;
+                    if let Some(p) = polys.last_mut() {
+                        p.pts.push(cur);
+                    }
+                }
+                b'V' => {
+                    let Some(y) = t.num() else { break };
+                    cur.1 = oy + y;
+                    if let Some(p) = polys.last_mut() {
+                        p.pts.push(cur);
+                    }
+                }
+                b'A' => {
+                    let (Some(rx), Some(ry), Some(rot), Some(la), Some(sw), Some(x), Some(y)) =
+                        (t.num(), t.num(), t.num(), t.num(), t.num(), t.num(), t.num())
+                    else {
+                        break;
+                    };
+                    let end = (ox + x, oy + y);
+                    if let Some(p) = polys.last_mut() {
+                        arc(&mut p.pts, cur, rx, ry, rot, la != 0.0, sw != 0.0, end);
+                    }
+                    cur = end;
+                }
+                _ => break,
+            }
+        }
+        polys
+    }
+
+    fn rounded_rect(x: f32, y: f32, w: f32, h: f32, rx: f32) -> Poly {
+        let r = rx.min(w / 2.0).min(h / 2.0);
+        let mut pts = Vec::new();
+        let corners = [(x + w - r, y + r, -90.0f32), (x + w - r, y + h - r, 0.0), (x + r, y + h - r, 90.0), (x + r, y + r, 180.0)];
+        for (cx, cy, a0) in corners {
+            let n = if r > 0.0 { 6 } else { 0 };
+            if n == 0 {
+                pts.push((cx, cy));
+                continue;
+            }
+            for k in 0..=n {
+                let a = (a0 + 90.0 * k as f32 / n as f32).to_radians();
+                pts.push((cx + r * a.cos(), cy + r * a.sin()));
+            }
+        }
+        if r == 0.0 {
+            pts = vec![(x, y), (x + w, y), (x + w, y + h), (x, y + h)];
+        }
+        Poly { pts, closed: true }
+    }
+
+    /// Cut a polyline into dashes (`on`/`off` in grid units).
+    fn dashes(pts: &[(f32, f32)], on: f32, off: f32) -> Vec<Vec<(f32, f32)>> {
+        let mut out = Vec::new();
+        let mut cur: Vec<(f32, f32)> = Vec::new();
+        let (mut drawing, mut left) = (true, on);
+        if let Some(&first) = pts.first() {
+            cur.push(first);
+        }
+        for w in pts.windows(2) {
+            let ((x0, y0), (x1, y1)) = (w[0], w[1]);
+            let len = ((x1 - x0).powi(2) + (y1 - y0).powi(2)).sqrt();
+            let mut pos = 0.0;
+            while len - pos > left && left > 0.0 {
+                pos += left;
+                let f = pos / len;
+                let q = (x0 + (x1 - x0) * f, y0 + (y1 - y0) * f);
+                if drawing {
+                    cur.push(q);
+                    out.push(std::mem::take(&mut cur));
+                } else {
+                    cur = vec![q];
+                }
+                drawing = !drawing;
+                left = if drawing { on } else { off };
+            }
+            left -= len - pos;
+            if drawing {
+                cur.push((x1, y1));
+            }
+        }
+        if drawing && cur.len() > 1 {
+            out.push(cur);
+        }
+        out
+    }
+
+    pub(super) fn paint(p: &Painter, r: Rect, items: &[Item], c: Color32) {
+        let s = r.width().min(r.height()) / GRID;
+        let o = r.center() - vec2(GRID / 2.0 * s, GRID / 2.0 * s);
+        let at = |q: (f32, f32)| -> Pos2 { pos2(o.x + q.0 * s, o.y + q.1 * s) };
+        let stroke = Stroke::new(STROKE * s, c);
+        let cap = |q: Pos2| {
+            p.circle_filled(q, stroke.width / 2.0, c);
+        };
+        let line = |pts: &[(f32, f32)], closed: bool| {
+            let v: Vec<Pos2> = pts.iter().map(|&q| at(q)).collect();
+            if closed {
+                p.add(Shape::closed_line(v, stroke));
+            } else {
+                // Round caps, as in the SVG.
+                if let Some(&q) = v.first() {
+                    cap(q);
+                }
+                if let Some(&q) = v.last() {
+                    cap(q);
+                }
+                p.add(Shape::line(v, stroke));
+            }
+        };
+        for item in items {
+            match *item {
+                Item::Path(d) => {
+                    for poly in flatten(d) {
+                        line(&poly.pts, poly.closed);
+                    }
+                }
+                Item::Dashed(d, on, off) => {
+                    for poly in flatten(d) {
+                        for seg in dashes(&poly.pts, on, off) {
+                            line(&seg, false);
+                        }
+                    }
+                }
+                Item::Rect(x, y, w, h, rx) => {
+                    let poly = rounded_rect(x, y, w, h, rx);
+                    line(&poly.pts, true);
+                }
+                Item::Circle(cx, cy, rad) => {
+                    p.circle_stroke(at((cx, cy)), rad * s, stroke);
+                }
+                Item::Dot(cx, cy, rad) => {
+                    p.circle_filled(at((cx, cy)), rad * s, c);
+                }
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// Canonical text for one SVG element / one table item.
+        fn canon(item: &Item) -> String {
+            match *item {
+                Item::Path(d) => format!("P {d}"),
+                Item::Dashed(d, a, b) => format!("D {d} {a} {b}"),
+                Item::Rect(x, y, w, h, rx) => format!("R {x} {y} {w} {h} {rx}"),
+                Item::Circle(x, y, r) => format!("C {x} {y} {r}"),
+                Item::Dot(x, y, r) => format!("F {x} {y} {r}"),
+            }
+        }
+
+        fn attr(el: &str, name: &str) -> Option<String> {
+            let key = format!(" {name}=\"");
+            let i = el.find(&key)? + key.len();
+            let j = el[i..].find('"')?;
+            Some(el[i..i + j].to_string())
+        }
+
+        fn svg_items(svg: &str) -> Vec<String> {
+            let filled = svg.contains("fill=\"currentColor\"");
+            let mut out = Vec::new();
+            for el in svg.split('<').skip(2).filter(|e| !e.starts_with('/')) {
+                let f = |n: &str| attr(el, n).and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
+                if el.starts_with("path") {
+                    let d = attr(el, "d").unwrap_or_default();
+                    match attr(el, "stroke-dasharray") {
+                        Some(a) => out.push(format!(
+                            "D {d} {}",
+                            a.split_whitespace().map(|v| v.parse::<f32>().unwrap_or(0.0).to_string()).collect::<Vec<_>>().join(" ")
+                        )),
+                        None => out.push(format!("P {d}")),
+                    }
+                } else if el.starts_with("rect") {
+                    out.push(format!("R {} {} {} {} {}", f("x"), f("y"), f("width"), f("height"), f("rx")));
+                } else if el.starts_with("circle") {
+                    out.push(format!("{} {} {} {}", if filled { "F" } else { "C" }, f("cx"), f("cy"), f("r")));
+                }
+            }
+            out
+        }
+
+        /// (svg file stem, icon name used in code)
+        const NAMES: [(&str, &str); 38] = [
+            ("accept", "accept"),
+            ("align_center", "alignCenter"),
+            ("align_justify", "justify"),
+            ("align_left", "alignLeft"),
+            ("align_right", "alignRight"),
+            ("assistant", "assistant"),
+            ("chevron_down", "chevronDown"),
+            ("chevron_right", "chevronRight"),
+            ("chevron_up", "chevronUp"),
+            ("comment", "comment"),
+            ("export", "export"),
+            ("focus", "focus"),
+            ("image", "image"),
+            ("inspector", "inspector"),
+            ("link", "link"),
+            ("lock", "lock"),
+            ("more", "more"),
+            ("new_document", "newDocument"),
+            ("open", "open"),
+            ("popup", "popup"),
+            ("print", "print"),
+            ("recent", "recent"),
+            ("reject", "reject"),
+            ("resolve", "resolve"),
+            ("review", "review"),
+            ("save_as", "saveAs"),
+            ("search", "search"),
+            ("send", "send"),
+            ("settings", "settings"),
+            ("shape", "shape"),
+            ("sidebar_left", "sidebarLeft"),
+            ("stop", "stop"),
+            ("table", "table"),
+            ("track_changes", "trackChanges"),
+            ("view_grid", "viewGrid"),
+            ("view_list", "viewList"),
+            ("view_pageless", "viewPageless"),
+            ("view_pages", "viewPages"),
+        ];
+
+        #[test]
+        fn geometry_matches_the_handoff_svgs() {
+            let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/design-handoff/claude-design/icons");
+            for (stem, name) in NAMES {
+                let svg = std::fs::read_to_string(dir.join(format!("{stem}.svg"))).unwrap();
+                let want = svg_items(&svg);
+                let got: Vec<String> = shapes(name).unwrap().iter().map(canon).collect();
+                assert_eq!(got, want, "{stem} ({name})");
+            }
+        }
+
+        #[test]
+        fn path_flattening_hits_the_endpoints() {
+            // Quarter arc ends exactly where the data says.
+            let polys = flatten("M4.5 6.5a2 2 0 0 1 2-2h11");
+            assert_eq!(polys.len(), 1);
+            let pts = &polys[0].pts;
+            assert!(pts.contains(&(6.5, 4.5)));
+            assert_eq!(pts.last().copied(), Some((17.5, 4.5)));
+            // Compact numbers: "-" and "." separate values; "z" closes.
+            let v = flatten("M4 6.5h.5M4 12h.5");
+            assert_eq!(v.len(), 2);
+            assert_eq!(v[0].pts, vec![(4.0, 6.5), (4.5, 6.5)]);
+            let z = flatten("M6.5 3.5h7l4 4v13h-11z");
+            assert!(z[0].closed);
+            assert_eq!(z[0].pts.len(), 5);
+            // Dashes: 7 units at 2 on / 2.5 off give 2 dashes (0-2, 4.5-6.5).
+            assert_eq!(dashes(&[(0.0, 0.0), (7.0, 0.0)], 2.0, 2.5).len(), 2);
         }
     }
 }

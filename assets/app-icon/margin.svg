@@ -1,15 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- Margin app icon: a page on a soft grey tile, its text held by one blue margin rule.
-       Original artwork (Margin fork), MIT OR Apache-2.0. Full-bleed 512 tile, rx=112. -->
-  <rect width="512" height="512" rx="112" fill="#F2F2F4"/>
-  <rect x="112" y="72" width="288" height="368" rx="18" fill="#FFFFFF" stroke="#D9D9DE" stroke-width="4"/>
-  <rect x="168" y="120" width="8" height="272" rx="4" fill="#0A64D6"/>
-  <g fill="#C7C7CC">
-    <rect x="200" y="132" width="160" height="14" rx="7"/>
-    <rect x="200" y="172" width="136" height="14" rx="7"/>
-    <rect x="200" y="212" width="152" height="14" rx="7"/>
-    <rect x="200" y="252" width="112" height="14" rx="7"/>
-    <rect x="200" y="292" width="148" height="14" rx="7"/>
-    <rect x="200" y="332" width="96" height="14" rx="7"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="#0A64D6"/>
+  <rect x="248" y="200" width="528" height="640" rx="28" fill="#FFFFFF"/>
+  <line x1="380" y1="236" x2="380" y2="804" stroke="#0A64D6" stroke-width="16"/>
+  <rect x="428" y="300" width="268" height="28" rx="14" fill="#1D1D1F"/>
+  <rect x="428" y="380" width="268" height="20" rx="10" fill="#C9D2DE"/>
+  <rect x="428" y="436" width="236" height="20" rx="10" fill="#C9D2DE"/>
+  <rect x="428" y="492" width="268" height="20" rx="10" fill="#C9D2DE"/>
+  <rect x="428" y="548" width="180" height="20" rx="10" fill="#C9D2DE"/>
 </svg>

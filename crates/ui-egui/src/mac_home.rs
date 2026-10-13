@@ -33,7 +33,7 @@ const MAX_THUMB_BYTES: u64 = 20 << 20;
 
 /// Sidebar entries: page id, label, icon.
 const MAIN: [(&str, &str, &str); 3] = [("new", "New", "newDocument"), ("recent", "Recent", "recent"), ("open", "Open…", "open")];
-const DOC: [(&str, &str, &str); 3] = [("saveAs", "Save As…", "save"), ("print", "Print…", "print"), ("export", "Export…", "share")];
+const DOC: [(&str, &str, &str); 3] = [("saveAs", "Save As…", "saveAs"), ("print", "Print…", "print"), ("export", "Export…", "share")];
 
 /// What the chooser has selected, kept between frames.
 #[derive(Clone, Default)]

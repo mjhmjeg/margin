@@ -221,7 +221,7 @@ fn services(file_dialog: file_dialogs::Hook, ctx: &egui::Context) -> Services {
 /// Window, Dock and taskbar icon.
 fn app_icon() -> Option<egui::IconData> {
     #[cfg(target_os = "macos")]
-    // Margin fork: its own icon (assets/app-icon/margin.svg via packaging/macos/margin-icon.sh).
+    // Margin fork: its own icon (assets/app-icon/margin.svg, from the design handoff, via packaging/macos/margin-icon.sh).
     let png: &[u8] = include_bytes!("../../../assets/app-icon/margin-macos-512.png");
     #[cfg(not(target_os = "macos"))]
     let png: &[u8] = include_bytes!("../../../assets/app-icon/hicolor/256x256/apps/ai.storyteller.wordcraft.png");

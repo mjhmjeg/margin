@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- use at 32 pt and below: text lines dropped, rule thickened -->
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="#0A64D6"/>
+  <rect x="248" y="200" width="528" height="640" rx="28" fill="#FFFFFF"/>
+  <line x1="380" y1="236" x2="380" y2="804" stroke="#0A64D6" stroke-width="48"/>
+  <rect x="440" y="320" width="256" height="56" rx="28" fill="#1D1D1F"/>
+</svg>
