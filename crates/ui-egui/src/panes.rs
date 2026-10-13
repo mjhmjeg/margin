@@ -87,7 +87,10 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 crate::dialogs_review::restrict_pane(app, ui);
             });
     }
-    if app.session.view.comments_pane {
+    if app.session.view.comments_pane && crate::mac_ui::active(app) {
+        // R2–R9: Margin's Review panel replaces the Comments pane (the Classic ribbon keeps its own).
+        crate::review_panel::show(app, ui);
+    } else if app.session.view.comments_pane {
         egui::Panel::right("comments_pane")
             .default_size(290.0)
             .resizable(true)
@@ -715,7 +718,7 @@ fn trim_num(x: f64) -> String {
 }
 
 /// `2026-10-12T04:44:00Z` → `2026-10-12 04:44` (date and time, no seconds) for comment cards.
-fn comment_stamp(iso: &str) -> String {
+pub(crate) fn comment_stamp(iso: &str) -> String {
     iso.chars().take(16).map(|c| if c == 'T' { ' ' } else { c }).collect()
 }
 

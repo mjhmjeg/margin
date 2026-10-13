@@ -514,12 +514,13 @@ pub fn sync_fit_zoom(app: &mut WordApp, scale: f32) {
 }
 
 /// Fingerprint of a page's content for the texture cache.
-fn page_key(app: &WordApp, page: &Page, scale_px: f32, dim_body: bool) -> u64 {
+fn page_key(app: &WordApp, page: &Page, scale_px: f32, dim_body: bool, marks: Option<&wordcraft_layout::display::AuthorMarks>) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     scale_px.to_bits().hash(&mut h);
     let v = &app.session.view;
     (v.marks, app.session.prefs.marks, v.show_markup, v.dark_mode, wordcraft_render::DARK_PAPER, v.hide_ink, v.draw.replay).hash(&mut h);
     app.session.prefs.markup.hash(&mut h);
+    marks.hash(&mut h);
     dim_body.hash(&mut h);
     format!("{:?}{:?}", app.session.doc.settings.page_color, app.session.doc.settings.watermark).hash(&mut h);
     (page.w.to_bits(), page.h.to_bits()).hash(&mut h);
@@ -832,6 +833,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         let mut rendered = 0;
         let t0 = crate::now_ms();
         let mut rects = Vec::with_capacity(geo.rects.len());
+        // The Mac layout marks changes per author (colour, solid / dotted); Classic keeps upstream's marks.
+        let author_marks = crate::mac_ui::active(app).then(|| crate::review_panel::marks(&app.session.doc));
         let content_origin = ui.min_rect().min;
         for (i, pr) in geo.rects.iter().enumerate() {
             let sr = pr.translate(content_origin.to_vec2());
@@ -844,7 +847,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 rects.push(sr);
                 continue;
             }
-            let key = page_key(app, page, scale_px, dim_body);
+            let key = page_key(app, page, scale_px, dim_body, author_marks.as_ref());
             let mut fresh = app.canvas.textures.get(&i).is_some_and(|(k, _)| *k == key);
             // Hide White Space shows only a band of the page; everything below paints into it.
             let band_of = |r: Rect| Rect::from_min_max(pos2(r.min.x - 4.0, r.min.y + band_top), pos2(r.max.x + 4.0, r.min.y + band_bot));
@@ -860,6 +863,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 // Ink Replay draws the ink itself, stroke by stroke, over pages without it.
                 opts.display.hide_ink = app.session.view.hide_ink || app.session.view.draw.replay;
                 opts.display.revisions = app.session.prefs.markup.clone();
+                opts.display.author_marks = author_marks.clone();
                 opts.dark = dark_page;
                 opts.dark_paper = dark_paper;
                 opts.display.dim_header = !dim_body;
@@ -987,6 +991,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         app.canvas.textures.retain(|k, _| *k < n);
         app.canvas.page_rects = rects.clone();
         balloons(app, ui, &painter, &rects, &layout, geo.scale);
+        comment_tags(app, ui, &painter, &rects, &layout, geo.scale);
         // Find › Reading Highlight.
         let marks: Vec<(Pos, Pos)> = app.session.find_highlights().iter().take(5000).cloned().collect();
         for (a, b) in &marks {
@@ -1453,6 +1458,75 @@ fn balloons(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[Re
     if let Some((id, p)) = clicked {
         select_balloon(app, ui.ctx(), id);
         app.session.sel = wordcraft_engine::Selection::caret(p);
+    }
+}
+
+/// R8: a comment's marker in the right page margin of the Mac layout, a 24 × 22 tag with the
+/// author's initial: filled for a person, outlined for the assistant. Shown where there are no
+/// balloons (the Review panel lists the comments); a click opens the panel on that comment.
+fn comment_tags(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[Rect], layout: &DocLayout, scale: f32) {
+    if !crate::mac_ui::active(app) || markup_width(app) > 0.0 || !app.session.prefs.markup.comments {
+        return;
+    }
+    let people = crate::review_panel::authors(&app.session.doc);
+    let clip = ui.clip_rect();
+    // (page, y, id) of each top-level comment, top first.
+    let mut tags: Vec<(usize, f32, u32)> = Vec::new();
+    for (id, pos) in wordcraft_engine::cmd::review::comment_list(&app.session).into_iter().take(500) {
+        let Some(pos) = pos else { continue };
+        let Some(c) = app.session.doc.comments.get(&id) else { continue };
+        if c.parent.is_some_and(|p| app.session.doc.comments.contains_key(&p)) {
+            continue;
+        }
+        let Some(cp) = layout.caret_on(&pos, app.session.page_hint) else { continue };
+        tags.push((cp.page, cp.top + cp.height / 2.0, id));
+    }
+    tags.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
+    let mut last: Option<(usize, f32)> = None;
+    let mut clicked: Option<u32> = None;
+    for (pi, y, id) in tags {
+        let (Some(pr), Some(page)) = (rects.get(pi), layout.pages.get(pi)) else { continue };
+        let ps = page_screen_scale(*pr, page, scale);
+        let mut cy = pr.min.y + y * ps;
+        // Tags of one page don't overlap: a close one moves down.
+        if let Some((lp, ly)) = last
+            && lp == pi
+            && cy < ly + 24.0
+        {
+            cy = ly + 24.0;
+        }
+        last = Some((pi, cy));
+        let x0 = (pr.min.x + (page.body.right() + 12.0) * ps).min(pr.max.x - 28.0);
+        let r = Rect::from_min_size(pos2(x0, cy - 11.0), vec2(24.0, 22.0));
+        if !r.intersects(clip) {
+            continue;
+        }
+        let Some(c) = app.session.doc.comments.get(&id) else { continue };
+        let who = people.iter().find(|a| a.name == c.author.trim() || (c.author.trim().is_empty() && a.name == "Author")).cloned();
+        let who = who.unwrap_or(crate::review_panel::AuthorInfo {
+            name: c.author.clone(),
+            assistant: crate::review_panel::is_assistant(&c.author),
+            person: people.len(),
+        });
+        let color = crate::review_panel::page_color(&who);
+        let fade = if c.resolved { 0.45 } else { 1.0 };
+        let color = color.linear_multiply(fade);
+        let ink = if who.assistant {
+            painter.rect(r, 5.0, Color32::WHITE, Stroke::new(1.5, color), egui::StrokeKind::Inside);
+            color
+        } else {
+            painter.rect_filled(r, 5.0, color);
+            Color32::WHITE
+        };
+        painter.text(r.center(), egui::Align2::CENTER_CENTER, crate::review_panel::initial(&c.author), regular(11.0), ink);
+        let resp = ui.interact(r, ui.id().with(("comment_tag", id)), Sense::click());
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("{}: {}", tl!("Comment"), c.author)));
+        if resp.on_hover_text(crate::review_panel::tag_tip(c)).clicked() {
+            clicked = Some(id);
+        }
+    }
+    if let Some(id) = clicked {
+        crate::review_panel::open_on_comment(app, id);
     }
 }
 

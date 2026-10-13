@@ -4501,3 +4501,39 @@ fn text_after_a_column_break_takes_the_new_column_s_width() {
     assert!(wide_x > 72.0 + 67.0, "the text is in the second column: {lines:?}");
     assert!(wide_lines <= 3, "broken for the 348 pt column, not the 67 pt one: {lines:?}");
 }
+
+/// Author marks (Margin's review marks): each author's colour, a dotted line and bar for the
+/// assistant, the bar 22 pt left of the text, and the comment tint; without marks nothing changes.
+#[test]
+fn author_marks_colour_and_style_revisions_per_author() {
+    use wordcraft_doc::{Revision, RevisionKind, Rgb};
+    let mut d = Document::from_text("Keep NEW");
+    d.revisions.push(Revision::new(RevisionKind::Insert, "Ana", "2026-10-13T10:00:00Z"));
+    d.revisions.push(Revision::new(RevisionKind::Insert, "Claude", "2026-10-13T10:00:00Z"));
+    d.format_range(&Pos::body(0, 5), &Pos::body(0, 8), &|c| c.ins = Some(1)).unwrap();
+    let l = lay(&d);
+    let marks = display::AuthorMarks(vec![
+        display::AuthorMark { author: "Ana".into(), color: Rgb(1, 2, 3), dotted: false, tint: (Rgb(1, 2, 3), 30) },
+        display::AuthorMark { author: "Claude".into(), color: Rgb(9, 8, 7), dotted: true, tint: (Rgb(9, 8, 7), 23) },
+    ]);
+    let draws =
+        |m: Option<display::AuthorMarks>| display::page_display(&d, &l.pages[0], &display::DisplayOptions { author_marks: m, ..Default::default() });
+    let with = draws(Some(marks));
+    let lines: Vec<_> = with
+        .iter()
+        .filter_map(
+            |i| if let display::Draw::Line { x0, x1, width, color, stroke, .. } = i { Some((*x0, *x1, *width, *color, *stroke)) } else { None },
+        )
+        .collect();
+    let bar = lines.iter().find(|(x0, x1, ..)| x0 == x1).expect("a change bar");
+    assert_eq!((bar.2, bar.3, bar.4), (2.0, Rgb(9, 8, 7), display::Stroke::Dotted), "the assistant's bar is dotted, 2 pt, in its colour");
+    assert!((l.pages[0].body.x - bar.0 - display::AUTHOR_BAR_GAP).abs() < 0.01, "the bar is 22 pt left of the text");
+    assert!(
+        lines.iter().any(|(x0, x1, _, c, s)| x0 != x1 && *c == Rgb(9, 8, 7) && *s == display::Stroke::Dotted),
+        "the insertion is underlined dotted"
+    );
+    assert!(with.iter().any(|i| matches!(i, display::Draw::Glyphs { color, .. } if *color == Rgb(9, 8, 7))));
+    // No marks: upstream's thin solid bar at the page edge.
+    let plain = draws(None);
+    assert!(plain.iter().any(|i| matches!(i, display::Draw::Line { x0, x1, width, .. } if x0 == x1 && (*width - 0.75).abs() < 0.01)));
+}

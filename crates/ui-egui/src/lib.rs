@@ -68,6 +68,7 @@ pub mod paste_picture;
 pub mod previews;
 pub mod print_page;
 pub mod read_aloud;
+pub mod review_panel;
 pub mod ribbon;
 pub mod scroll;
 pub mod skin;
@@ -1525,7 +1526,7 @@ impl WordApp {
                 let _legacy_icons = icons::Legacy::enter();
                 chrome::status_bar(self, ui);
             }
-            if mac && self.ui.margin.inspector {
+            if mac && self.ui.margin.inspector && !self.session.view.comments_pane {
                 mac_ui::inspector(self, ui);
             }
             panes::show(self, ui);

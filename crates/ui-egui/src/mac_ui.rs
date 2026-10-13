@@ -70,7 +70,8 @@ pub fn pageless(app: &WordApp) -> bool {
 
 const CM: f32 = 72.0 / 2.54;
 const ROW_H: f32 = mc::ROW_H;
-const INSPECTOR_W: f32 = 272.0;
+/// All right-hand panels are 320 wide (Format, Review, later Assistant).
+const INSPECTOR_W: f32 = crate::review_panel::PANEL_W;
 
 fn font() -> egui::FontId {
     regular(crate::skin::UI_SIZE)
@@ -128,7 +129,7 @@ pub fn toolbar(app: &mut WordApp, ui: &mut Ui) {
                         app.ui.margin.inspector = false;
                     }
                 }
-                let format_open = app.ui.margin.inspector;
+                let format_open = app.ui.margin.inspector && !app.session.view.comments_pane;
                 if panel_toggle(ui, "inspector", tl!("Format"), format_open, 0).on_hover_text(tl!("Show or hide the Format inspector")).clicked() {
                     app.ui.margin.inspector = !format_open;
                     if !format_open {
@@ -306,6 +307,17 @@ pub fn shortcuts(app: &mut WordApp, ctx: &egui::Context) {
 // ---------------------------------------------------------------------------------------------
 // Status bar (E14)
 
+/// R9: the review status, "Tracking changes" after a 7 pt `accent` dot.
+fn tracking_status(ui: &mut Ui, t: &Tokens) -> Response {
+    let label = tl!("Tracking changes");
+    let g = ui.painter().layout_no_wrap(label.to_string(), font(), t.text);
+    let (r, resp) = ui.allocate_exact_size(vec2(7.0 + 6.0 + g.size().x, 20.0), Sense::click());
+    ui.painter().circle_filled(pos2(r.min.x + 3.5, r.center().y), 3.5, t.accent);
+    ui.painter().galley(pos2(r.min.x + 13.0, r.center().y - g.size().y / 2.0), g, t.text);
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, true, label));
+    resp.on_hover_text(tl!("Click to stop tracking changes"))
+}
+
 /// The 28 pt status bar: `Page 1 of 2 · 357 words · English (United States)`, then notices; on the
 /// right the Pages / Pageless switch and Focus. No zoom slider (zoom lives in the toolbar).
 pub fn status_bar(app: &mut WordApp, ui: &mut Ui) {
@@ -354,14 +366,16 @@ pub fn status_bar(app: &mut WordApp, ui: &mut Ui) {
                     ui.set_min_width(200.0);
                     crate::ribbon::language_menu(ui, app);
                 });
-                // Notices (R9's review status arrives with the Review panel, phase 7).
                 if app.session.sel.focus.story != wordcraft_doc::StoryRef::Body && !crate::canvas::in_text_box(app) {
                     dot(ui);
                     item(ui, tl!("Editing header/footer"));
                 }
+                // R9: "Tracking changes" with a 7 pt accent dot; a click toggles.
                 if app.session.doc.settings.track_changes {
                     dot(ui);
-                    item(ui, tl!("Track Changes: On"));
+                    if tracking_status(ui, &t).clicked() {
+                        run_from_ribbon(app, "review.trackChanges", json!({}));
+                    }
                 }
                 if app.session.prefs.overtype {
                     dot(ui);
@@ -1037,7 +1051,9 @@ mod tests {
             h.step();
         }
         assert!(pageless(h.state()));
-        assert!((h.state().session.view.web_width - 720.0).abs() < 1.0, "Medium is 720 pt");
+        // Medium is 720 pt, or what fits: with the 320 pt panel a 1440 pt window leaves 712.
+        let w = h.state().session.view.web_width;
+        assert!((700.0..=720.5).contains(&w), "Medium is {w} pt");
         h.state_mut().ui.margin.text_width = TextWidth::Narrow;
         h.step();
         h.step();
