@@ -375,6 +375,61 @@ fn build_items(app: &mut WordApp) -> Vec<Item> {
     items
 }
 
+/// Review shows an assistant edit made of several word-level pieces as one row (what the edit
+/// replaced → what it put there), accepted and rejected together. The pieces are found the way
+/// the Assistant panel finds them; after a restart (the panel's log is per session) they show
+/// one row each.
+fn group_assistant_edits(app: &WordApp, items: Vec<Item>) -> Vec<Item> {
+    let groups = crate::assistant_panel::pending_groups(app);
+    if groups.is_empty() {
+        return items;
+    }
+    let mut items = items;
+    for (author, parts, deleted, inserted) in groups {
+        // This author's change rows, in document order, with their place in `items`.
+        let idx: Vec<usize> =
+            items.iter().enumerate().filter(|(_, it)| matches!(it, Item::Change(c) if c.author == author)).map(|(i, _)| i).collect();
+        let list: Vec<(String, String, Pos, Pos)> = idx
+            .iter()
+            .filter_map(|i| match items.get(*i) {
+                Some(Item::Change(c)) => Some((c.deleted.clone(), c.inserted.clone(), c.a.clone(), c.b.clone())),
+                _ => None,
+            })
+            .collect();
+        let Some((i, j)) = crate::assistant_panel::find_group(&list, &parts) else { continue };
+        let (Some(&first), Some(&last)) = (idx.get(i), idx.get(j)) else { continue };
+        let end = match items.get(last) {
+            Some(Item::Change(c)) => c.b.clone(),
+            _ => continue,
+        };
+        if let Some(Item::Change(c)) = items.get_mut(first) {
+            c.deleted = deleted;
+            c.inserted = inserted;
+            c.b = end;
+        }
+        // Drop the other pieces (from the back, so indices stay valid).
+        for k in idx.get(i + 1..=j).unwrap_or_default().iter().rev() {
+            if *k < items.len() {
+                items.remove(*k);
+            }
+        }
+    }
+    items
+}
+
+/// The change rows Review shows, as (deleted, inserted).
+#[cfg(test)]
+pub(crate) fn shown_change_rows(app: &mut WordApp) -> Vec<(String, String)> {
+    let items = build_items(app);
+    group_assistant_edits(app, items)
+        .into_iter()
+        .filter_map(|it| match it {
+            Item::Change(c) => Some((c.deleted, c.inserted)),
+            Item::Comment(_) => None,
+        })
+        .collect()
+}
+
 /// The items, recounted when the document changes.
 fn items(app: &mut WordApp, ctx: &egui::Context) -> Arc<Vec<Item>> {
     let rev = app.session.rev();
@@ -384,7 +439,8 @@ fn items(app: &mut WordApp, ctx: &egui::Context) -> Arc<Vec<Item>> {
     {
         return v;
     }
-    let v = Arc::new(build_items(app));
+    let built = build_items(app);
+    let v = Arc::new(group_assistant_edits(app, built));
     ctx.data_mut(|d| d.insert_temp(id, (rev, v.clone())));
     v
 }

@@ -19,6 +19,11 @@
 //!   runs as its own command through [`Session::run_as_assistant`] (the same choke point and deny
 //!   list as outside assistants), so it becomes a separate tracked change or comment under the
 //!   assistant's name. [`apply`] can run only [`ALLOWED`] commands.
+//! * **Word level.** A `replace` is diffed word by word in Margin ([`word_diff`], independent of
+//!   the model): each changed run becomes its own tracked deletion / insertion and the words kept
+//!   are not touched, so accepted text credits the assistant only with what it wrote. Sharing
+//!   under 30 % of the words, it stays one replacement. [`Applied::parts`] lists the pieces; the
+//!   panel and Review show and resolve them as one row.
 
 use std::hash::{BuildHasher, Hasher};
 
@@ -791,6 +796,186 @@ pub fn partial_report(buf: &str) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Word-level replacements
+
+/// One changed run of a replacement: bytes `start..end` of the old text become `with`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DiffRun {
+    pub start: usize,
+    pub end: usize,
+    pub with: String,
+}
+
+/// Most tokens a side may have for a word-level diff (longer replacements stay whole).
+const MAX_DIFF_TOKENS: usize = 1_500;
+/// Below this share of the words kept, a replacement stays one piece (no confetti).
+const MIN_SHARED: f32 = 0.3;
+
+/// `s` as tokens (byte ranges): runs of letters and digits (with an apostrophe inside a word,
+/// as in "isn't"), runs of whitespace, and every other character on its own.
+fn tokens(s: &str) -> Vec<(usize, usize)> {
+    #[derive(PartialEq, Clone, Copy)]
+    enum K {
+        Word,
+        Space,
+        Other,
+    }
+    let kind = |c: char| {
+        if c.is_alphanumeric() || c == '_' {
+            K::Word
+        } else if c.is_whitespace() {
+            K::Space
+        } else {
+            K::Other
+        }
+    };
+    let chars: Vec<(usize, char)> = s.char_indices().collect();
+    let mut out: Vec<(usize, usize)> = Vec::new();
+    let mut i = 0;
+    while let Some(&(start, c)) = chars.get(i) {
+        let k = kind(c);
+        let mut j = i + 1;
+        if k != K::Other {
+            while let Some(&(_, d)) = chars.get(j) {
+                let same = kind(d) == k;
+                // An apostrophe between two letters stays inside the word.
+                let apostrophe = k == K::Word
+                    && matches!(d, '\'' | '’')
+                    && chars.get(j + 1).is_some_and(|(_, n)| n.is_alphanumeric())
+                    && chars.get(j.wrapping_sub(1)).is_some_and(|(_, p)| p.is_alphanumeric());
+                if same || apostrophe {
+                    j += 1;
+                } else {
+                    break;
+                }
+            }
+        }
+        let end = chars.get(j).map_or(s.len(), |(b, _)| *b);
+        out.push((start, end));
+        i = j;
+    }
+    out
+}
+
+/// The changed runs that turn `old` into `new`, word by word, in order. One run covering all of
+/// `old` when they share too little (or are too long to compare). Unchanged words are never part
+/// of a run; whitespace alone between two changes joins them.
+pub fn word_diff(old: &str, new: &str) -> Vec<DiffRun> {
+    let whole = vec![DiffRun { start: 0, end: old.len(), with: new.to_string() }];
+    if old == new {
+        return Vec::new();
+    }
+    let a = tokens(old);
+    let b = tokens(new);
+    if a.len() > MAX_DIFF_TOKENS || b.len() > MAX_DIFF_TOKENS || a.is_empty() || b.is_empty() {
+        return whole;
+    }
+    let ta: Vec<&str> = a.iter().map(|&(s, e)| old.get(s..e).unwrap_or_default()).collect();
+    let tb: Vec<&str> = b.iter().map(|&(s, e)| new.get(s..e).unwrap_or_default()).collect();
+    // LCS table, from the end: lcs[i][j] for ta[i..], tb[j..].
+    let (n, m) = (ta.len(), tb.len());
+    let w = m + 1;
+    let mut lcs = vec![0u16; (n + 1) * w];
+    for i in (0..n).rev() {
+        for j in (0..m).rev() {
+            let v = if ta.get(i) == tb.get(j) {
+                lcs.get((i + 1) * w + j + 1).copied().unwrap_or(0).saturating_add(1)
+            } else {
+                lcs.get((i + 1) * w + j).copied().unwrap_or(0).max(lcs.get(i * w + j + 1).copied().unwrap_or(0))
+            };
+            if let Some(x) = lcs.get_mut(i * w + j) {
+                *x = v;
+            }
+        }
+    }
+    // Walk it: kept token pairs.
+    let at = |i: usize, j: usize| lcs.get(i * w + j).copied().unwrap_or(0);
+    let mut kept: Vec<(usize, usize)> = Vec::new();
+    let (mut i, mut j) = (0, 0);
+    while i < n && j < m {
+        if ta.get(i) == tb.get(j) {
+            kept.push((i, j));
+            i += 1;
+            j += 1;
+        } else {
+            let (skip_old, skip_new) = (at(i + 1, j), at(i, j + 1));
+            // On a tie, keep whitespace on the old side to pair with the new side's.
+            let old_space = ta.get(i).is_some_and(|x| x.trim().is_empty());
+            if skip_old > skip_new || (skip_old == skip_new && !old_space) {
+                i += 1;
+            } else {
+                j += 1;
+            }
+        }
+    }
+    // Too little in common: one replacement. Whitespace doesn't count as shared.
+    let words = |t: &[&str]| t.iter().filter(|x| !x.trim().is_empty()).count();
+    let shared = kept.iter().filter(|(i, _)| ta.get(*i).is_some_and(|x| !x.trim().is_empty())).count();
+    let most = words(&ta).max(words(&tb)).max(1);
+    if (shared as f32) / (most as f32) < MIN_SHARED {
+        return whole;
+    }
+    // Gaps between kept pairs are the changes (old token range, new token range).
+    let mut gaps: Vec<((usize, usize), (usize, usize))> = Vec::new();
+    let (mut pi, mut pj) = (0, 0);
+    for &(ki, kj) in kept.iter().chain(std::iter::once(&(n, m))) {
+        if ki > pi || kj > pj {
+            gaps.push(((pi, ki), (pj, kj)));
+        }
+        pi = ki + 1;
+        pj = kj + 1;
+    }
+    // Join two word changes separated only by one kept space ("the big red" → "a small blue" is
+    // one run, not three); a punctuation change stays apart from the words next to it.
+    let has_word = |t: &[&str], r: (usize, usize)| (r.0..r.1).any(|k| t.get(k).is_some_and(|x| x.chars().any(char::is_alphanumeric)));
+    let mut joined: Vec<((usize, usize), (usize, usize))> = Vec::new();
+    for g in gaps {
+        let wordy = |x: &((usize, usize), (usize, usize))| has_word(&ta, x.0) || has_word(&tb, x.1);
+        if let Some(last) = joined.last_mut()
+            && wordy(last)
+            && wordy(&g)
+        {
+            let between_old = (last.0.1..g.0.0).all(|k| ta.get(k).is_some_and(|x| x.trim().is_empty()));
+            let between_new = (last.1.1..g.1.0).all(|k| tb.get(k).is_some_and(|x| x.trim().is_empty()));
+            if between_old && between_new && g.0.0 - last.0.1 <= 1 && g.1.0 - last.1.1 <= 1 {
+                last.0.1 = g.0.1;
+                last.1.1 = g.1.1;
+                continue;
+            }
+        }
+        joined.push(g);
+    }
+    let byte_a = |k: usize| a.get(k).map_or(old.len(), |t| t.0);
+    let byte_b = |k: usize| b.get(k).map_or(new.len(), |t| t.0);
+    joined
+        .into_iter()
+        .filter_map(|((i0, i1), (j0, j1))| {
+            let (mut s0, mut s1) = (byte_a(i0), byte_a(i1));
+            let mut w = new.get(byte_b(j0)..byte_b(j1)).unwrap_or_default();
+            let mut o = old.get(s0..s1).unwrap_or_default();
+            // What both sides start or end with (a space, usually) stays out of the change.
+            while let (Some(x), Some(y)) = (o.chars().next(), w.chars().next()) {
+                if x != y || !x.is_whitespace() {
+                    break;
+                }
+                s0 += x.len_utf8();
+                o = o.get(x.len_utf8()..).unwrap_or_default();
+                w = w.get(y.len_utf8()..).unwrap_or_default();
+            }
+            while let (Some(x), Some(y)) = (o.chars().next_back(), w.chars().next_back()) {
+                if x != y || !x.is_whitespace() {
+                    break;
+                }
+                s1 -= x.len_utf8();
+                o = o.get(..o.len() - x.len_utf8()).unwrap_or_default();
+                w = w.get(..w.len() - y.len_utf8()).unwrap_or_default();
+            }
+            (s1 > s0 || !w.is_empty()).then(|| DiffRun { start: s0, end: s1, with: w.to_string() })
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------------------------
 // Applying
 
 /// Where a quote sits: paragraph and raw byte range.
@@ -844,6 +1029,10 @@ pub struct Applied {
     pub note: String,
     /// The comment it created.
     pub comment: Option<u32>,
+    /// The tracked changes it was made of, in document order: (deleted, inserted) per changed
+    /// run. A word-level replacement has several; an insertion one; a comment none. The panel and
+    /// Review find the edit on the page by them and accept or reject them together.
+    pub parts: Vec<(String, String)>,
 }
 
 /// What [`apply`] did.
@@ -923,13 +1112,27 @@ pub fn apply(s: &mut Session, name: &str, scope: &ScopeText, edits: &[Edit]) -> 
         let r = (|| -> Result<Applied, String> {
             match e.kind {
                 EditKind::Replace => {
-                    run_allowed(s, name, "select.range", &json!({"anchor": a, "focus": b}))?;
-                    run_allowed(s, name, "text.delete", &json!({}))?;
-                    if !e.with.is_empty() {
-                        // The deletion stays in the text (tracked); type after it.
-                        run_allowed(s, name, "select.range", &json!({"anchor": b, "focus": b}))?;
-                        run_allowed(s, name, "text.insert", &json!({"text": e.with, "raw": true}))?;
+                    // Word by word: only the runs that change become tracked changes; the words
+                    // kept are left alone (not deleted and typed again), so they stay the
+                    // person's. Last run first, so earlier offsets stay valid.
+                    let runs = word_diff(&quote, &e.with);
+                    if runs.is_empty() {
+                        return Err("it would change nothing".into());
                     }
+                    for r in runs.iter().rev() {
+                        let ra = pos(&f.path, f.start + r.start);
+                        let rb = pos(&f.path, f.start + r.end);
+                        if r.end > r.start {
+                            run_allowed(s, name, "select.range", &json!({"anchor": ra, "focus": rb}))?;
+                            run_allowed(s, name, "text.delete", &json!({}))?;
+                        }
+                        if !r.with.is_empty() {
+                            // A deletion stays in the text (tracked); type after it.
+                            run_allowed(s, name, "select.range", &json!({"anchor": rb, "focus": rb}))?;
+                            run_allowed(s, name, "text.insert", &json!({"text": r.with, "raw": true}))?;
+                        }
+                    }
+                    let parts = runs.iter().map(|r| (quote.get(r.start..r.end).unwrap_or_default().to_string(), r.with.clone())).collect();
                     Ok(Applied {
                         kind: e.kind,
                         deleted: quote.clone(),
@@ -937,6 +1140,7 @@ pub fn apply(s: &mut Session, name: &str, scope: &ScopeText, edits: &[Edit]) -> 
                         quote: quote.clone(),
                         note: e.note.clone(),
                         comment: None,
+                        parts,
                     })
                 }
                 EditKind::Insert => {
@@ -949,6 +1153,7 @@ pub fn apply(s: &mut Session, name: &str, scope: &ScopeText, edits: &[Edit]) -> 
                         quote: quote.clone(),
                         note: e.note.clone(),
                         comment: None,
+                        parts: vec![(String::new(), e.with.clone())],
                     })
                 }
                 EditKind::Comment => {
@@ -956,7 +1161,15 @@ pub fn apply(s: &mut Session, name: &str, scope: &ScopeText, edits: &[Edit]) -> 
                     let text = if e.note.is_empty() { e.with.clone() } else { e.note.clone() };
                     let r = run_allowed(s, name, "review.newComment", &json!({"text": text}))?;
                     let id = r.get("id").and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok());
-                    Ok(Applied { kind: e.kind, deleted: String::new(), inserted: String::new(), quote: quote.clone(), note: text, comment: id })
+                    Ok(Applied {
+                        kind: e.kind,
+                        deleted: String::new(),
+                        inserted: String::new(),
+                        quote: quote.clone(),
+                        note: text,
+                        comment: id,
+                        parts: Vec::new(),
+                    })
                 }
             }
         })();
@@ -1288,6 +1501,81 @@ mod tests {
                 let _ = read_answer(junk, sr);
             }
         }
+    }
+
+    // Word-level replacements: only what changes becomes a tracked change.
+
+    fn runs(old: &str, new: &str) -> Vec<(String, String)> {
+        word_diff(old, new).into_iter().map(|r| (old[r.start..r.end].to_string(), r.with)).collect()
+    }
+
+    #[test]
+    fn a_replacement_changes_only_the_words_that_differ() {
+        let old = "Rent is the obvious reason, but it is not the best one.";
+        let new = "Rent is the obvious reason. Not the best one.";
+        assert_eq!(runs(old, new), [(",".to_string(), ".".to_string()), ("but it is not".to_string(), "Not".to_string())]);
+        let mut s = session(&[old]);
+        let sc = scope(&s, ScopeKind::Document).unwrap();
+        let out = apply(&mut s, "AI · Mistral Large 4", &sc, &[edit(EditKind::Replace, old, new)]);
+        assert!(out.log.is_empty(), "{:?}", out.log);
+        assert_eq!(out.applied.len(), 1, "one suggestion for the one edit");
+        assert_eq!(out.applied[0].parts, runs(old, new));
+        assert_eq!((out.applied[0].deleted.as_str(), out.applied[0].inserted.as_str()), (old, new), "the row shows the edit as asked");
+        let ch = changes(&mut s);
+        let texts: Vec<(&str, &str)> = ch.iter().map(|(_, k, t)| (k.as_str(), t.as_str())).collect();
+        assert_eq!(texts, [("delete", ","), ("insert", "."), ("delete", "but it is not"), ("insert", "Not")], "{ch:?}");
+        // The kept words carry no revision: only 4 tracked runs exist, and accepting gives the new text.
+        s.run("review.acceptAll", &json!({})).unwrap();
+        assert_eq!(s.doc.plain_text(StoryRef::Body), new);
+    }
+
+    #[test]
+    fn little_in_common_stays_one_replacement_and_edge_cases_hold() {
+        // Under 30 % of the words shared: one deletion and one insertion, no confetti.
+        assert_eq!(
+            runs("The cat sat on the mat.", "Dogs run fast everywhere today!"),
+            [("The cat sat on the mat.".into(), "Dogs run fast everywhere today!".into())]
+        );
+        // Punctuation only.
+        assert_eq!(runs("Hello, world", "Hello world"), [(",".into(), "".into())]);
+        // Whitespace: a doubled space collapses; a word added keeps its own space out of the old text.
+        assert_eq!(runs("one  two", "one two"), [(" ".into(), "".into())]);
+        assert_eq!(runs("one two", "one big two"), [("".into(), "big ".into())]);
+        // Contractions are one word; case changes count.
+        assert_eq!(runs("it isn't here", "it is not here"), [("isn't".into(), "is not".into())]);
+        assert_eq!(runs("not the best", "Not the best"), [("not".into(), "Not".into())]);
+        assert!(runs("same", "same").is_empty());
+        // Non-ASCII stays on character boundaries.
+        assert_eq!(runs("Café ünïcode 👩‍👩‍👧 text", "Café unicode 👩‍👩‍👧 text"), [("ünïcode".into(), "unicode".into())]);
+    }
+
+    #[test]
+    fn hostile_replacements_never_panic() {
+        let long = "word ".repeat(5_000);
+        for (o, n) in [("", "x"), ("x", ""), ("👩‍👩‍👧", "👩"), ("a\u{0}b", "a b"), (long.as_str(), "word"), ("’'’", "'’'"), ("a'", "'a")]
+        {
+            for r in word_diff(o, n) {
+                assert!(o.is_char_boundary(r.start) && o.is_char_boundary(r.end) && r.start <= r.end && r.end <= o.len());
+            }
+        }
+        let mut s = session(&["Some text here, with words."]);
+        let sc = scope(&s, ScopeKind::Document).unwrap();
+        let out = apply(&mut s, "AI · X", &sc, &[edit(EditKind::Replace, "Some text here", "Some text here")]);
+        assert!(out.applied.is_empty() && out.log.iter().any(|l| l.contains("change nothing")), "{:?}", out.log);
+    }
+
+    #[test]
+    fn an_accepted_word_level_replacement_marks_only_the_inserted_words_as_ai() {
+        let old = "Rent is the obvious reason, but it is not the best one.";
+        let new = "Rent is the obvious reason. Not the best one.";
+        let mut s = session(&[old]);
+        s.add_assistant_author("AI · Mistral Large 4");
+        let sc = scope(&s, ScopeKind::Document).unwrap();
+        apply(&mut s, "AI · Mistral Large 4", &sc, &[edit(EditKind::Replace, old, new)]);
+        s.run("review.acceptAll", &json!({})).unwrap();
+        let a = s.authorship();
+        assert_eq!(a.ai_chars, ".Not".chars().count(), "only the inserted runs: “.” and “Not”");
+        assert_eq!(a.total_chars, new.chars().count());
     }
 
     #[test]

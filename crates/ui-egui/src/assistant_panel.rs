@@ -523,10 +523,10 @@ fn refresh_states(app: &mut WordApp) {
     if authors.is_empty() {
         return;
     }
-    let mut live: HashMap<String, Vec<(String, String)>> = HashMap::new();
+    let mut live: HashMap<String, Vec<(String, String, Pos, Pos)>> = HashMap::new();
     for a in authors {
         if let std::collections::hash_map::Entry::Vacant(slot) = live.entry(a.clone()) {
-            slot.insert(crate::review_panel::changes_by(app, &a).into_iter().map(|(d, i, _, _)| (d, i)).collect());
+            slot.insert(crate::review_panel::changes_by(app, &a));
         }
     }
     let comments = app.session.doc.comments.clone();
@@ -536,13 +536,51 @@ fn refresh_states(app: &mut WordApp) {
         for s in e.suggestions.iter_mut().filter(|s| s.state == SugState::Pending) {
             let here = match s.applied.kind {
                 EditKind::Comment => s.applied.comment.and_then(|id| comments.get(&id)).is_some_and(|c| !c.resolved),
-                _ => list.iter().any(|(d, i)| *d == s.applied.deleted && *i == s.applied.inserted),
+                _ => find_group(&list, &parts_of(&s.applied)).is_some(),
             };
             if !here {
                 s.state = SugState::Gone;
             }
         }
     }
+}
+
+/// The tracked changes an applied edit was made of (one per word-level piece).
+pub(crate) fn parts_of(a: &Applied) -> Vec<(String, String)> {
+    if a.parts.is_empty() { vec![(a.deleted.clone(), a.inserted.clone())] } else { a.parts.clone() }
+}
+
+/// Where `parts` sit in `list` (one author's pending changes, in document order, as
+/// `review_panel::changes_by` gives them): the first and last index of a run of consecutive
+/// changes in one paragraph matching them in order.
+pub(crate) fn find_group(list: &[(String, String, Pos, Pos)], parts: &[(String, String)]) -> Option<(usize, usize)> {
+    let n = parts.len();
+    if n == 0 || n > list.len() {
+        return None;
+    }
+    (0..=list.len() - n).find_map(|i| {
+        let first = list.get(i)?;
+        let ok = parts.iter().enumerate().all(|(k, (d, ins))| {
+            list.get(i + k).is_some_and(|(cd, ci, a, _)| cd == d && ci == ins && a.story == first.2.story && a.path == first.2.path)
+        });
+        ok.then_some((i, i + n - 1))
+    })
+}
+
+/// The pending suggestions of the current document made of several pieces: (author, parts,
+/// what the row shows deleted, inserted). Review shows each as one row.
+pub(crate) fn pending_groups(app: &WordApp) -> Vec<(String, Vec<(String, String)>, String, String)> {
+    let doc = app.session.document_id();
+    app.assistant_panel
+        .log(doc)
+        .iter()
+        .flat_map(|e| {
+            e.suggestions
+                .iter()
+                .filter(|s| s.state == SugState::Pending && s.applied.parts.len() > 1)
+                .map(|s| (e.author.clone(), s.applied.parts.clone(), s.applied.deleted.clone(), s.applied.inserted.clone()))
+        })
+        .collect()
 }
 
 /// Accept or reject suggestion `index` of entry `entry` in the current document (the person's
@@ -565,10 +603,10 @@ pub fn resolve(app: &mut WordApp, entry: usize, index: usize, accept: bool) -> R
             }
         }
         _ => {
-            let found = crate::review_panel::changes_by(app, &author)
-                .into_iter()
-                .find(|(d, i, _, _)| *d == s.applied.deleted && *i == s.applied.inserted)
-                .map(|(_, _, a, b)| (a, b));
+            // All the edit's word-level pieces together: from the first one's start to the last
+            // one's end (the words between them carry no change).
+            let list = crate::review_panel::changes_by(app, &author);
+            let found = find_group(&list, &parts_of(&s.applied)).and_then(|(i, j)| Some((list.get(i)?.2.clone(), list.get(j)?.3.clone())));
             let Some((a, b)) = found else {
                 if let Some(x) = entry_mut(app, doc, entry).and_then(|e| e.suggestions.get_mut(index)) {
                     x.state = SugState::Gone;

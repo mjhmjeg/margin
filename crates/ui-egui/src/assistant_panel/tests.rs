@@ -986,3 +986,52 @@ fn the_panel_and_quick_asks_default_to_selection_else_this_section() {
     assert_eq!(log(&mut b)["entries"][0]["scope"].as_str().map(|s| s.starts_with("This section")), Some(true), "{}", log(&mut b));
     wait(&mut b);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Word-level replacements: one row per model edit, its pieces accepted together.
+
+const RENT_OLD: &str = "Rent is the obvious reason, but it is not the best one.";
+const RENT_NEW: &str = "Rent is the obvious reason. Not the best one.";
+
+fn rent_app() -> (Mock, WordApp) {
+    let m = mock_script(vec![stream_of(&answer(json!([{"kind": "replace", "quote": RENT_OLD, "with": RENT_NEW}])), 3, "stop")]);
+    let mut a = app_with(&[RENT_OLD, "Second paragraph, untouched."]);
+    connect(&mut a, &m);
+    a.run("ui.assistant.ask", json!({"instruction": "Punchier.", "scope": "document"})).unwrap();
+    wait(&mut a);
+    (m, a)
+}
+
+#[test]
+fn a_word_level_replacement_is_one_row_in_the_panel_and_in_review_and_accepts_together() {
+    let (_m, mut a) = rent_app();
+    let l = log(&mut a);
+    assert_eq!(l["entries"][0]["suggestions"].as_array().map(Vec::len), Some(1), "{l}");
+    // On the page: only the changed runs are tracked.
+    let ch: Vec<(String, String)> = changes(&mut a).into_iter().map(|(_, k, t)| (k, t)).collect();
+    assert_eq!(
+        ch,
+        [("delete".into(), ",".into()), ("insert".into(), ".".into()), ("delete".into(), "but it is not".into()), ("insert".into(), "Not".into())]
+    );
+    // Review: one row for the edit.
+    assert_eq!(crate::review_panel::shown_change_rows(&mut a), [(RENT_OLD.to_string(), RENT_NEW.to_string())]);
+    // Accepting the row accepts every piece.
+    a.run("ui.assistant.suggestion", json!({"entry": 0, "index": 0, "accept": true})).unwrap();
+    assert!(changes(&mut a).is_empty());
+    assert_eq!(text(&a), format!("{RENT_NEW}\nSecond paragraph, untouched."));
+    assert_eq!(log(&mut a)["entries"][0]["suggestions"][0]["state"], "accepted");
+}
+
+#[test]
+fn rejecting_the_row_rejects_every_piece_and_one_piece_can_still_be_accepted_alone() {
+    let (_m, mut a) = rent_app();
+    a.run("ui.assistant.suggestion", json!({"entry": 0, "index": 0, "accept": false})).unwrap();
+    assert!(changes(&mut a).is_empty());
+    assert_eq!(text(&a), format!("{RENT_OLD}\nSecond paragraph, untouched."));
+    // Again, and accept just the first piece the way Review's per-change accept does.
+    let (_m, mut b) = rent_app();
+    let first = crate::review_panel::changes_by(&mut b, "Claude").into_iter().next().unwrap();
+    crate::review_panel::resolve_range(&mut b, &first.2, &first.3, true).unwrap();
+    assert_eq!(changes(&mut b).len(), 2, "the other piece is still pending");
+    assert_eq!(log(&mut b)["entries"][0]["suggestions"][0]["state"], "gone", "the row no longer matches as a whole");
+}
