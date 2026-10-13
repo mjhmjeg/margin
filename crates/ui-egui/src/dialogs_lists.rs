@@ -10,7 +10,6 @@ use wordcraft_engine::cmd::lists::{LEVELS, caret_list, level_json, levels_of};
 
 use crate::WordApp;
 use crate::dialogs::buttons;
-use crate::options::MeasureExt;
 use crate::theme::Tokens;
 
 /// Number styles a level can have: OOXML name and a sample.
@@ -164,8 +163,8 @@ impl ListForm {
 /// Define New Multilevel List. Returns true to close.
 pub fn define_list(app: &mut WordApp, ui: &mut Ui, f: &mut ListForm) -> bool {
     let unit = crate::options::unit();
-    fn len(v: &mut f32, unit: wordcraft_geom::Unit) -> egui::DragValue<'_> {
-        egui::DragValue::new(v).speed(0.01).range(-10.0..=22.0).measure(unit).max_decimals(2)
+    fn len(v: &mut f32, unit: wordcraft_geom::Unit) -> crate::dialogs::DragNum<'_, f32> {
+        crate::dialogs::DragNum::new(v).speed(0.01).range(-10.0..=22.0).measure(unit).max_decimals(2)
     }
     let heading = |ui: &mut Ui, s: &str| {
         ui.add_space(4.0);
@@ -222,7 +221,7 @@ pub fn define_list(app: &mut WordApp, ui: &mut Ui, f: &mut ListForm) -> bool {
             ui.end_row();
         }
         ui.label(tl!("Start at:"));
-        ui.add(egui::DragValue::new(&mut l.start).range(0..=32_767));
+        ui.add(crate::dialogs::DragNum::new(&mut l.start).range(0..=32_767));
         ui.end_row();
         if i > 0 {
             crate::dialogs::checkbox(ui, &mut l.restart, tl!("Restart list after:"));

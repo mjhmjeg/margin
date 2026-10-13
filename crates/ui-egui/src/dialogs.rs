@@ -1483,19 +1483,161 @@ pub(crate) fn form_label(ui: &mut Ui, text: &str) {
     ui.painter().galley(egui::pos2(r.max.x - g.size().x, r.center().y - g.size().y / 2.0), g, m.text_dim);
 }
 
-/// A drop-down for dialogs: egui's combo box with Margin's `dropdown` chevron inside the field.
-pub(crate) fn combo(id: impl std::hash::Hash + std::fmt::Debug) -> egui::ComboBox {
-    egui::ComboBox::from_id_salt(id).icon(|ui, rect, vis, open| {
+/// A drop-down for dialogs. In Margin it is the Phase 2 popup button (`mac_controls::popup_button_with`);
+/// outside the skin it is egui's combo box with the upstream chevron. Same builder calls either way.
+pub(crate) struct DialogCombo {
+    id: egui::Id,
+    width: Option<f32>,
+    text: String,
+}
+
+pub(crate) fn combo(id: impl std::hash::Hash + std::fmt::Debug) -> DialogCombo {
+    DialogCombo { id: egui::Id::new(id), width: None, text: String::new() }
+}
+
+impl DialogCombo {
+    pub(crate) fn width(mut self, w: f32) -> Self {
+        self.width = Some(w);
+        self
+    }
+
+    pub(crate) fn selected_text(mut self, text: impl Into<egui::WidgetText>) -> Self {
+        self.text = text.into().text().to_string();
+        self
+    }
+
+    pub(crate) fn show_ui<R>(self, ui: &mut Ui, add_contents: impl FnOnce(&mut Ui) -> R) -> egui::Response {
         if mac_mode(ui.ctx()) {
-            let t = Tokens::get(ui.ctx());
-            crate::icons::paint(ui.painter(), egui::Rect::from_center_size(rect.center(), vec2(14.0, 14.0)), "dropdown", t.text_dim, t.text_dim);
-        } else {
-            let _ = open;
+            // Clamp: a width from a call site is never trusted to be sane.
+            let w = self.width.unwrap_or(150.0).clamp(60.0, 600.0);
+            return crate::mac_controls::popup_button_with(ui, self.id, w, &self.text, add_contents);
+        }
+        let mut cb = egui::ComboBox::from_id_salt(self.id).selected_text(self.text).icon(|ui, rect, vis, _open| {
             let c = rect.center();
             let pts = vec![c + vec2(-4.0, -2.0), c + vec2(4.0, -2.0), c + vec2(0.0, 3.0)];
             ui.painter().add(egui::Shape::convex_polygon(pts, vis.fg_stroke.color, egui::Stroke::NONE));
+        });
+        if let Some(w) = self.width {
+            cb = cb.width(w);
         }
-    })
+        cb.show_ui(ui, add_contents).response
+    }
+}
+
+type Formatter<'a> = Box<dyn Fn(f64, std::ops::RangeInclusive<usize>) -> String + 'a>;
+
+/// A number field for dialogs, with the builder calls of `egui::DragValue` (`speed`, `range`,
+/// `suffix`, `measure`, `max_decimals`, `custom_formatter`). In Margin it is the Phase 2
+/// `number_field` (value right-aligned, unit after it); outside the skin it is the upstream
+/// `DragValue`, unchanged. Add it with `ui.add(..)` / `ui.add_enabled(..)`.
+pub(crate) struct DragNum<'a, N: egui::emath::Numeric> {
+    value: &'a mut N,
+    speed: f64,
+    range: Option<(f64, f64)>,
+    suffix: String,
+    unit: Option<wordcraft_geom::Unit>,
+    decimals: Option<usize>,
+    formatter: Option<Formatter<'a>>,
+}
+
+impl<'a, N: egui::emath::Numeric> DragNum<'a, N> {
+    pub(crate) fn new(value: &'a mut N) -> Self {
+        Self { value, speed: 1.0, range: None, suffix: String::new(), unit: None, decimals: None, formatter: None }
+    }
+
+    pub(crate) fn speed(mut self, speed: impl Into<f64>) -> Self {
+        self.speed = speed.into();
+        self
+    }
+
+    pub(crate) fn range(mut self, range: std::ops::RangeInclusive<N>) -> Self {
+        self.range = Some((range.start().to_f64(), range.end().to_f64()));
+        self
+    }
+
+    pub(crate) fn suffix(mut self, suffix: impl ToString) -> Self {
+        self.suffix = suffix.to_string();
+        self
+    }
+
+    /// A length in `unit`: its suffix, the region's decimal separator, and "1 in" typed in a cm field.
+    pub(crate) fn measure(mut self, unit: wordcraft_geom::Unit) -> Self {
+        self.unit = Some(unit);
+        self
+    }
+
+    pub(crate) fn max_decimals(mut self, n: usize) -> Self {
+        self.decimals = Some(n);
+        self
+    }
+
+    pub(crate) fn custom_formatter(mut self, f: impl Fn(f64, std::ops::RangeInclusive<usize>) -> String + 'a) -> Self {
+        self.formatter = Some(Box::new(f));
+        self
+    }
+}
+
+impl<N: egui::emath::Numeric> egui::Widget for DragNum<'_, N> {
+    fn ui(self, ui: &mut Ui) -> egui::Response {
+        let Self { value, speed, range, suffix, unit, decimals, formatter } = self;
+        if !mac_mode(ui.ctx()) {
+            let mut dv = egui::DragValue::new(value).speed(speed);
+            if let Some((lo, hi)) = range {
+                dv = dv.range(lo..=hi);
+            }
+            if !suffix.is_empty() {
+                dv = dv.suffix(suffix);
+            }
+            if let Some(u) = unit {
+                dv = dv.measure(u);
+            }
+            if let Some(d) = decimals {
+                dv = dv.max_decimals(d);
+            }
+            if let Some(f) = formatter {
+                dv = dv.custom_formatter(f);
+            }
+            return ui.add(dv);
+        }
+        // Numbers from input are hostile: finite, ordered bounds, and the value inside them.
+        let (lo, hi) = range.filter(|(a, b)| a.is_finite() && b.is_finite()).map_or((-1.0e9, 1.0e9), |(a, b)| (a.min(b), a.max(b)));
+        let (lo, hi) = (lo as f32, hi as f32);
+        let step = if speed.is_finite() { speed.abs() as f32 } else { 1.0 };
+        let cur = value.to_f64();
+        let cur = if cur.is_finite() { (cur as f32).clamp(lo, hi) } else { lo.max(0.0).min(hi) };
+        let unit_label = match unit {
+            Some(u) => u.suffix().trim().to_string(),
+            None => suffix.trim().to_string(),
+        };
+        let sep = crate::options::decimal();
+        let plain = move |n: f32| {
+            let s = if N::INTEGRAL { format!("{:.0}", n.round()) } else { format!("{n:.2}").trim_end_matches('0').trim_end_matches('.').to_string() };
+            if sep == '.' { s } else { s.replace('.', &sep.to_string()) }
+        };
+        let display = |n: f32| match &formatter {
+            Some(f) => f(f64::from(if N::INTEGRAL { n.round() } else { n }), 0..=decimals.unwrap_or(2)),
+            None => plain(n),
+        };
+        let parse = |text: &str| -> Option<f32> {
+            let text: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+            match unit {
+                Some(u) => wordcraft_geom::parse_measure(&text, u).map(|pt| pt / u.pt_per_unit()),
+                None => text.replace(',', ".").parse::<f64>().ok().map(|n| n as f32),
+            }
+        };
+        let id = format!("{:?}", ui.next_auto_id());
+        let w = if unit.is_some() || !suffix.is_empty() { 104.0 } else { 80.0 };
+        let inner = ui.allocate_ui(vec2(w, crate::mac_controls::ROW_H), |ui| {
+            crate::mac_controls::number_field_with(ui, &id, cur, step, lo..=hi, &unit_label, &display, &plain, &parse)
+        });
+        let mut resp = inner.response;
+        if let Some(n) = inner.inner.filter(|n| n.is_finite()) {
+            let n = n.clamp(lo, hi);
+            *value = N::from_f64(f64::from(if N::INTEGRAL { n.round() } else { n }));
+            resp.mark_changed();
+        }
+        resp
+    }
 }
 
 /// Dialog tabs: underline tabs (40 high) in Margin, a row of selectable labels otherwise.
@@ -1715,7 +1857,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 color_field(ui, &theme, color, "Automatic", "auto");
                 ui.end_row();
                 crate::dialogs::form_label(ui, tl!("Spacing (pt):"));
-                ui.add(egui::DragValue::new(spacing).speed(0.1).range(-20.0..=20.0));
+                ui.add(crate::dialogs::DragNum::new(spacing).speed(0.1).range(-20.0..=20.0));
                 ui.end_row();
             });
             ui.separator();
@@ -1796,14 +1938,14 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                     egui::Grid::new("ind").num_columns(4).show(ui, |ui| {
                         crate::dialogs::form_label(ui, tl!(l_label));
                         ui.add(
-                            egui::DragValue::new(left)
+                            crate::dialogs::DragNum::new(left)
                                 .speed(3.6 / crate::options::unit().pt_per_unit())
                                 .measure(crate::options::unit())
                                 .max_decimals(2),
                         );
                         ui.label(tl!(r_label));
                         ui.add(
-                            egui::DragValue::new(right)
+                            crate::dialogs::DragNum::new(right)
                                 .speed(3.6 / crate::options::unit().pt_per_unit())
                                 .measure(crate::options::unit())
                                 .max_decimals(2),
@@ -1811,7 +1953,7 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                         ui.end_row();
                         crate::dialogs::form_label(ui, tl!("First line:"));
                         ui.add(
-                            egui::DragValue::new(first)
+                            crate::dialogs::DragNum::new(first)
                                 .speed(3.6 / crate::options::unit().pt_per_unit())
                                 .measure(crate::options::unit())
                                 .max_decimals(2),
@@ -1822,12 +1964,12 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                     crate::dialogs::group_label(ui, tl!("Spacing"));
                     egui::Grid::new("sp").num_columns(4).show(ui, |ui| {
                         crate::dialogs::form_label(ui, tl!("Before:"));
-                        ui.add(egui::DragValue::new(before).speed(1.0).range(0.0..=1584.0).suffix(format!(" {}", tl!("pt"))));
+                        ui.add(crate::dialogs::DragNum::new(before).speed(1.0).range(0.0..=1584.0).suffix(format!(" {}", tl!("pt"))));
                         ui.label(tl!("Line spacing:"));
-                        ui.add(egui::DragValue::new(line).speed(0.05).range(0.5..=5.0));
+                        ui.add(crate::dialogs::DragNum::new(line).speed(0.05).range(0.5..=5.0));
                         ui.end_row();
                         crate::dialogs::form_label(ui, tl!("After:"));
-                        ui.add(egui::DragValue::new(after).speed(1.0).range(0.0..=1584.0).suffix(format!(" {}", tl!("pt"))));
+                        ui.add(crate::dialogs::DragNum::new(after).speed(1.0).range(0.0..=1584.0).suffix(format!(" {}", tl!("pt"))));
                         ui.end_row();
                     });
                     crate::dialogs::checkbox(ui, &mut opts[1], tl!("Don't add space between paragraphs of the same style"));
@@ -2050,10 +2192,10 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
         Dialog::InsertTable { rows, cols } => {
             egui::Grid::new("it").num_columns(2).show(ui, |ui| {
                 crate::dialogs::form_label(ui, tl!("Number of columns:"));
-                ui.add(egui::DragValue::new(cols).range(1..=63));
+                ui.add(crate::dialogs::DragNum::new(cols).range(1..=63));
                 ui.end_row();
                 crate::dialogs::form_label(ui, tl!("Number of rows:"));
-                ui.add(egui::DragValue::new(rows).range(1..=1000));
+                ui.add(crate::dialogs::DragNum::new(rows).range(1..=1000));
                 ui.end_row();
             });
             let (ok, cancel) = buttons(ui, tl!("OK"));
@@ -2066,16 +2208,34 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             crate::dialogs::group_label(ui, tl!("Margins"));
             egui::Grid::new("ps").num_columns(4).show(ui, |ui| {
                 crate::dialogs::form_label(ui, tl!("Top:"));
-                ui.add(egui::DragValue::new(top).speed(3.6 / crate::options::unit().pt_per_unit()).measure(crate::options::unit()).max_decimals(2));
+                ui.add(
+                    crate::dialogs::DragNum::new(top)
+                        .speed(3.6 / crate::options::unit().pt_per_unit())
+                        .measure(crate::options::unit())
+                        .max_decimals(2),
+                );
                 ui.label(tl!("Bottom:"));
                 ui.add(
-                    egui::DragValue::new(bottom).speed(3.6 / crate::options::unit().pt_per_unit()).measure(crate::options::unit()).max_decimals(2),
+                    crate::dialogs::DragNum::new(bottom)
+                        .speed(3.6 / crate::options::unit().pt_per_unit())
+                        .measure(crate::options::unit())
+                        .max_decimals(2),
                 );
                 ui.end_row();
                 crate::dialogs::form_label(ui, tl!("Left:"));
-                ui.add(egui::DragValue::new(left).speed(3.6 / crate::options::unit().pt_per_unit()).measure(crate::options::unit()).max_decimals(2));
+                ui.add(
+                    crate::dialogs::DragNum::new(left)
+                        .speed(3.6 / crate::options::unit().pt_per_unit())
+                        .measure(crate::options::unit())
+                        .max_decimals(2),
+                );
                 ui.label(tl!("Right:"));
-                ui.add(egui::DragValue::new(right).speed(3.6 / crate::options::unit().pt_per_unit()).measure(crate::options::unit()).max_decimals(2));
+                ui.add(
+                    crate::dialogs::DragNum::new(right)
+                        .speed(3.6 / crate::options::unit().pt_per_unit())
+                        .measure(crate::options::unit())
+                        .max_decimals(2),
+                );
                 ui.end_row();
             });
             crate::dialogs::group_label(ui, tl!("Orientation"));
@@ -2092,9 +2252,9 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             });
             egui::Grid::new("ps_grid").num_columns(4).show(ui, |ui| {
                 ui.add_enabled(grid.0 >= 2, egui::Label::new(tl!("Characters per line:")));
-                ui.add_enabled(grid.0 >= 2, egui::DragValue::new(&mut grid.2).range(1..=1000));
+                ui.add_enabled(grid.0 >= 2, crate::dialogs::DragNum::new(&mut grid.2).range(1..=1000));
                 ui.add_enabled(grid.0 >= 1, egui::Label::new(tl!("Lines per page:")));
-                ui.add_enabled(grid.0 >= 1, egui::DragValue::new(&mut grid.1).range(1..=1000));
+                ui.add_enabled(grid.0 >= 1, crate::dialogs::DragNum::new(&mut grid.1).range(1..=1000));
                 ui.end_row();
             });
             ui.horizontal(|ui| {
@@ -2252,10 +2412,10 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 });
                 ui.end_row();
                 crate::dialogs::form_label(ui, tl!("Offset (pt):"));
-                ui.add(egui::DragValue::new(offset).speed(0.5).range(-100.0..=100.0));
+                ui.add(crate::dialogs::DragNum::new(offset).speed(0.5).range(-100.0..=100.0));
                 ui.end_row();
                 crate::dialogs::form_label(ui, tl!("Size (pt):"));
-                ui.add(egui::DragValue::new(size).speed(0.5).range(1.0..=200.0));
+                ui.add(crate::dialogs::DragNum::new(size).speed(0.5).range(1.0..=200.0));
                 ui.end_row();
             });
             let mut remove = false;
@@ -2301,15 +2461,15 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 ui.text_edit_singleline(font);
                 ui.end_row();
                 crate::dialogs::form_label(ui, tl!("Size:"));
-                ui.add(egui::DragValue::new(size).range(1.0..=1638.0).speed(0.5));
+                ui.add(crate::dialogs::DragNum::new(size).range(1.0..=1638.0).speed(0.5));
                 ui.end_row();
                 crate::dialogs::form_label(ui, tl!("Color:"));
                 ui.text_edit_singleline(color);
                 ui.end_row();
                 crate::dialogs::form_label(ui, tl!("Space before/after:"));
                 ui.horizontal(|ui| {
-                    ui.add(egui::DragValue::new(before).range(0.0..=1584.0));
-                    ui.add(egui::DragValue::new(after).range(0.0..=1584.0));
+                    ui.add(crate::dialogs::DragNum::new(before).range(0.0..=1584.0));
+                    ui.add(crate::dialogs::DragNum::new(after).range(0.0..=1584.0));
                 });
                 ui.end_row();
             });
@@ -2920,8 +3080,8 @@ fn recipient_list(app: &mut WordApp, ui: &mut Ui, fields: &mut Vec<String>, rows
 /// The Table Properties dialog's fields: Table, Row, Column and Cell sections.
 fn table_properties(ui: &mut Ui, f: &mut TableForm) {
     let unit = crate::options::unit();
-    fn len(v: &mut f32, lo: f32, unit: wordcraft_geom::Unit) -> egui::DragValue<'_> {
-        egui::DragValue::new(v).speed(0.01).range(lo..=22.0).measure(unit).max_decimals(2)
+    fn len(v: &mut f32, lo: f32, unit: wordcraft_geom::Unit) -> crate::dialogs::DragNum<'_, f32> {
+        crate::dialogs::DragNum::new(v).speed(0.01).range(lo..=22.0).measure(unit).max_decimals(2)
     }
     let heading = |ui: &mut Ui, s: &str| {
         ui.add_space(4.0);
@@ -2940,7 +3100,7 @@ fn table_properties(ui: &mut Ui, f: &mut TableForm) {
         });
         ui.end_row();
         crate::dialogs::form_label(ui, tl!("Indent from left:"));
-        ui.add_enabled(f.align == "left", egui::DragValue::new(&mut f.indent).speed(0.01).range(-11.0..=22.0).measure(unit).max_decimals(2));
+        ui.add_enabled(f.align == "left", crate::dialogs::DragNum::new(&mut f.indent).speed(0.01).range(-11.0..=22.0).measure(unit).max_decimals(2));
         ui.end_row();
         crate::dialogs::form_label(ui, tl!("Table direction:"));
         ui.horizontal(|ui| {

@@ -14,7 +14,6 @@ use wordcraft_doc::section::LineNumberRestart;
 use wordcraft_engine::cmd::mailings::{ENVELOPE_SIZES, LABEL_PRODUCTS};
 
 use crate::WordApp;
-use crate::options::MeasureExt;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "form", rename_all = "camelCase")]
@@ -167,19 +166,23 @@ fn line_numbers_ui(app: &mut WordApp, ui: &mut Ui, f: &mut LineNumbersForm) -> b
     ui.add_enabled_ui(f.on, |ui| {
         egui::Grid::new("lnum").num_columns(2).spacing(vec2(10.0, 6.0)).show(ui, |ui| {
             crate::dialogs::form_label(ui, tl!("Start at:"));
-            ui.add(egui::DragValue::new(&mut f.start).range(1..=32_767));
+            ui.add(crate::dialogs::DragNum::new(&mut f.start).range(1..=32_767));
             ui.end_row();
             crate::dialogs::form_label(ui, tl!("From text:"));
             ui.horizontal(|ui| {
                 crate::dialogs::checkbox(ui, &mut f.auto_distance, tl!("Auto"));
                 ui.add_enabled(
                     !f.auto_distance,
-                    egui::DragValue::new(&mut f.distance).speed(0.01).range(0.0..=22.0 * 72.0 / unit().pt_per_unit()).measure(unit()).max_decimals(2),
+                    crate::dialogs::DragNum::new(&mut f.distance)
+                        .speed(0.01)
+                        .range(0.0..=22.0 * 72.0 / unit().pt_per_unit())
+                        .measure(unit())
+                        .max_decimals(2),
                 );
             });
             ui.end_row();
             crate::dialogs::form_label(ui, tl!("Count by:"));
-            ui.add(egui::DragValue::new(&mut f.count_by).range(1..=100));
+            ui.add(crate::dialogs::DragNum::new(&mut f.count_by).range(1..=100));
             ui.end_row();
         });
         heading(ui, "Numbering:");
@@ -229,12 +232,14 @@ fn hyphenation_ui(app: &mut WordApp, ui: &mut Ui, f: &mut HyphenationForm) -> bo
     crate::dialogs::checkbox(ui, &mut f.caps, tl!("Hyphenate words in CAPS"));
     egui::Grid::new("hyph").num_columns(2).spacing(vec2(10.0, 6.0)).show(ui, |ui| {
         crate::dialogs::form_label(ui, tl!("Hyphenation zone:"));
-        ui.add(egui::DragValue::new(&mut f.zone).speed(0.01).range(0.0..=22.0 * 72.0 / unit().pt_per_unit()).measure(unit()).max_decimals(2));
+        ui.add(crate::dialogs::DragNum::new(&mut f.zone).speed(0.01).range(0.0..=22.0 * 72.0 / unit().pt_per_unit()).measure(unit()).max_decimals(2));
         ui.end_row();
         crate::dialogs::form_label(ui, tl!("Limit consecutive hyphens to:"));
         let no_limit = tl!("No limit").to_string();
         ui.add(
-            egui::DragValue::new(&mut f.limit).range(0..=99).custom_formatter(move |n, _| if n < 0.5 { no_limit.clone() } else { format!("{n:.0}") }),
+            crate::dialogs::DragNum::new(&mut f.limit)
+                .range(0..=99)
+                .custom_formatter(move |n, _| if n < 0.5 { no_limit.clone() } else { format!("{n:.0}") }),
         );
         ui.end_row();
     });
@@ -613,9 +618,9 @@ fn labels_ui(app: &mut WordApp, ui: &mut Ui, f: &mut LabelsForm) -> bool {
         crate::dialogs::radio_value(ui, &mut f.single, true, tl!("Single label"));
         ui.add_enabled_ui(f.single, |ui| {
             ui.label(tl!("Row:"));
-            ui.add(egui::DragValue::new(&mut f.row).range(1..=rows));
+            ui.add(crate::dialogs::DragNum::new(&mut f.row).range(1..=rows));
             ui.label(tl!("Column:"));
-            ui.add(egui::DragValue::new(&mut f.col).range(1..=cols));
+            ui.add(crate::dialogs::DragNum::new(&mut f.col).range(1..=cols));
         });
     });
     f.row = f.row.clamp(1, rows.max(1));
