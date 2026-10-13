@@ -74,9 +74,31 @@ impl Pen<'_> {
     }
 }
 
+thread_local! {
+    static LEGACY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// While alive, [`paint`] draws the upstream icon set instead of the handoff one: the Classic
+/// ribbon and the mini toolbar keep their old look (HANDOFF §0).
+pub struct Legacy(bool);
+
+impl Legacy {
+    pub fn enter() -> Legacy {
+        Legacy(LEGACY.with(|c| c.replace(true)))
+    }
+}
+
+impl Drop for Legacy {
+    fn drop(&mut self) {
+        LEGACY.with(|c| c.set(self.0));
+    }
+}
+
 /// Paint icon `name` into `r`. `c` is the line colour; the accent comes from the theme.
 pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
-    if let Some(items) = handoff::shapes(name) {
+    if !LEGACY.with(std::cell::Cell::get)
+        && let Some(items) = handoff::shapes(name)
+    {
         handoff::paint(p, r, items, c);
         return;
     }

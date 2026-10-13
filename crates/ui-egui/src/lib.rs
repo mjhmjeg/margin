@@ -1515,12 +1515,14 @@ impl WordApp {
             if mac {
                 mac_ui::toolbar(self, ui);
             } else {
+                let _legacy_icons = icons::Legacy::enter(); // the Classic layout keeps upstream's icons
                 chrome::title_bar(self, ui);
                 ribbon::show(self, ui);
             }
             if mac {
                 mac_ui::status_bar(self, ui);
             } else {
+                let _legacy_icons = icons::Legacy::enter();
                 chrome::status_bar(self, ui);
             }
             if mac && self.ui.margin.inspector {

@@ -120,6 +120,7 @@ pub fn show(app: &mut WordApp, ctx: &egui::Context, selection: Rect, viewport: R
 /// The controls in two rows like Word's mini toolbar, reusing the ribbon's widgets so the bar
 /// matches the ribbon exactly.
 fn content(app: &mut WordApp, ui: &mut egui::Ui, t: &Tokens) {
+    let _legacy_icons = crate::icons::Legacy::enter();
     let st: Value = app.session.run("format.state", &json!({})).unwrap_or_default();
     let flag = |k: &str| st.get(k).and_then(Value::as_bool).unwrap_or(false);
     let align = app.session.doc.para_at(&app.session.sel.focus).map(|p| app.session.doc.styles.resolve_para(&p.props).align).unwrap_or_default();
