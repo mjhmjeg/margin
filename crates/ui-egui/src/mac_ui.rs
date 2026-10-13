@@ -2,7 +2,7 @@
 //! (Text / Layout / Document) and the Navigation pane as the outline sidebar. The ribbon stays
 //! reachable as View › Classic Ribbon (⌃⌘R). Every control runs an existing engine command.
 
-use egui::{Align2, Color32, Rect, Response, Sense, Stroke, Ui, pos2, vec2};
+use egui::{Color32, Rect, Response, Sense, Stroke, Ui, pos2, vec2};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -48,11 +48,11 @@ pub enum TextWidth {
 }
 
 impl TextWidth {
-    /// Width of the pageless "page" in points (`None`: as wide as the window).
+    /// Width of the pageless text column in points (`None`: the sheet minus 64 on each side).
     pub fn points(self) -> Option<f32> {
         match self {
-            TextWidth::Narrow => Some(520.0),
-            TextWidth::Medium => Some(680.0),
+            TextWidth::Narrow => Some(560.0),
+            TextWidth::Medium => Some(720.0),
             TextWidth::Full => None,
         }
     }
@@ -69,7 +69,6 @@ pub fn pageless(app: &WordApp) -> bool {
 }
 
 const CM: f32 = 72.0 / 2.54;
-const PAD: f32 = 16.0;
 const ROW_H: f32 = mc::ROW_H;
 const INSPECTOR_W: f32 = 272.0;
 
@@ -117,35 +116,65 @@ pub fn toolbar(app: &mut WordApp, ui: &mut Ui) {
             }
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing = vec2(4.0, 0.0);
-                let open = app.ui.margin.inspector;
-                if text_tool(ui, "Format", open).on_hover_text(tl!("Show or hide the Format inspector")).clicked() {
-                    app.ui.margin.inspector = !open;
+                ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
+                // R1 / E5: panel toggles, one panel open at a time. Right to left: Review, Format.
+                // (The Assistant toggle waits for its panel, phase 8.)
+                let review_open = app.session.view.comments_pane;
+                let n = review_count(app, ui.ctx());
+                if panel_toggle(ui, "review", tl!("Review"), review_open, n).on_hover_text(tl!("Comments and changes")).clicked() {
+                    let open = !review_open;
+                    app.session.view.comments_pane = open;
+                    if open {
+                        app.ui.margin.inspector = false;
+                    }
                 }
+                let format_open = app.ui.margin.inspector;
+                if panel_toggle(ui, "inspector", tl!("Format"), format_open, 0).on_hover_text(tl!("Show or hide the Format inspector")).clicked() {
+                    app.ui.margin.inspector = !format_open;
+                    if !format_open {
+                        app.session.view.comments_pane = false;
+                    }
+                }
+                mc::toolbar_divider(ui);
                 zoom_menu(ui, app);
-                ui.add_space(12.0);
+                mc::toolbar_divider(ui);
+                // E3: comment, track changes, more.
                 more_menu(ui, app);
                 let tracking = app.session.doc.settings.track_changes;
                 if tool(ui, app, "trackChanges", "Track changes", tracking).clicked() {
                     run_from_ribbon(app, "review.trackChanges", json!({}));
                 }
-                ui.add_space(8.0);
                 if tool(ui, app, "newComment", "Comment", false).clicked() {
                     run_from_ribbon(app, "review.newComment", json!({}));
+                }
+                mc::toolbar_divider(ui);
+                // E2: insert group (right to left: link, shape, image, table).
+                if tool(ui, app, "link", "Link", false).clicked() {
+                    run_from_ribbon(app, "insert.link", json!({}));
                 }
                 shape_menu(ui, app);
                 if tool(ui, app, "picture", "Image", false).clicked() {
                     run_from_ribbon(app, "insert.picture", json!({}));
                 }
                 table_menu(ui, app);
-                ui.add_space(8.0);
-                // The style box lays out left to right inside the right-to-left toolbar group.
-                let st = app.session.run("format.state", &json!({})).unwrap_or_default();
-                ui.allocate_ui_with_layout(vec2(150.0, 24.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    style_popup(ui, app, &st, 150.0)
-                });
             });
         });
+}
+
+/// Pending changes plus open comments (the Review button's badge), recounted when the document changes.
+fn review_count(app: &mut WordApp, ctx: &egui::Context) -> usize {
+    let rev = app.session.rev();
+    let id = egui::Id::new("margin_review_count");
+    if let Some((r, n)) = ctx.data(|d| d.get_temp::<(u64, usize)>(id))
+        && r == rev
+    {
+        return n;
+    }
+    let changes = app.session.run("review.changes", &json!({})).ok().and_then(|v| v.as_array().map(Vec::len)).unwrap_or(0);
+    let comments = app.session.doc.comments.values().filter(|c| !c.resolved && c.parent.is_none()).count();
+    let n = changes + comments;
+    ctx.data_mut(|d| d.insert_temp(id, (rev, n)));
+    n
 }
 
 /// An icon button in the toolbar; `on` draws it toggled.
@@ -153,9 +182,33 @@ fn tool(ui: &mut Ui, _app: &WordApp, icon: &str, tip: &str, on: bool) -> Respons
     mc::toolbar_button(ui, icon, tip, on)
 }
 
-/// A text button in the toolbar (Format, zoom).
-fn text_tool(ui: &mut Ui, label: &str, on: bool) -> Response {
-    mc::toolbar_text_button(ui, tl!(label), on)
+/// A panel toggle at the toolbar's right end: icon + label (+ count badge); the open one is `checked`.
+fn panel_toggle(ui: &mut Ui, icon: &str, label: &str, on: bool, badge: usize) -> Response {
+    let t = Tokens::get(ui.ctx());
+    let galley = ui.painter().layout_no_wrap(label.to_string(), font(), t.text);
+    let badge_txt = if badge > 99 { "99+".to_string() } else { badge.to_string() };
+    let bg = ui.painter().layout_no_wrap(badge_txt, font(), t.on_accent);
+    let badge_w = if badge > 0 { (bg.size().x + 10.0).max(20.0) + 6.0 } else { 0.0 };
+    let (r, resp) = ui.allocate_exact_size(vec2(10.0 + 17.0 + 6.0 + galley.size().x + badge_w + 10.0, 28.0), Sense::click());
+    let fill = if on {
+        t.checked
+    } else if resp.hovered() {
+        t.hover
+    } else {
+        Color32::TRANSPARENT
+    };
+    ui.painter().rect_filled(r, mc::RADIUS, fill);
+    crate::icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 18.5, r.center().y), vec2(17.0, 17.0)), icon, t.icon, t.accent);
+    let tx = r.min.x + 33.0;
+    ui.painter().galley(pos2(tx, r.center().y - galley.size().y / 2.0), galley.clone(), t.text);
+    if badge > 0 {
+        let w = badge_w - 6.0;
+        let b = Rect::from_min_size(pos2(tx + galley.size().x + 6.0, r.center().y - 9.0), vec2(w, 18.0));
+        ui.painter().rect_filled(b, 9.0, t.accent);
+        ui.painter().galley(b.center() - bg.size() / 2.0, bg, t.on_accent);
+    }
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, label));
+    resp
 }
 
 fn table_menu(ui: &mut Ui, app: &mut WordApp) {
@@ -188,19 +241,46 @@ fn shape_menu(ui: &mut Ui, app: &mut WordApp) {
     });
 }
 
+/// E4 / P4: the only zoom control, a popover button "100%" + chevron.
 fn zoom_menu(ui: &mut Ui, app: &mut WordApp) {
-    let pct = (app.session.view.zoom * 100.0).round();
-    let resp = text_tool(ui, &format!("{pct:.0}%"), false);
+    let t = Tokens::get(ui.ctx());
+    let shown = if app.canvas.scale > 0.0 { app.canvas.scale / crate::canvas::PX_PER_PT } else { app.session.view.zoom };
+    let pct = (shown * 100.0).round();
+    let fit = app.session.view.fit.clone();
+    let label = format!("{pct:.0}%");
+    let galley = ui.painter().layout_no_wrap(label.clone(), font(), t.text);
+    let (r, resp) = ui.allocate_exact_size(vec2(10.0 + galley.size().x + 6.0 + 12.0 + 8.0, 28.0), Sense::click());
+    let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&resp));
+    let fill = if open {
+        t.checked
+    } else if resp.hovered() {
+        t.hover
+    } else {
+        Color32::TRANSPARENT
+    };
+    ui.painter().rect_filled(r, mc::RADIUS, fill);
+    ui.painter().galley(pos2(r.min.x + 10.0, r.center().y - galley.size().y / 2.0), galley.clone(), t.text);
+    crate::icons::paint(
+        ui.painter(),
+        Rect::from_center_size(pos2(r.max.x - 14.0, r.center().y), vec2(13.0, 13.0)),
+        "chevronDown",
+        t.text_dim,
+        t.text_dim,
+    );
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Zoom {label}")));
+    let resp = resp.on_hover_text(tl!("Zoom"));
     egui::Popup::menu(&resp).width(200.0).show(|ui| {
-        ui.set_min_width(120.0);
-        for z in [75, 100, 125, 150, 200] {
-            if mc::menu_row(ui, &format!("{z}%"), (pct - z as f32).abs() < 0.5).clicked() {
+        ui.set_min_width(160.0);
+        for z in [50, 75, 100, 125, 150, 200] {
+            if mc::menu_row(ui, &format!("{z}%"), fit.is_empty() && (pct - z as f32).abs() < 0.5).clicked() {
                 run_from_ribbon(app, "view.zoom", json!({"value": z}));
             }
         }
         ui.separator();
-        if mc::menu_row(ui, tl!("Fit width"), false).clicked() {
-            run_from_ribbon(app, "view.zoom", json!({"value": "pageWidth"}));
+        for (label, id, key) in [("Fit Width", "view.pageWidth", "pageWidth"), ("Fit Page", "view.onePage", "onePage")] {
+            if mc::menu_row(ui, tl!(label), fit == key).clicked() {
+                run_from_ribbon(app, id, json!({}));
+            }
         }
     });
 }
@@ -234,6 +314,263 @@ pub fn shortcuts(app: &mut WordApp, ctx: &egui::Context) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Status bar (E14)
+
+/// The 28 pt status bar: `Page 1 of 2 · 357 words · English (United States)`, then notices; on the
+/// right the Pages / Pageless switch and Focus. No zoom slider (zoom lives in the toolbar).
+pub fn status_bar(app: &mut WordApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    egui::Panel::bottom("status")
+        .exact_size(28.0)
+        .frame(
+            egui::Frame::NONE
+                .fill(t.status_bar)
+                .inner_margin(egui::Margin { left: 16, right: 12, top: 0, bottom: 0 })
+                .stroke(Stroke::new(1.0, t.border)),
+        )
+        .show(ui, |ui| {
+            ui.horizontal_centered(|ui| {
+                ui.spacing_mut().item_spacing = vec2(8.0, 0.0);
+                let item = |ui: &mut Ui, s: &str| -> Response {
+                    ui.add(egui::Label::new(egui::RichText::new(s).font(font()).color(t.text)).sense(Sense::click()))
+                };
+                let dot = |ui: &mut Ui| {
+                    ui.label(egui::RichText::new("·").font(font()).color(t.text_dim));
+                };
+                let l = app.session.layout();
+                let page = l.caret_on(&app.session.sel.focus, app.session.page_hint).map(|c| c.page + 1).unwrap_or(1);
+                let pages = l.pages.len().to_string();
+                if item(ui, &crate::i18n::fmt(tl!("Page {page} of {pages}"), &[("page", &page.to_string()), ("pages", &pages)]))
+                    .on_hover_text(tl!("Go To (⌘⌥G)"))
+                    .clicked()
+                {
+                    let _ = app.run("ui.dialog", json!({"name": "goto"}));
+                }
+                dot(ui);
+                let words = app.cached_word_count();
+                let wtxt = if app.session.sel.is_collapsed() || crate::objects::selected(app).is_some() {
+                    crate::i18n::fmt(tl!("{words} words"), &[("words", &words.to_string())])
+                } else {
+                    let sw = wordcraft_doc::count_words(&app.session.selected_text());
+                    crate::i18n::fmt(tl!("{selected} of {words} words"), &[("selected", &sw.to_string()), ("words", &words.to_string())])
+                };
+                if item(ui, &wtxt).clicked() {
+                    let _ = app.run("ui.dialog", json!({"name": "wordCount"}));
+                }
+                dot(ui);
+                let lang = crate::ribbon::caret_language(app);
+                let resp = item(ui, &lang).on_hover_text(tl!("Language"));
+                egui::Popup::menu(&resp).show(|ui| {
+                    ui.set_min_width(200.0);
+                    crate::ribbon::language_menu(ui, app);
+                });
+                // Notices (R9's review status arrives with the Review panel, phase 7).
+                if app.session.sel.focus.story != wordcraft_doc::StoryRef::Body && !crate::canvas::in_text_box(app) {
+                    dot(ui);
+                    item(ui, tl!("Editing header/footer"));
+                }
+                if app.session.doc.settings.track_changes {
+                    dot(ui);
+                    item(ui, tl!("Track Changes: On"));
+                }
+                if app.session.prefs.overtype {
+                    dot(ui);
+                    if item(ui, tl!("Overtype")).on_hover_text(tl!("Click to switch back to inserting")).clicked() {
+                        let _ = app.run("text.overtype", json!({"value": false}));
+                    }
+                }
+                if let Some((msg, at)) = &app.status_msg
+                    && crate::now_ms() - at < 6000.0
+                {
+                    dot(ui);
+                    ui.label(egui::RichText::new(msg).font(font()).color(t.accent_text));
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing = vec2(8.0, 0.0);
+                    // Focus.
+                    let w = ui.painter().layout_no_wrap(tl!("Focus").to_string(), font(), t.text).size().x;
+                    let (r, resp) = ui.allocate_exact_size(vec2(10.0 + 16.0 + 6.0 + w + 10.0, 22.0), Sense::click());
+                    let on = app.session.view.focus_mode;
+                    if on {
+                        ui.painter().rect_filled(r, 5.0, t.checked);
+                    } else if resp.hovered() {
+                        ui.painter().rect_filled(r, 5.0, t.hover);
+                    }
+                    crate::icons::paint(
+                        ui.painter(),
+                        Rect::from_center_size(pos2(r.min.x + 18.0, r.center().y), vec2(16.0, 16.0)),
+                        "focus",
+                        t.icon,
+                        t.accent,
+                    );
+                    ui.painter().text(pos2(r.min.x + 32.0, r.center().y), egui::Align2::LEFT_CENTER, tl!("Focus"), font(), t.text);
+                    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, tl!("Focus")));
+                    if resp.clicked() {
+                        let _ = app.run("view.focus", json!({}));
+                    }
+                    // Pages / Pageless, icon segments 22 high.
+                    let m = crate::skin::MarginTokens::get(ui.ctx());
+                    let (r, _) = ui.allocate_exact_size(vec2(68.0, 22.0), Sense::hover());
+                    ui.painter().rect(r, 6.0, m.segment_track, Stroke::new(1.0, t.input_border), egui::StrokeKind::Inside);
+                    let pageless_now = pageless(app);
+                    for (i, (icon, tip)) in [("viewPages", "Pages"), ("viewPageless", "Pageless")].into_iter().enumerate() {
+                        let cell = Rect::from_min_size(r.min + vec2(2.0 + 32.0 * i as f32, 2.0), vec2(32.0, 18.0));
+                        let resp = ui.interact(cell, ui.id().with(("status_view", i)), Sense::click());
+                        let on = (i == 1) == pageless_now;
+                        if on {
+                            for sh in m.chip_shadow.iter().filter(|s| s.color.a() > 0) {
+                                ui.painter().add(sh.as_shape(cell, 4.0));
+                            }
+                            ui.painter().rect_filled(cell, 4.0, m.segment_chip);
+                        }
+                        let ink = if on { t.text } else { t.text_dim };
+                        crate::icons::paint(ui.painter(), Rect::from_center_size(cell.center(), vec2(16.0, 16.0)), icon, ink, ink);
+                        resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::RadioButton, true, on, tl!(tip)));
+                        if resp.on_hover_text(tl!(tip)).clicked() && !on {
+                            set_pageless(app, i == 1);
+                        }
+                    }
+                });
+            });
+        });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Outline sidebar (E21-E23)
+
+pub const OUTLINE_W: f32 = 220.0;
+
+/// The outline sidebar: search field, Headings / Pages / Results tabs, 28 pt rows.
+pub fn outline(app: &mut WordApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    let m = crate::skin::MarginTokens::get(ui.ctx());
+    ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+    // E21: search field, 12 pt margin.
+    let qid = egui::Id::new("nav_query");
+    let mut q = ui.data(|d| d.get_temp::<String>(qid)).unwrap_or_default();
+    egui::Frame::NONE.inner_margin(egui::Margin::same(12)).show(ui, |ui| {
+        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::hover());
+        ui.painter().rect(r, mc::RADIUS, m.field_bg, Stroke::new(1.0, t.input_border), egui::StrokeKind::Inside);
+        crate::icons::paint(
+            ui.painter(),
+            Rect::from_center_size(pos2(r.min.x + 16.0, r.center().y), vec2(15.0, 15.0)),
+            "search",
+            t.text_dim,
+            t.text_dim,
+        );
+        let field = Rect::from_min_max(pos2(r.min.x + 30.0, r.min.y + 2.0), pos2(r.max.x - 8.0, r.max.y - 2.0));
+        let te = ui.put(
+            field,
+            egui::TextEdit::singleline(&mut q)
+                .frame(egui::Frame::NONE)
+                .font(font())
+                .hint_text(egui::RichText::new(tl!("Search document")).color(m.hint))
+                .text_color(t.text),
+        );
+        if te.has_focus() {
+            ui.painter().rect_stroke(r.expand(1.5), mc::RADIUS + 1.5, Stroke::new(3.0, m.focus_ring), egui::StrokeKind::Outside);
+        }
+        if te.changed() {
+            ui.data_mut(|d| d.insert_temp(qid, q.clone()));
+            if q.is_empty() {
+                app.session.find.results.clear();
+            } else {
+                let _ = app.session.run("edit.find", &json!({"text": q}));
+                app.ui.nav_tab = "results".into();
+            }
+        }
+    });
+    // E22: underline tabs, 40 high, hairline below.
+    let tabs = [("headings", "Headings"), ("pages", "Pages"), ("results", "Results")];
+    let sel = tabs.iter().position(|(k, _)| *k == app.ui.nav_tab).unwrap_or(0);
+    if let Some(i) = mc::underline_tabs(ui, &tabs.map(|(_, l)| l), sel, 40.0) {
+        app.ui.nav_tab = tabs.get(i).map_or("headings", |(k, _)| k).into();
+    }
+    let r = ui.available_rect_before_wrap();
+    ui.painter().hline(r.x_range(), r.min.y, Stroke::new(1.0, t.border));
+    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        match app.ui.nav_tab.as_str() {
+            "pages" => {
+                let l = app.session.layout();
+                let cur = app.session.page_hint;
+                for (i, p) in l.pages.iter().enumerate() {
+                    let label = crate::i18n::fmt(tl!("Page {page}"), &[("page", &p.number.to_string())]);
+                    if outline_row(ui, 0, &label, i == cur, None).clicked() {
+                        let _ = app.run("edit.goto", json!({"page": i + 1}));
+                    }
+                }
+            }
+            "results" => egui::Frame::NONE.inner_margin(egui::Margin::same(12)).show(ui, |ui| crate::panes::nav_results(app, ui)).inner,
+            _ => {
+                let (items, current) = crate::panes::nav_items(app);
+                if items.is_empty() {
+                    egui::Frame::NONE.inner_margin(egui::Margin::same(16)).show(ui, |ui| {
+                        mc::hint(ui, "Apply Heading styles to your headings and they appear here.");
+                    });
+                }
+                // Collapsed parents hide the headings below them.
+                let mut hide_below: Option<u8> = None;
+                for i in 0..items.len() {
+                    let Some((path, lv, txt)) = items.get(i) else { continue };
+                    if let Some(h) = hide_below {
+                        if *lv > h {
+                            continue;
+                        }
+                        hide_below = None;
+                    }
+                    let parent = items.get(i + 1).is_some_and(|n| n.1 > *lv);
+                    let key = egui::Id::new(("outline_collapsed", path.clone()));
+                    let collapsed = parent && ui.data(|d| d.get_temp::<bool>(key)).unwrap_or(false);
+                    let chev = parent.then_some(collapsed);
+                    let resp = outline_row(ui, *lv, txt, current == Some(i), chev);
+                    let toggled =
+                        chev.is_some() && resp.interact_pointer_pos().is_some_and(|p| p.x < resp.rect.min.x + 14.0 + 16.0 * f32::from(*lv) + 20.0);
+                    if resp.clicked() && toggled {
+                        ui.data_mut(|d| d.insert_temp(key, !collapsed));
+                    } else if resp.clicked() {
+                        let _ = app.run(
+                            "caret.set",
+                            json!({"pos": wordcraft_doc::Pos { story: wordcraft_doc::StoryRef::Body, path: path.clone(), off: 0 }}),
+                        );
+                        app.canvas.nav_to_caret = true;
+                        app.canvas.scroll_to_caret = false;
+                        app.canvas.want_focus = true;
+                    }
+                    if collapsed {
+                        hide_below = Some(*lv);
+                    }
+                }
+            }
+        }
+    });
+}
+
+/// E23: a 28 pt row, 14 pt indent per level, a chevron on parents, the current one in a `checked` pill.
+fn outline_row(ui: &mut Ui, level: u8, text: &str, current: bool, chevron: Option<bool>) -> Response {
+    let t = Tokens::get(ui.ctx());
+    let (cell, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::click());
+    let r = cell.shrink2(vec2(8.0, 0.0));
+    if current {
+        ui.painter().rect_filled(r, 5.0, t.checked);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(r, 5.0, t.hover);
+    }
+    let x = r.min.x + 8.0 + 14.0 * f32::from(level);
+    if let Some(collapsed) = chevron {
+        let icon = if collapsed { "chevronRight" } else { "chevronDown" };
+        crate::icons::paint(ui.painter(), Rect::from_center_size(pos2(x + 6.0, r.center().y), vec2(13.0, 13.0)), icon, t.text_dim, t.text_dim);
+    }
+    let tx = x + 18.0;
+    let mut job = egui::text::LayoutJob::simple_singleline(text.to_string(), font(), t.text);
+    job.wrap = egui::text::TextWrapping::truncate_at_width((r.max.x - tx - 8.0).max(0.0));
+    let galley = ui.painter().layout_job(job);
+    ui.painter().galley(pos2(tx, r.center().y - galley.size().y / 2.0), galley, t.text);
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, current, text));
+    resp.on_hover_text(text)
+}
+
+// ---------------------------------------------------------------------------------------------
 // Inspector
 
 pub fn inspector(app: &mut WordApp, ui: &mut Ui) {
@@ -243,16 +580,16 @@ pub fn inspector(app: &mut WordApp, ui: &mut Ui) {
         .resizable(false)
         .frame(egui::Frame::NONE.fill(t.panel).stroke(Stroke::new(1.0, t.border)))
         .show(ui, |ui| {
-            ui.spacing_mut().item_spacing = vec2(8.0, 10.0);
-            ui.add_space(12.0);
-            pad(ui, |ui| {
-                let tabs = [(InspectorTab::Text, "Text"), (InspectorTab::Layout, "Layout"), (InspectorTab::Document, "Document")];
-                let cur = app.ui.margin.tab;
-                if let Some(i) = segmented(ui, &tabs.map(|(_, l)| l), tabs.iter().position(|(k, _)| *k == cur)) {
-                    app.ui.margin.tab = tabs.get(i).map_or(cur, |(k, _)| *k);
-                }
-            });
-            ui.add_space(4.0);
+            ui.spacing_mut().item_spacing = vec2(8.0, mc::ROW_GAP);
+            // E6: underline tabs, 44 high, hairline below.
+            let tabs = [(InspectorTab::Text, "Text"), (InspectorTab::Layout, "Layout"), (InspectorTab::Document, "Document")];
+            let cur = app.ui.margin.tab;
+            let sel = tabs.iter().position(|(k, _)| *k == cur).unwrap_or(0);
+            if let Some(i) = mc::underline_tabs(ui, &tabs.map(|(_, l)| l), sel, 44.0) {
+                app.ui.margin.tab = tabs.get(i).map_or(cur, |(k, _)| *k);
+            }
+            let r = ui.available_rect_before_wrap();
+            ui.painter().hline(r.x_range(), r.min.y - mc::ROW_GAP, Stroke::new(1.0, t.border));
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| match app.ui.margin.tab {
                 InspectorTab::Text => text_tab(app, ui),
                 InspectorTab::Layout => layout_tab(app, ui),
@@ -260,6 +597,19 @@ pub fn inspector(app: &mut WordApp, ui: &mut Ui) {
             });
         });
 }
+
+/// Font colours offered in the Colour popup (name, RRGGBB or "auto").
+const COLOURS: [(&str, &str); 9] = [
+    ("Automatic", "auto"),
+    ("Black", "000000"),
+    ("Dark grey", "595959"),
+    ("Grey", "A6A6A6"),
+    ("Blue", "0A64D6"),
+    ("Dark blue", "1F3864"),
+    ("Red", "C00000"),
+    ("Green", "1F7A3A"),
+    ("Orange", "B45309"),
+];
 
 fn text_tab(app: &mut WordApp, ui: &mut Ui) {
     let st = app.session.run("format.state", &json!({})).unwrap_or_default();
@@ -274,39 +624,67 @@ fn text_tab(app: &mut WordApp, ui: &mut Ui) {
         let shown = app.previews.font_shown(&font_name);
         let fams = app.previews.families();
         if let Some(f) = mc::popup_button(ui, "margin_font", w, &shown, &fams, true) {
-            if f == crate::widgets::ADD_FONT {
-                run_from_ribbon(app, "font.add", json!({}));
-            } else {
-                let f = app.previews.font_stored(&f);
-                run_from_ribbon(app, "format.font", json!({"name": f}));
-            }
+            let f = app.previews.font_stored(&f);
+            run_from_ribbon(app, "format.font", json!({"name": f}));
         }
+        // E9: size (80 wide) and B I U S on one row.
         ui.horizontal(|ui| {
-            label(ui, "Size", 64.0);
+            ui.spacing_mut().item_spacing.x = 8.0;
             let size = st.get("size").and_then(Value::as_f64).unwrap_or(12.0) as f32;
-            if let Some(v) = number(ui, "margin_size", size, 1.0, 1.0..=400.0, "pt") {
-                run_from_ribbon(app, "format.size", json!({"size": v}));
+            ui.allocate_ui_with_layout(vec2(80.0, ROW_H), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                if let Some(v) = number(ui, "margin_size", size, 1.0, 1.0..=400.0, "pt") {
+                    run_from_ribbon(app, "format.size", json!({"size": v}));
+                }
+            });
+            let marks = [
+                ("bold", "Bold", "format.bold", flag("bold")),
+                ("italic", "Italic", "format.italic", flag("italic")),
+                ("underline", "Underline", "format.underline", flag("underline")),
+                ("strike", "Strikethrough", "format.strikethrough", flag("strike")),
+            ];
+            let segs: Vec<mc::Seg> = marks.iter().map(|(icon, tip, _, _)| mc::Seg::Icon(icon, tip)).collect();
+            let on: Vec<bool> = marks.iter().map(|m| m.3).collect();
+            if let Some(i) = mc::segmented(ui, "marks", &segs, &on)
+                && let Some((_, _, id, _)) = marks.get(i)
+            {
+                run_from_ribbon(app, id, json!({}));
             }
         });
-        let marks = [
-            ("B", "format.bold", flag("bold")),
-            ("I", "format.italic", flag("italic")),
-            ("U", "format.underline", flag("underline")),
-            ("S", "format.strikethrough", flag("strike")),
-        ];
-        if let Some(i) = toggles(ui, &marks.map(|(l, _, on)| (l, on)))
-            && let Some((_, id, _)) = marks.get(i)
-        {
-            run_from_ribbon(app, id, json!({}));
-        }
+        // E9: Colour row — swatch + popup.
+        mc::labelled_row(ui, "Colour", |ui| {
+            let code = st.get("color").and_then(Value::as_str).unwrap_or("auto").to_string();
+            let swatch = parse_hex(&code).unwrap_or(Color32::from_gray(0x1A));
+            let (sr, _) = ui.allocate_exact_size(vec2(20.0, ROW_H), Sense::hover());
+            ui.painter().rect(
+                Rect::from_center_size(sr.center(), vec2(18.0, 18.0)),
+                4.0,
+                swatch,
+                Stroke::new(1.0, Tokens::get(ui.ctx()).input_border),
+                egui::StrokeKind::Inside,
+            );
+            let name = COLOURS.iter().find(|(_, c)| c.eq_ignore_ascii_case(&code)).map_or_else(|| format!("#{code}"), |(n, _)| tl!(*n).to_string());
+            let names: Vec<String> = COLOURS.iter().map(|(n, _)| tl!(*n).to_string()).collect();
+            if let Some(n) = mc::popup_button(ui, "margin_colour", ui.available_width(), &name, &names, false)
+                && let Some((_, c)) = COLOURS.iter().find(|(cn, _)| tl!(*cn) == n)
+            {
+                run_from_ribbon(app, "format.color", json!({"color": c}));
+            }
+        });
     });
 
     section(ui, "Alignment", |ui| {
         use wordcraft_doc::Align as A;
         let align = rp.as_ref().map(|r| r.align.visual(r.bidi)).unwrap_or_default();
-        let opts = [("Left", A::Left, "left"), ("Center", A::Center, "center"), ("Right", A::Right, "right"), ("Justify", A::Justify, "justify")];
-        if let Some(i) = segmented(ui, &opts.map(|(l, _, _)| l), opts.iter().position(|(_, a, _)| *a == align))
-            && let Some((_, _, v)) = opts.get(i)
+        // E10: four icon segments, neutral chip.
+        let opts = [
+            ("alignLeft", "Left", A::Left, "left"),
+            ("alignCenter", "Center", A::Center, "center"),
+            ("alignRight", "Right", A::Right, "right"),
+            ("justify", "Justify", A::Justify, "justify"),
+        ];
+        let segs: Vec<mc::Seg> = opts.iter().map(|(icon, tip, _, _)| mc::Seg::Icon(icon, tip)).collect();
+        if let Some(i) = mc::segmented_one(ui, "align", &segs, opts.iter().position(|o| o.2 == align))
+            && let Some((_, _, _, v)) = opts.get(i)
         {
             run_from_ribbon(app, "para.align", json!({"value": v}));
         }
@@ -314,24 +692,15 @@ fn text_tab(app: &mut WordApp, ui: &mut Ui) {
 
     section(ui, "Spacing", |ui| {
         let (before, after, line) = rp.as_ref().map_or((0.0, 0.0, 1.0), |r| (r.space_before, r.space_after, line_multiple(&r.line_spacing)));
-        ui.horizontal(|ui| {
-            label(ui, "Line", 64.0);
-            if let Some(v) = number(ui, "margin_line", line, 0.05, 0.5..=5.0, "×") {
-                run_from_ribbon(app, "para.lineSpacing", json!({"value": v}));
-            }
-        });
-        ui.horizontal(|ui| {
-            label(ui, "Before", 64.0);
-            if let Some(v) = number(ui, "margin_before", before, 1.0, 0.0..=400.0, "pt") {
-                run_from_ribbon(app, "para.spacing", json!({"before": v}));
-            }
-        });
-        ui.horizontal(|ui| {
-            label(ui, "After", 64.0);
-            if let Some(v) = number(ui, "margin_after", after, 1.0, 0.0..=400.0, "pt") {
-                run_from_ribbon(app, "para.spacing", json!({"after": v}));
-            }
-        });
+        if let Some(v) = mc::labelled_row(ui, "Line", |ui| number(ui, "margin_line", line, 0.05, 0.5..=5.0, "×")) {
+            run_from_ribbon(app, "para.lineSpacing", json!({"value": v}));
+        }
+        if let Some(v) = mc::labelled_row(ui, "Before", |ui| number(ui, "margin_before", before, 1.0, 0.0..=400.0, "pt")) {
+            run_from_ribbon(app, "para.spacing", json!({"before": v}));
+        }
+        if let Some(v) = mc::labelled_row(ui, "After", |ui| number(ui, "margin_after", after, 1.0, 0.0..=400.0, "pt")) {
+            run_from_ribbon(app, "para.spacing", json!({"after": v}));
+        }
     });
 
     section(ui, "Bullets and lists", |ui| {
@@ -352,6 +721,28 @@ fn text_tab(app: &mut WordApp, ui: &mut Ui) {
             }
         }
     });
+
+    // E12: the full dialogs, as links.
+    egui::Frame::NONE.inner_margin(egui::Margin { left: 16, right: 16, top: 16, bottom: 16 }).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 20.0;
+            if mc::link(ui, "Font…").clicked() {
+                run_from_ribbon(app, "format.fontDialog", json!({}));
+            }
+            if mc::link(ui, "Paragraph options…").clicked() {
+                run_from_ribbon(app, "para.dialog", json!({}));
+            }
+        });
+    });
+}
+
+fn parse_hex(code: &str) -> Option<Color32> {
+    let c = code.trim_start_matches('#');
+    if c.len() != 6 {
+        return None;
+    }
+    let v = u32::from_str_radix(c, 16).ok()?;
+    Some(Color32::from_rgb((v >> 16) as u8, (v >> 8) as u8, v as u8))
 }
 
 fn layout_tab(app: &mut WordApp, ui: &mut Ui) {
@@ -359,27 +750,38 @@ fn layout_tab(app: &mut WordApp, ui: &mut Ui) {
     let (left, right, first) = rp.as_ref().map_or((0.0, 0.0, 0.0), |r| (r.indent_left, r.indent_right, r.indent_first));
     section(ui, "Indents", |ui| {
         for (name, key, v) in [("Left", "left", left), ("Right", "right", right), ("First line", "firstLine", first)] {
-            ui.horizontal(|ui| {
-                label(ui, name, 80.0);
-                if let Some(cm) = number(ui, &format!("margin_ind_{key}"), v / CM, 0.1, -20.0..=50.0, "cm") {
-                    run_from_ribbon(app, "para.indents", json!({ key: cm * CM }));
-                }
-            });
+            if let Some(cm) = mc::labelled_row(ui, name, |ui| number(ui, &format!("margin_ind_{key}"), v / CM, 0.1, -20.0..=50.0, "cm")) {
+                run_from_ribbon(app, "para.indents", json!({ key: cm * CM }));
+            }
         }
     });
     section(ui, "Columns", |ui| {
-        let count = caret_section(app).map_or(1, |s| s.columns.count as usize);
-        if let Some(i) = segmented(ui, &["1", "2", "3"], Some(count.clamp(1, 3) - 1)) {
+        let sect = caret_section(app);
+        let count = sect.as_ref().map_or(1, |s| s.columns.count as usize).clamp(1, 3);
+        if let Some(i) = segmented(ui, &["1", "2", "3"], Some(count - 1)) {
             run_from_ribbon(app, "layout.columns", json!({"count": i + 1}));
         }
+        // E15: gap between columns, disabled at one column.
+        let gap = sect.as_ref().map_or(36.0, |s| s.columns.space) / CM;
+        ui.add_enabled_ui(count > 1, |ui| {
+            if let Some(cm) = mc::labelled_row(ui, "Gap", |ui| number(ui, "margin_col_gap", gap, 0.05, 0.0..=10.0, "cm")) {
+                run_from_ribbon(app, "layout.columns", json!({"count": count, "space": cm * CM}));
+            }
+        });
     });
     section(ui, "Pagination", |ui| {
-        let (keep_next, keep_lines) = rp.as_ref().map_or((false, false), |r| (r.keep_next, r.keep_lines));
-        if check(ui, "Keep with next", keep_next) {
-            run_from_ribbon(app, "para.keepNext", json!({}));
-        }
-        if check(ui, "Keep lines together", keep_lines) {
-            run_from_ribbon(app, "para.keepLines", json!({}));
+        // E16.
+        let (keep_next, keep_lines, break_before, widow) =
+            rp.as_ref().map_or((false, false, false, true), |r| (r.keep_next, r.keep_lines, r.page_break_before, r.widow_control));
+        for (label, on, id) in [
+            ("Keep with next", keep_next, "para.keepNext"),
+            ("Keep lines together", keep_lines, "para.keepLines"),
+            ("Page break before", break_before, "para.pageBreakBefore"),
+            ("Widow and orphan control", widow, "para.widowControl"),
+        ] {
+            if check(ui, label, on) {
+                run_from_ribbon(app, id, json!({}));
+            }
         }
     });
 }
@@ -390,17 +792,17 @@ fn document_tab(app: &mut WordApp, ui: &mut Ui) {
         if let Some(i) = segmented(ui, &["Pages", "Pageless"], Some(usize::from(pageless))) {
             set_pageless(app, i == 1);
         }
-        if pageless {
-            ui.label(egui::RichText::new(tl!("Text width")).font(font()).color(Tokens::get(ui.ctx()).text_dim));
+        hint(ui, "Pageless hides page breaks, headers and footers. They come back when you print or export to PDF.");
+    });
+    if pageless {
+        // E20: Text width instead of Page and Margins.
+        section(ui, "Text width", |ui| {
             let opts = [(TextWidth::Narrow, "Narrow"), (TextWidth::Medium, "Medium"), (TextWidth::Full, "Full")];
             let cur = app.ui.margin.text_width;
             if let Some(i) = segmented(ui, &opts.map(|(_, l)| l), opts.iter().position(|(w, _)| *w == cur)) {
                 app.ui.margin.text_width = opts.get(i).map_or(cur, |(w, _)| *w);
             }
-        }
-        hint(ui, "Pageless hides page breaks, headers and footers. They come back when you print or export to PDF.");
-    });
-    if pageless {
+        });
         return;
     }
     let Some(sect) = caret_section(app) else { return };
@@ -417,31 +819,80 @@ fn document_tab(app: &mut WordApp, ui: &mut Ui) {
         }
     });
     section(ui, "Margins", |ui| {
-        for (name, key, v) in [
-            ("Top", "top", sect.margin_top),
-            ("Bottom", "bottom", sect.margin_bottom),
-            ("Left", "left", sect.margin_left),
-            ("Right", "right", sect.margin_right),
-        ] {
-            ui.horizontal(|ui| {
-                label(ui, name, 80.0);
-                if let Some(cm) = number(ui, &format!("margin_m_{key}"), v / CM, 0.1, 0.0..=20.0, "cm") {
-                    run_from_ribbon(app, "layout.margins", json!({ key: cm * CM }));
+        // E18: 2 × 2 grid, label above field.
+        let rows = [
+            [("Top", "top", sect.margin_top), ("Bottom", "bottom", sect.margin_bottom)],
+            [("Left", "left", sect.margin_left), ("Right", "right", sect.margin_right)],
+        ];
+        let t = Tokens::get(ui.ctx());
+        for row in rows {
+            ui.columns(2, |cols| {
+                for (col, (name, key, v)) in cols.iter_mut().zip(row) {
+                    col.spacing_mut().item_spacing.y = 4.0;
+                    col.label(egui::RichText::new(tl!(name)).font(font()).color(t.text_dim));
+                    if let Some(cm) = number(col, &format!("margin_m_{key}"), v / CM, 0.1, 0.0..=20.0, "cm") {
+                        run_from_ribbon(app, "layout.margins", json!({ key: cm * CM }));
+                    }
                 }
             });
         }
     });
     section(ui, "Headers and footers", |ui| {
-        if button(ui, "Edit header") {
-            run_from_ribbon(app, "insert.header", json!({"preset": "blank"}));
+        // E19: switches; "Edit" on rows that are on.
+        let header = sect.headers.default.is_some();
+        let footer = sect.footers.default.is_some();
+        let numbers = has_page_numbers(app, &sect);
+        for (label, on, add, edit, remove) in [
+            ("Header", header, ("insert.header", json!({"preset": "blank"})), "insert.editHeader", "insert.removeHeader"),
+            ("Footer", footer, ("insert.footer", json!({"preset": "blank"})), "insert.editFooter", "insert.removeFooter"),
+        ] {
+            let top = ui.cursor().min;
+            let flip = mc::switch(ui, label, on);
+            if on {
+                let lw = ui.painter().layout_no_wrap(tl!(label).to_string(), font(), Color32::WHITE).size().x;
+                let rect = Rect::from_min_size(pos2(top.x + lw + 12.0, top.y), vec2(40.0, ROW_H));
+                let clicked = ui
+                    .scope_builder(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
+                        mc::link(ui, "Edit").clicked()
+                    })
+                    .inner;
+                if clicked {
+                    run_from_ribbon(app, edit, json!({}));
+                }
+            }
+            if flip {
+                if on {
+                    run_from_ribbon(app, remove, json!({}));
+                } else {
+                    run_from_ribbon(app, add.0, add.1);
+                }
+            }
         }
-        if button(ui, "Edit footer") {
-            run_from_ribbon(app, "insert.footer", json!({"preset": "blank"}));
+        if mc::switch(ui, "Page numbers", numbers) {
+            if numbers {
+                // No engine command removes just the number yet (it is a field in the footer).
+                app.status(tl!("Page numbers sit in the footer: choose Edit on Footer to remove them."));
+            } else {
+                run_from_ribbon(app, "insert.pageNumber", json!({"position": "bottom", "align": "center"}));
+            }
         }
-        if button(ui, "Add page numbers") {
-            run_from_ribbon(app, "insert.pageNumber", json!({"position": "bottom", "align": "center"}));
+        if check(ui, "Different first page", sect.title_page) {
+            run_from_ribbon(app, "layout.differentFirstPage", json!({}));
         }
     });
+}
+
+/// Whether the section's header or footer holds a PAGE field.
+fn has_page_numbers(app: &WordApp, sect: &wordcraft_doc::section::SectionProps) -> bool {
+    let doc = &app.session.doc;
+    [sect.headers.default, sect.footers.default, sect.headers.first, sect.footers.first].into_iter().flatten().any(|id| {
+        let story = wordcraft_doc::StoryRef::Part(id);
+        doc.para_paths(story).iter().filter_map(|p| doc.para(story, p)).any(|para| {
+            para.objects
+                .iter()
+                .any(|o| matches!(o, wordcraft_doc::InlineObject::Field { instr, .. } if instr.trim().to_ascii_uppercase().starts_with("PAGE")))
+        })
+    })
 }
 
 /// Pages ↔ Pageless. Pageless is Web Layout at 100% (a fitted zoom would stretch the narrow column).
@@ -468,7 +919,7 @@ pub fn before_canvas(app: &mut WordApp, avail_w: f32) {
         return;
     }
     let px_per_pt = app.session.view.zoom.max(0.1) * crate::canvas::PX_PER_PT;
-    let full = (avail_w / px_per_pt - 48.0).max(200.0);
+    let full = (avail_w / px_per_pt - 128.0).max(200.0);
     let w = app.ui.margin.text_width.points().map_or(full, |p| p.min(full));
     if (app.session.view.web_width - w).abs() > 0.5 {
         app.session.view.web_width = w;
@@ -519,21 +970,10 @@ fn style_popup(ui: &mut Ui, app: &mut WordApp, st: &Value, width: f32) {
     }
 }
 
-fn pad(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
-    egui::Frame::NONE.inner_margin(egui::Margin::symmetric(PAD as i8, 0)).show(ui, add);
-}
-
 // Thin wrappers over the shared controls (`mac_controls`), so the tabs above read the same.
 
 fn section(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui)) {
     mc::section(ui, title, add);
-}
-
-/// A row label in the 80 pt label column (the control after it fills the rest).
-fn label(ui: &mut Ui, text: &str, _width: f32) {
-    let t = Tokens::get(ui.ctx());
-    let (r, _) = ui.allocate_exact_size(vec2(mc::LABEL_W, ROW_H), Sense::hover());
-    ui.painter().text(pos2(r.min.x, r.center().y), Align2::LEFT_CENTER, tl!(text), font(), t.text_dim);
 }
 
 fn hint(ui: &mut Ui, text: &str) {
@@ -548,23 +988,9 @@ fn check(ui: &mut Ui, text: &str, on: bool) -> bool {
     mc::checkbox(ui, text, on)
 }
 
-fn button(ui: &mut Ui, text: &str) -> bool {
-    ui.allocate_ui_with_layout(vec2(ui.available_width(), ROW_H), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-        mc::button(ui, text, false, true)
-    })
-    .inner
-    .clicked()
-}
-
 fn segmented(ui: &mut Ui, labels: &[&str], selected: Option<usize>) -> Option<usize> {
     let items: Vec<mc::Seg> = labels.iter().map(|l| mc::Seg::Text(l)).collect();
     mc::segmented_one(ui, &labels.join("|"), &items, selected)
-}
-
-fn toggles(ui: &mut Ui, items: &[(&str, bool)]) -> Option<usize> {
-    let segs: Vec<mc::Seg> = items.iter().map(|(l, _)| mc::Seg::Text(l)).collect();
-    let on: Vec<bool> = items.iter().map(|(_, o)| *o).collect();
-    mc::segmented(ui, "marks", &segs, &on)
 }
 
 #[cfg(test)]
@@ -602,7 +1028,7 @@ mod tests {
     fn inspector_aligns_and_keeps_typing_focus() {
         let mut h = mac_harness();
         assert!(active(h.state()));
-        assert!(h.query_by_label("Bold").is_none(), "no ribbon in the Mac layout");
+        assert!(h.query_by_role_and_label(egui::accesskit::Role::Button, "Bold").is_none(), "no ribbon in the Mac layout");
         h.get_by_role_and_label(egui::accesskit::Role::RadioButton, "Center").click();
         h.step();
         h.step();
@@ -621,11 +1047,11 @@ mod tests {
             h.step();
         }
         assert!(pageless(h.state()));
-        assert!((h.state().session.view.web_width - 680.0).abs() < 1.0, "Medium is 680 pt");
+        assert!((h.state().session.view.web_width - 720.0).abs() < 1.0, "Medium is 720 pt");
         h.state_mut().ui.margin.text_width = TextWidth::Narrow;
         h.step();
         h.step();
-        assert!((h.state().session.view.web_width - 520.0).abs() < 1.0);
+        assert!((h.state().session.view.web_width - 560.0).abs() < 1.0);
         h.state_mut().ui.margin.classic_ribbon = true;
         h.step();
         h.step();
@@ -633,9 +1059,33 @@ mod tests {
         assert!(h.query_by_label("Bold").is_some(), "the ribbon is back");
     }
 
+    /// E14 / P4: the status bar's Pages / Pageless switch works, there is one zoom control (the
+    /// toolbar's popover) and it runs `view.zoom`.
+    #[test]
+    fn status_switch_and_zoom_popover() {
+        use egui::accesskit::Role;
+        let mut h = mac_harness();
+        h.get_by_role_and_label(Role::RadioButton, "Pageless").click();
+        h.step();
+        h.step();
+        assert!(pageless(h.state()));
+        h.get_by_role_and_label(Role::RadioButton, "Pages").click();
+        h.step();
+        h.step();
+        assert!(!pageless(h.state()));
+        assert!(h.query_by_label("Zoom In").is_none(), "no second zoom control in the status bar");
+        h.get_by_label("Zoom 100%").click();
+        h.step();
+        h.step();
+        h.get_by_label("50%").click();
+        h.step();
+        h.step();
+        assert!((h.state().session.view.zoom - 0.5).abs() < 1e-3);
+    }
+
     #[test]
     fn text_widths() {
-        assert_eq!(TextWidth::Narrow.points(), Some(520.0));
+        assert_eq!(TextWidth::Narrow.points(), Some(560.0));
         assert_eq!(TextWidth::Full.points(), None);
         assert!(MarginPrefs::default().inspector);
     }

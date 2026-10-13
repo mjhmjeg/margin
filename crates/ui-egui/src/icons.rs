@@ -1220,6 +1220,23 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.line(&[(4.0, 10.0), (16.0, 10.0)]);
         }
         "minus" => pen.line(&[(4.0, 10.0), (16.0, 10.0)]),
+        // Margin's editor icons (design handoff section 11), drawn on the 20 grid.
+        "inspector" => {
+            pen.rect(3.0, 4.0, 17.0, 16.0, c);
+            pen.line(&[(12.5, 4.0), (12.5, 16.0)]);
+        }
+        "review" => {
+            pen.page(5.0, 2.0, 15.0, 18.0);
+            pen.line(&[(7.5, 11.0), (9.5, 13.0), (13.0, 8.5)]);
+        }
+        "viewPages" => {
+            pen.rect(5.0, 2.5, 15.0, 8.0, c);
+            pen.rect(5.0, 12.0, 15.0, 17.5, c);
+        }
+        "viewPageless" => {
+            pen.rect(5.0, 2.5, 15.0, 17.5, c);
+            pen.lines(7.5, 12.5, &[7.0, 10.0, 13.0]);
+        }
         "check" => pen.line_c(&[(4.0, 10.5), (8.5, 15.0), (16.5, 5.0)], c),
         "chevronLeft" => pen.line(&[(13.0, 4.0), (7.0, 10.0), (13.0, 16.0)]),
         "chevronRight" => pen.line(&[(7.0, 4.0), (13.0, 10.0), (7.0, 16.0)]),

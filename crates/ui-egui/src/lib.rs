@@ -1518,7 +1518,11 @@ impl WordApp {
                 chrome::title_bar(self, ui);
                 ribbon::show(self, ui);
             }
-            chrome::status_bar(self, ui);
+            if mac {
+                mac_ui::status_bar(self, ui);
+            } else {
+                chrome::status_bar(self, ui);
+            }
             if mac && self.ui.margin.inspector {
                 mac_ui::inspector(self, ui);
             }

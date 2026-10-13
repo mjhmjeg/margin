@@ -655,8 +655,14 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let show_ruler = app.session.view.ruler && app.session.view.mode == wordcraft_layout::ViewMode::Print && !app.session.view.read_mode;
     let (hruler, vruler, area) = if show_ruler {
         let h = Rect::from_min_max(pos2(full.min.x + RULER, full.min.y), pos2(full.max.x, full.min.y + RULER));
-        let v = Rect::from_min_max(pos2(full.min.x, full.min.y + RULER), pos2(full.min.x + RULER, full.max.y));
-        (Some(h), Some(v), Rect::from_min_max(pos2(full.min.x + RULER, full.min.y + RULER), full.max))
+        if crate::mac_ui::active(app) {
+            // Margin: horizontal ruler only (E13), the desk starts 12 pt below it.
+            let h = Rect::from_min_max(pos2(full.min.x, full.min.y), pos2(full.max.x, full.min.y + RULER));
+            (Some(h), None, Rect::from_min_max(pos2(full.min.x, full.min.y + RULER + 12.0), full.max))
+        } else {
+            let v = Rect::from_min_max(pos2(full.min.x, full.min.y + RULER), pos2(full.min.x + RULER, full.max.y));
+            (Some(h), Some(v), Rect::from_min_max(pos2(full.min.x + RULER, full.min.y + RULER), full.max))
+        }
     } else {
         (None, None, full)
     };
@@ -894,7 +900,16 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             };
             // Shadow and paper (Margin's pageless sheet has no edge to shadow).
             if !(crate::mac_ui::active(app) && crate::mac_ui::pageless(app)) {
-                painter.rect_filled(visual_sr.translate(vec2(0.0, 2.0)).expand(1.5), 1.0, t.page_shadow);
+                if crate::mac_ui::active(app) {
+                    // E13: the design's layered page shadow and a hairline edge.
+                    let m = crate::skin::MarginTokens::get(ui.ctx());
+                    for sh in m.page_shadow.iter().filter(|s| s.color.a() > 0) {
+                        painter.add(sh.as_shape(visual_sr, 0.0));
+                    }
+                    painter.rect_stroke(visual_sr, 0.0, Stroke::new(0.5, m.page_edge), egui::StrokeKind::Outside);
+                } else {
+                    painter.rect_filled(visual_sr.translate(vec2(0.0, 2.0)).expand(1.5), 1.0, t.page_shadow);
+                }
             }
             painter.rect_filled(visual_sr, 0.0, if dark_page { Color32::from_gray(dark_paper) } else { Color32::WHITE });
             if let Some((_, tex)) = app.canvas.textures.get(&i) {
@@ -1216,8 +1231,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         crate::keys::canvas_events(app, ui.ctx());
     }
     let _ = origin;
-    if let (Some(h), Some(v)) = (hruler, vruler) {
-        rulers(app, ui, h, v, &rects, &layout, geo.scale);
+    if let Some(h) = hruler {
+        rulers(app, ui, h, vruler, &rects, &layout, geo.scale);
     }
     if let Some(sel) = app.canvas.mini_anchor
         && app.ui.mini_toolbar
@@ -1844,12 +1859,14 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
 }
 
 /// Horizontal and vertical rulers for the caret's page and paragraph.
-fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Rect, rects: &[Rect], layout: &DocLayout, scale: f32) {
+fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Option<Rect>, rects: &[Rect], layout: &DocLayout, scale: f32) {
     let t = Tokens::get(ui.ctx());
     let p = ui.painter();
-    p.rect_filled(Rect::from_min_max(pos2(v.min.x, h.min.y), pos2(v.max.x, h.max.y)), 0.0, t.canvas);
     p.rect_filled(h, 0.0, t.canvas);
-    p.rect_filled(v, 0.0, t.canvas);
+    if let Some(v) = v {
+        p.rect_filled(Rect::from_min_max(pos2(v.min.x, h.min.y), pos2(v.max.x, h.max.y)), 0.0, t.canvas);
+        p.rect_filled(v, 0.0, t.canvas);
+    }
     let pi = app.session.page_hint.min(layout.pages.len().saturating_sub(1));
     let (Some(page), Some(pr)) = (layout.pages.get(pi), rects.get(pi)) else { return };
     let scale = page_screen_scale(*pr, page, scale);
@@ -1858,7 +1875,9 @@ fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Rect, rects: &[Rect], layo
     let hp = ui.painter_at(h);
     let x0 = pr.min.x;
     let bar = Rect::from_min_max(pos2(x0, h.min.y + 4.0), pos2(x0 + page.w * scale, h.max.y - 3.0));
-    hp.rect_filled(bar, 0.0, t.ruler_margin);
+    // Margin shades the margins with `hover` (E13).
+    let margin_fill = if crate::mac_ui::active(app) { t.hover } else { t.ruler_margin };
+    hp.rect_filled(bar, 0.0, margin_fill);
     let text = Rect::from_min_max(pos2(x0 + page.body.x * scale, bar.min.y), pos2(x0 + page.body.right() * scale, bar.max.y));
     hp.rect_filled(text, 0.0, t.ruler);
     let rp = app.session.doc.para_at(&app.session.sel.focus).map(|para| app.session.doc.styles.resolve_para(&para.props));
@@ -1976,7 +1995,8 @@ fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Rect, rects: &[Rect], layo
             let _ = app.run("para.indents", json!({"right": (pt / 4.5).round() * 4.5}));
         }
     }
-    // Vertical.
+    // Vertical (not drawn in Margin's layout).
+    let Some(v) = v else { return };
     let vp = ui.painter_at(v);
     let y0 = pr.min.y;
     let vbar = Rect::from_min_max(pos2(v.min.x + 4.0, y0), pos2(v.max.x - 3.0, y0 + page.h.min(20_000.0) * scale));
@@ -2921,7 +2941,7 @@ mod tests {
                 out.shapes
                     .iter()
                     .filter_map(|clipped| match &clipped.shape {
-                        egui::Shape::Text(text) if text.pos.y >= area.min.y - RULER && text.pos.y < area.min.y && text.pos.x >= area.min.x => {
+                        egui::Shape::Text(text) if text.pos.y >= area.min.y - RULER - 12.0 && text.pos.y < area.min.y && text.pos.x >= area.min.x => {
                             Some((text.galley.text().to_owned(), text.pos.x + text.galley.size().x / 2.0))
                         }
                         _ => None,
