@@ -53,19 +53,12 @@ h2{font:inherit;color:var(--dim);margin:0 0 14px}
       <button onclick="go(this,'recent')"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>Recent</button>
       <button onclick="alert('Opens the macOS Open dialog')"><svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg>Open…</button>
     </div>
-    <h6>Templates</h6>
-    <div class="nav">
-      <button onclick="go(this,'new')">Basic</button>
-      <button onclick="go(this,'new')">Letters</button>
-      <button onclick="go(this,'new')">Résumés</button>
-      <button onclick="go(this,'new')">Reports</button>
-    </div>
   </aside>
   <section class="main">
     <div class="top"><span id="ttl">Choose a template</span><span class="search">Search templates</span></div>
     <div class="body">
       <div class="pane on" id="new">
-        <h2>Basic</h2>
+        <h2>Templates</h2>
         <div class="grid">
           <div class="card on" onclick="pick(this)"><div class="thumb blank">+</div><p>Blank</p></div>
           <div class="card" onclick="pick(this)"><div class="thumb"><div class="h"></div><div class="l"></div><div class="l" style="width:80%"></div><div class="l"></div><div class="h2"></div><div class="l"></div><div class="l" style="width:60%"></div></div><p>Studio handbook</p><small>Sample</small></div>
