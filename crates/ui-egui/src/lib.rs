@@ -27,6 +27,7 @@ pub mod canvas;
 pub mod caret_glide;
 pub mod chrome;
 pub mod colors;
+pub mod command_field;
 pub mod content_controls;
 pub mod control;
 pub mod credits;
@@ -353,6 +354,8 @@ pub struct WordApp {
     /// Content control frames, check boxes and lists on the page.
     pub controls: content_controls::ControlUi,
     pub dialog: Option<dialogs::Dialog>,
+    /// The toolbar's command field (HANDOFF §6): query, popover and highlighted row.
+    pub command_field: command_field::CommandField,
     /// The Colors dialog (More Colors…), shown above any other dialog (#606).
     pub colors: Option<colors::ColorsDialog>,
     /// The Restrict Editing pane (#412).
@@ -515,6 +518,7 @@ impl WordApp {
             #[cfg(not(target_arch = "wasm32"))]
             file_browser: file_browser::State::default(),
             info_editing: None,
+            command_field: Default::default(),
         }
     }
 
@@ -967,6 +971,18 @@ impl WordApp {
                 }
                 self.colors = Some(d);
                 json!({"dialog": "colors"})
+            }
+            "ui.dialog" if s("name") == Some("commands") && mac_ui::active(self) => {
+                // The Margin layout's Search Commands is the toolbar's command field.
+                command_field::open(self, "");
+                json!({"dialog": "commands", "field": true})
+            }
+            "ui.commandField" => {
+                command_field::open(self, s("query").unwrap_or(""));
+                if p.get("ask").and_then(Value::as_bool) == Some(true) {
+                    self.command_field.mode = command_field::Mode::Ask;
+                }
+                json!({"open": self.command_field.open})
             }
             "ui.dialog" => {
                 self.dialog = dialogs::Dialog::open(s("name").unwrap_or(""), self);

@@ -32,6 +32,12 @@ pub fn assistant_author_name() -> &'static str {
     DEFAULT_ASSISTANT_NAME
 }
 
+/// Whether an assistant is switched on (Settings › Assistant, S1). False until that section
+/// exists: while it is, the command field hides its Ask rows and the context menu its "Ask…".
+pub fn assistant_enabled() -> bool {
+    false
+}
+
 /// Whether `author` is an assistant. The engine has no AI flag on authors yet, so this is the
 /// configured name (case-insensitive); an engine flag would be added here.
 pub fn is_assistant(author: &str) -> bool {

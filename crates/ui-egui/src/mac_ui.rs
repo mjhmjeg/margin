@@ -20,11 +20,22 @@ pub struct MarginPrefs {
     pub inspector: bool,
     pub tab: InspectorTab,
     pub text_width: TextWidth,
+    /// Commands run from the command field, most recent first (capped).
+    pub command_recent: Vec<String>,
+    /// How often each was run there.
+    pub command_counts: std::collections::BTreeMap<String, u32>,
 }
 
 impl Default for MarginPrefs {
     fn default() -> Self {
-        MarginPrefs { classic_ribbon: false, inspector: true, tab: InspectorTab::Text, text_width: TextWidth::Medium }
+        MarginPrefs {
+            classic_ribbon: false,
+            inspector: true,
+            tab: InspectorTab::Text,
+            text_width: TextWidth::Medium,
+            command_recent: Vec::new(),
+            command_counts: Default::default(),
+        }
     }
 }
 
@@ -116,6 +127,8 @@ pub fn toolbar(app: &mut WordApp, ui: &mut Ui) {
                 ui.label(egui::RichText::new(format!("— {}", tl!("Edited"))).font(font()).color(t.text_dim));
             }
 
+            let title_end = ui.min_rect().max.x;
+            let mut right_start = band.max.x;
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
                 // R1 / E5: panel toggles, one panel open at a time. Right to left: Review, Format.
@@ -158,9 +171,25 @@ pub fn toolbar(app: &mut WordApp, ui: &mut Ui) {
                     run_from_ribbon(app, "insert.picture", json!({}));
                 }
                 table_menu(ui, app);
+                right_start = ui.min_rect().min.x;
             });
+            // K1: the command field, 300 wide in the centre of the window, or as near it as the
+            // title and the controls leave room for.
+            let (lo, hi) = (title_end + 16.0, right_start - 16.0);
+            let w = FIELD_MIN_W.max(crate::command_field::FIELD_W.min(hi - lo));
+            let visible = hi - lo >= FIELD_MIN_W;
+            app.command_field.field_visible = visible;
+            if visible {
+                let cx = full.center().x.clamp(lo + w / 2.0, hi - w / 2.0);
+                let rect = Rect::from_center_size(pos2(cx, band.center().y), vec2(w, crate::command_field::FIELD_H));
+                crate::command_field::show(app, ui, rect);
+            }
         });
 }
+
+/// Narrowest the command field gets before it gives way to the controls (the shortcut then opens
+/// the old dialog).
+const FIELD_MIN_W: f32 = 140.0;
 
 /// Pending changes plus open comments (the Review button's badge), recounted when the document changes.
 fn review_count(app: &mut WordApp, ctx: &egui::Context) -> usize {
@@ -287,9 +316,6 @@ fn more_menu(ui: &mut Ui, app: &mut WordApp) {
         if mc::menu_row(ui, tl!("File…"), false).clicked() {
             app.ui.backstage = true;
         }
-        if mc::menu_row(ui, tl!("Search commands"), false).clicked() {
-            let _ = app.run("ui.dialog", json!({"name": "commands"}));
-        }
     });
 }
 
@@ -301,6 +327,11 @@ pub fn shortcuts(app: &mut WordApp, ctx: &egui::Context) {
     let hit = ctx.input_mut(|i| i.consume_key(egui::Modifiers { ctrl: true, mac_cmd: true, command: true, ..Default::default() }, egui::Key::R));
     if hit {
         app.ui.margin.classic_ribbon = !app.ui.margin.classic_ribbon;
+    }
+    // ⌥⌘J focuses the command field (the Help menu's accelerator does the same when AppKit sees it first).
+    let find = ctx.input_mut(|i| i.consume_key(egui::Modifiers { alt: true, mac_cmd: true, command: true, ..Default::default() }, egui::Key::J));
+    if find {
+        crate::command_field::open(app, "");
     }
 }
 

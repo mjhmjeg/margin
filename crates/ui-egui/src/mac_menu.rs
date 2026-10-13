@@ -37,6 +37,8 @@ pub enum MarginAct {
     Inspector,
     Pageless,
     Classic,
+    /// Help › Search Commands…: focus the toolbar's command field (the old dialog in Classic).
+    CommandField,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -196,7 +198,7 @@ const VIEW: &[Entry] = &[
 const WINDOW: &[Entry] =
     &[it("Minimize", Std(self::Std::Minimize)), it("Zoom", Std(self::Std::Zoom)), Sep, it("Bring All to Front", Std(self::Std::BringAllToFront))];
 
-const HELP: &[Entry] = &[it("Search Commands…", CmdWith("ui.dialog", r#"{"name":"commands"}"#))];
+const HELP: &[Entry] = &[key("Search Commands…", Margin(MarginAct::CommandField), "CmdOrCtrl+Alt+J")];
 
 /// The menu bar, left to right. The first menu is the application menu.
 pub const MENUS: &[(&str, &[Entry])] = &[
@@ -262,6 +264,7 @@ pub fn perform(app: &mut WordApp, act: &Act) {
             set_pageless(app, on);
         }
         Margin(MarginAct::Classic) => app.ui.margin.classic_ribbon = !app.ui.margin.classic_ribbon,
+        Margin(MarginAct::CommandField) => crate::command_field::open(app, ""),
         // The native layer handles these itself.
         Std(_) => {}
     }
