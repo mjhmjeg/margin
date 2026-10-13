@@ -42,6 +42,7 @@ pub fn length(pt: f32) -> String {
 
 /// Copy the session's settings the UI reads without the app.
 pub(crate) fn sync(app: &WordApp) {
+    crate::review_panel::set_assistant_name(&app.ui.assistant.name());
     UNIT.set(app.session.units());
     DECIMAL.set(app.session.region().decimal());
 }
@@ -91,6 +92,7 @@ fn pane_label(id: &str) -> &'static str {
         "language" => "Language",
         "accessibility" => "Accessibility",
         "advanced" => "Advanced",
+        "agents" if crate::skin::on() => "Assistant",
         "agents" => "Agents",
         _ => "General",
     }
@@ -135,6 +137,7 @@ pub fn page(app: &mut WordApp, ui: &mut Ui) {
                 "language" => language(app, ui),
                 "accessibility" => accessibility(app, ui),
                 "advanced" => advanced(app, ui),
+                "agents" if crate::skin::on() => assistant(app, ui),
                 "agents" => agents(ui),
                 _ => general(app, ui),
             }
@@ -434,6 +437,57 @@ fn advanced(app: &mut WordApp, ui: &mut Ui) {
 fn agents(ui: &mut Ui) {
     section(ui, "Agents");
     ui.label(tl!("Every command is available to scripts and AI agents: run `wordcraft-cli mcp` for an MCP server, or start the app with `--control <port>` for the JSON control channel."));
+}
+
+/// Options › Assistant (Margin, HANDOFF §9 S4–S6): the name assistants write under, the rule that
+/// their edits are always suggestions, and whether assistants outside Margin may connect. The
+/// rest of §9 (switch, provider, key, folders) comes with the in-app assistant.
+fn assistant(app: &mut WordApp, ui: &mut Ui) {
+    use crate::mac_controls as mc;
+    // The connected count changes on other threads: look again soon.
+    ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
+    mc::section(ui, "Assistant", |ui| {
+        mc::labelled_row(ui, "Author name", |ui| {
+            let r =
+                ui.add(egui::TextEdit::singleline(&mut app.ui.assistant.author_name).desired_width(220.0).hint_text(crate::assistant::DEFAULT_NAME));
+            if r.lost_focus() {
+                app.ui.assistant.author_name = app.ui.assistant.name();
+            }
+            if r.changed() || r.lost_focus() {
+                crate::review_panel::set_assistant_name(&app.ui.assistant.name());
+            }
+        });
+        mc::hint(ui, "Written into the changes and comments an assistant makes. Its mark is always dotted.");
+    });
+    mc::section(ui, "Permissions", |ui| {
+        // Required, so shown on and not changeable.
+        ui.add_enabled_ui(false, |ui| {
+            mc::checkbox(ui, "Always suggest as tracked changes", true);
+        });
+        mc::hint(ui, "An assistant's edits never change your text until you accept them in Review.");
+    });
+    mc::section(ui, "Outside Margin", |ui| {
+        if mc::switch(ui, "Allow assistants outside Margin to connect", app.ui.assistant.allow_outside) {
+            let on = !app.ui.assistant.allow_outside;
+            let _ = app.run("ui.assistant", json!({"allowOutside": on}));
+        }
+        let n = crate::assistant::outside::connected();
+        ui.horizontal(|ui| {
+            let t = Tokens::get(ui.ctx());
+            let line = crate::i18n::fmt(tl!("{n} connected now"), &[("n", &n.to_string())]);
+            ui.label(RichText::new(format!("{line} ·")).color(t.text_dim));
+            ui.add_enabled_ui(n > 0, |ui| {
+                if mc::link(ui, "Disconnect").clicked() {
+                    crate::assistant::outside::disconnect_all();
+                }
+            });
+        });
+        mc::hint(
+            ui,
+            "Claude Desktop, Claude Code and other MCP clients reach this window through `wordcraft-cli mcp --connect <port>`, once the app is started with `--control <port>`. Whatever they change arrives as a tracked change under the name above; they can't accept or reject changes, turn tracking off or change these settings.",
+        );
+        mc::hint(ui, "`wordcraft-cli mcp` without the app edits files directly. This setting doesn't cover it.");
+    });
 }
 
 /// Interface theme: Light, Dark, or follow the system's appearance (#115).

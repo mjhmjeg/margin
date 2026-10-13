@@ -22,12 +22,23 @@ pub struct ControlRequest {
     pub method: String,
     pub params: Value,
     pub reply: Sender<Value>,
+    /// Sent by an assistant outside Margin (a connection to the control port): the assistant
+    /// rules apply, see [`handle_outside`].
+    pub outside: bool,
 }
 
 impl ControlRequest {
+    /// A request from the app's own side (tests, `ui_shot` scripts): no assistant rules.
     pub fn new(method: impl Into<String>, params: Value) -> (Self, std::sync::mpsc::Receiver<Value>) {
         let (tx, rx) = std::sync::mpsc::channel();
-        (Self { method: method.into(), params, reply: tx }, rx)
+        (Self { method: method.into(), params, reply: tx, outside: false }, rx)
+    }
+
+    /// A request that arrived over the control port: [`handle_outside`] answers it.
+    pub fn new_outside(method: impl Into<String>, params: Value) -> (Self, std::sync::mpsc::Receiver<Value>) {
+        let (mut req, rx) = Self::new(method, params);
+        req.outside = true;
+        (req, rx)
     }
 }
 
@@ -249,6 +260,55 @@ pub fn handle(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> O
             }
         }
     }
+}
+
+/// Methods that feed raw pointer or keyboard input (or the menu bar) to the window: they would
+/// reach the Review panel's Accept and Reject buttons and the Track Changes shortcut, which no
+/// command check can see, so assistants don't get them. Everything an assistant needs is a command.
+const RAW_INPUT: [&str; 10] =
+    ["ui.click", "ui.clickText", "ui.move", "ui.press", "ui.release", "ui.drag", "ui.key", "ui.text", "ui.menu", "app.quit"];
+
+/// Methods that only look: they are answered as they are.
+const LOOKING: [&str; 7] = ["engine.commands", "document.inspect", "ui.inspect", "ui.parity", "ui.screenshot", "ui.render", "ui.resize"];
+
+/// A request from an assistant outside Margin (HANDOFF §9, S5/S6). The one choke point for them:
+/// every request that arrives over the control port comes through here, so MCP `--connect` and any
+/// raw client get the same rule, whatever they send.
+///
+/// * Refused while "Allow assistants outside Margin to connect" is off.
+/// * Raw input and quitting are refused ([`RAW_INPUT`]); looking (inspect, screenshots) is allowed.
+/// * Every command is checked against `wordcraft_engine::assistant::denied` (accept, reject,
+///   tracking off, author changes…) and, when it changes the document, runs with track changes
+///   forced on under the configured assistant name; the person's tracking state and author come
+///   back afterwards.
+pub fn handle_outside(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> Outcome {
+    if !app.ui.assistant.allow_outside {
+        return err("assistants outside Margin are not allowed to connect: the person has turned this off in Settings › Assistant");
+    }
+    let name = app.ui.assistant.name();
+    crate::review_panel::set_assistant_name(&name);
+    let p = &req.params;
+    let command: Option<(String, Value)> = match req.method.as_str() {
+        m if RAW_INPUT.contains(&m) => {
+            return err(format!(
+                "not allowed for assistants: {m} (use commands; raw pointer and keyboard input can't be held to the tracked-changes rule)"
+            ));
+        }
+        m if LOOKING.contains(&m) => None,
+        "engine.execute" | "command" => {
+            let id = p.get("command").or(p.get("id")).and_then(Value::as_str).map(str::to_string);
+            id.map(|id| (id, p.get("params").cloned().filter(|v| !v.is_null()).unwrap_or(json!({}))))
+        }
+        other => Some((other.to_string(), p.clone())),
+    };
+    let Some((id, params)) = command else { return handle(app, ctx, req) };
+    if let Some(why) = wordcraft_engine::assistant::denied(&app.session, &id, &params, &name) {
+        return err(why);
+    }
+    let scope = app.session.enter_assistant(&name, &id);
+    let out = handle(app, ctx, req);
+    app.session.leave_assistant(scope, &id);
+    out
 }
 
 /// A page rendered by the engine, as base64 PNG in the reply (the same shape as the headless

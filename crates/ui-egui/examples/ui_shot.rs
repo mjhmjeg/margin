@@ -67,7 +67,14 @@ fn main() {
                 std::thread::sleep(std::time::Duration::from_millis(16));
             }
         } else if let Some(m) = l.get("method").and_then(|v| v.as_str()) {
-            let (req, reply) = ControlRequest::new(m, l.get("params").cloned().unwrap_or_default());
+            // `"outside": true` sends it the way a connection to the control port does (the
+            // assistant rules apply: tracked changes by the assistant, no accept/reject).
+            let params = l.get("params").cloned().unwrap_or_default();
+            let (req, reply) = if l.get("outside").and_then(|v| v.as_bool()) == Some(true) {
+                ControlRequest::new_outside(m, params)
+            } else {
+                ControlRequest::new(m, params)
+            };
             tx.send(req).expect("send");
             for _ in 0..60 {
                 step(&mut harness);

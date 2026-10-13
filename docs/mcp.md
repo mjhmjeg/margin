@@ -24,6 +24,29 @@ with `wordcraft-cli mcp --author "Claude (copyedit)"`, or run
 `review.trackChanges {"value": true}`; without `value` it toggles, which turns tracking *off* in
 a document that was saved with it on. `wordcraft-cli run` takes `--author` too.
 
+## Edits from assistants
+
+Whatever an assistant sends to a running app over the control port (`wordcraft-cli mcp --connect`,
+or a raw client) arrives as a suggestion, enforced in the app and not in the client:
+
+- A command that changes the document runs with track changes forced on and the author set to the
+  assistant name from Options › Assistant ("Claude" by default); comments it adds carry that name
+  too. Your own tracking state and name come back afterwards.
+- An assistant cannot accept or reject changes (`review.accept*`, `review.reject*`), turn tracking
+  off, change the author or the assistant settings (`review.trackChanges`, `file.setAuthor`,
+  `file.options` with `author`/`initials`, `ui.assistant`), undo, redo or repeat (`edit.undo`,
+  `edit.redo`, `edit.undoTo`, `edit.repeat`), run macros (`tools.macros`, `tools.recordMacro`),
+  restrict editing (`review.restrict`), or change or delete comments it did not write. The reply is
+  `not allowed for assistants: <command> (<why>)`. Raw pointer and keyboard input (`ui.click`,
+  `ui.key`, `ui.menu`, …) and `app.quit` are refused too, since they could press Accept. Looking
+  (`document.inspect`, `ui.inspect`, `ui.screenshot`, `ui.render`, `engine.commands`) and read-only
+  commands are allowed.
+- Options › Assistant › "Allow assistants outside Margin to connect" (on by default; the port only
+  exists when the app was started with `--control`) refuses every request while off and drops the
+  connected assistants; "Disconnect" drops them without turning it off.
+- The headless `wordcraft-cli mcp` (no app) edits its own session and files directly and is not
+  covered. The rules live in `wordcraft_engine::assistant` (`denied`, `Session::run_as_assistant`).
+
 ## Confining file access
 
 ```sh

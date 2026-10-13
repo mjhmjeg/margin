@@ -177,10 +177,12 @@ fn discard_rest_of_line(r: &mut BufReader<Timed>) {
 
 fn serve(stream: TcpStream, tx: Sender<ControlRequest>, ctx: egui::Context, key: &str, first: Duration) {
     let Ok(read) = stream.try_clone() else { return };
+    let mut closer = stream.try_clone().ok();
     let mut out = stream;
     // One overall deadline from accept to the first authorised request; after it, none.
     let mut reader = BufReader::new(Timed { s: read, deadline: Some(Instant::now() + first) });
     let mut authorised = false;
+    let mut _registration = None;
     // The key an `auth` request gave this connection.
     let mut conn_key: Option<String> = None;
     while let Some(line) = read_line(&mut reader) {
@@ -229,6 +231,13 @@ fn serve(stream: TcpStream, tx: Sender<ControlRequest>, ctx: egui::Context, key:
         if !authorised {
             authorised = true;
             reader.get_mut().set_deadline(None);
+            // Counts as a connected assistant (Settings › Assistant) until the connection ends;
+            // "Disconnect" there shuts the socket, which ends this loop.
+            if let Some(closer) = closer.take() {
+                _registration = Some(wordcraft_ui_egui::assistant::outside::register(move || {
+                    let _ = closer.shutdown(std::net::Shutdown::Both);
+                }));
+            }
         }
         if method == "auth" {
             conn_key = Some(k.to_string());
@@ -237,7 +246,7 @@ fn serve(stream: TcpStream, tx: Sender<ControlRequest>, ctx: egui::Context, key:
             }
             continue;
         }
-        let (req, rrx) = ControlRequest::new(method, params);
+        let (req, rrx) = ControlRequest::new_outside(method, params);
         if tx.send(req).is_err() {
             break;
         }
@@ -310,6 +319,17 @@ mod tests {
         assert_eq!((r["ok"].clone(), r["error"].clone(), r["id"].clone()), (json!(false), json!("unauthorized"), json!(1)));
         assert!(c.closed());
         assert!(rx.try_recv().is_err(), "nothing reached the UI");
+    }
+
+    #[test]
+    fn requests_from_the_port_are_outside_requests_and_the_connection_counts() {
+        let (port, rx) = boot();
+        let mut c = Conn::open(port);
+        c.send(&format!(r#"{{"id":1,"key":"{KEY}","method":"document.inspect"}}"#));
+        let req = answer(&rx);
+        assert!(req.outside, "assistant rules apply to everything that arrives over the port");
+        assert!(c.recv()["ok"].as_bool().unwrap_or(false));
+        assert!(wordcraft_ui_egui::assistant::outside::connected() >= 1);
     }
 
     #[test]

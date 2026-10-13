@@ -23,13 +23,30 @@ use crate::theme::Tokens;
 /// Every right-hand panel (Format, Review, later Assistant) is this wide.
 pub const PANEL_W: f32 = 320.0;
 
-/// The name an assistant's changes and comments are written under until Settings › Assistant
-/// (HANDOFF §9, S4) exists.
-pub const DEFAULT_ASSISTANT_NAME: &str = "Claude";
+/// The name an assistant's changes and comments are written under when Settings › Assistant has
+/// none.
+pub const DEFAULT_ASSISTANT_NAME: &str = crate::assistant::DEFAULT_NAME;
 
-/// The configured assistant author name. The one place a later step wires to Settings.
-pub fn assistant_author_name() -> &'static str {
-    DEFAULT_ASSISTANT_NAME
+thread_local! {
+    // The configured name (Settings › Assistant, S4), copied from the settings each frame and when
+    // they change, so code without the app can read it.
+    static ASSISTANT_NAME: std::cell::RefCell<String> = std::cell::RefCell::new(DEFAULT_ASSISTANT_NAME.to_string());
+}
+
+/// Copy the configured assistant author name where [`assistant_author_name`] reads it.
+pub fn set_assistant_name(name: &str) {
+    ASSISTANT_NAME.with(|n| {
+        let mut n = n.borrow_mut();
+        if *n != name {
+            *n = name.to_string();
+        }
+    });
+}
+
+/// The configured assistant author name (Settings › Assistant, S4): the one place the Review
+/// panel's marks and the command field read it.
+pub fn assistant_author_name() -> String {
+    ASSISTANT_NAME.with(|n| n.borrow().clone())
 }
 
 /// Whether an assistant is switched on (Settings › Assistant, S1). False until that section
@@ -41,7 +58,7 @@ pub fn assistant_enabled() -> bool {
 /// Whether `author` is an assistant. The engine has no AI flag on authors yet, so this is the
 /// configured name (case-insensitive); an engine flag would be added here.
 pub fn is_assistant(author: &str) -> bool {
-    author.trim().eq_ignore_ascii_case(assistant_author_name())
+    author.trim().eq_ignore_ascii_case(&assistant_author_name())
 }
 
 /// What the page and panel call an author with no name.

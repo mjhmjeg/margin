@@ -2417,7 +2417,7 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
     item(ui, app, "New Comment", "review.newComment", json!({}));
     // K4: the command field in Ask mode, scoped to the selection. Hidden until an assistant is on.
     if crate::review_panel::assistant_enabled() && crate::mac_ui::active(app) {
-        let label = crate::i18n::fmt(tl!("Ask {name}…"), &[("name", crate::review_panel::assistant_author_name())]);
+        let label = crate::i18n::fmt(tl!("Ask {name}…"), &[("name", &crate::review_panel::assistant_author_name())]);
         if ui.button(label).clicked() {
             crate::command_field::open_ask(app);
             ui.close();

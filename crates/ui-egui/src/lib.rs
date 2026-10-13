@@ -22,6 +22,7 @@ macro_rules! tl {
 
 pub mod a11y;
 pub mod a11y_pane;
+pub mod assistant;
 pub mod backstage;
 pub mod canvas;
 pub mod caret_glide;
@@ -256,6 +257,9 @@ pub struct UiState {
     pub update_fields_before_print: bool,
     /// The custom dictionary (File › Options › Proofing, Add to Dictionary), kept between runs.
     pub dictionary: Vec<String>,
+    /// File › Options › Assistant (Margin): the assistant's author name and whether assistants
+    /// outside Margin may connect.
+    pub assistant: assistant::AssistantPrefs,
 }
 
 /// Most recent documents kept (File › Options › Advanced offers 0–50, as Word does).
@@ -307,6 +311,7 @@ impl Default for UiState {
             print_backgrounds: false,
             update_fields_before_print: false,
             dictionary: Vec::new(),
+            assistant: assistant::AssistantPrefs::default(),
         }
     }
 }
@@ -1127,6 +1132,26 @@ impl WordApp {
                 }
                 json!({"caretAnimation": self.ui.caret_animation})
             }
+            // File › Options › Assistant: `authorName` (the name assistants' changes and comments
+            // carry) and `allowOutside` (assistants outside Margin may connect; off drops the ones
+            // connected); no value reads them. The person's command: assistants themselves are
+            // refused it (`wordcraft_engine::assistant::denied`).
+            "ui.assistant" => {
+                if let Some(v) = p.get("authorName") {
+                    let name = v.as_str().map(assistant::clean_name).filter(|n| !n.is_empty());
+                    let Some(name) = name else { return Some(Err("`authorName` must be a non-blank string".into())) };
+                    self.ui.assistant.author_name = name;
+                }
+                if let Some(v) = p.get("allowOutside") {
+                    let Some(on) = v.as_bool() else { return Some(Err("`allowOutside` must be true or false".into())) };
+                    self.ui.assistant.allow_outside = on;
+                    if !on {
+                        assistant::outside::disconnect_all();
+                    }
+                }
+                review_panel::set_assistant_name(&self.ui.assistant.name());
+                self.ui.assistant.to_json()
+            }
             "ui.startScreen" => {
                 // File › Options › General › Start-up (#766): `value` true or false turns showing
                 // File › Home at start-up on or off; no value reads it.
@@ -1609,7 +1634,8 @@ impl WordApp {
         let Some(rx) = self.control_rx.take() else { return };
         while let Ok(req) = rx.try_recv() {
             let reply = req.reply.clone();
-            match control::handle(self, ctx, &req) {
+            let outcome = if req.outside { control::handle_outside(self, ctx, &req) } else { control::handle(self, ctx, &req) };
+            match outcome {
                 control::Outcome::Done(v) => {
                     let _ = reply.send(v);
                 }
