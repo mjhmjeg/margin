@@ -577,12 +577,21 @@ mod tests {
 
     #[test]
     fn segmented_reports_the_click_and_draws_a_neutral_chip() {
-        let ctx = egui::Context::default();
-        let mut clicked = None;
-        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
-            clicked = segmented_one(ui, "t", &[Seg::Text("A"), Seg::Text("B")], Some(1));
-        });
-        assert_eq!(clicked, None);
+        use egui_kittest::kittest::Queryable;
+        // A bare Context has no font atlas yet and panics in epaint; the kittest harness sets one up.
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(300.0, 60.0)).build_ui_state(
+            |ui, clicked: &mut Option<usize>| {
+                if let Some(i) = segmented_one(ui, "t", &[Seg::Text("A"), Seg::Text("B")], Some(1)) {
+                    *clicked = Some(i);
+                }
+            },
+            None,
+        );
+        h.run();
+        assert_eq!(*h.state(), None);
+        h.get_by_label("A").click();
+        h.run();
+        assert_eq!(*h.state(), Some(0));
         // The chip is the neutral `segment_chip`, never the accent (HANDOFF §1).
         assert_ne!(MarginTokens::light().segment_chip, Tokens::light().accent);
     }

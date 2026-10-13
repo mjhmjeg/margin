@@ -213,18 +213,8 @@ fn panel_toggle(ui: &mut Ui, icon: &str, label: &str, on: bool, badge: usize) ->
 
 fn table_menu(ui: &mut Ui, app: &mut WordApp) {
     let resp = tool(ui, app, "table", "Table", false);
-    egui::Popup::menu(&resp).width(200.0).show(|ui| {
-        ui.set_min_width(160.0);
-        for (r, c) in [(2, 2), (3, 3), (4, 4), (5, 3)] {
-            if mc::menu_row(ui, &format!("{r} × {c}"), false).clicked() {
-                run_from_ribbon(app, "insert.table", json!({"rows": r, "cols": c}));
-            }
-        }
-        ui.separator();
-        if mc::menu_row(ui, tl!("More…"), false).clicked() {
-            run_from_ribbon(app, "insert.table", json!({}));
-        }
-    });
+    // P2: hover grid popover (dialogs::table_popover).
+    egui::Popup::menu(&resp).width(200.0).show(|ui| crate::dialogs::table_popover(ui, app));
 }
 
 fn shape_menu(ui: &mut Ui, app: &mut WordApp) {
