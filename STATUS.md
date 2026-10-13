@@ -12,14 +12,15 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - Phase 5: packaging works (Margin.app, ai.spert.margin, icon, README; package.sh takes APP_NAME/BUNDLE_ID/APP_ICNS/FILE_PREFIX/NOTARY_PROFILE). Waiting on Martijn: Developer ID identity name + notarytool keychain profile → signed universal build → draft GitHub release ✋
 
 ## Next
-- A2 providers + key: Settings switch (default off), Anthropic / OpenAI / Gemini / Mistral (pre-selected) / OpenRouter / On this Mac / Other, Keychain key, live model list (Opus, high) — running
-- A3 Assistant panel + "Ask Claude" in ⌘Y (Opus, high); A4 folder access (Sonnet, medium); A5 authorship view — pause for Martijn first (Fable, xhigh)
+- Martijn: try the assistant with a real key on branch assistant/folders (scripts/margin-run.sh); check ⌘Y on the Swiss keyboard ✋
+- A5 authorship view (V1–V4): pending changes first, then persistence in .docx — waits for Martijn's OK (Fable, xhigh)
 - Then: merge the chain to main, upstream PRs per phase (Opus, high)
 
 ## Later
 - Weekly upstream merge (scheduled, Sonnet)
 
 ## Done
+- 2026-10-13 A2 providers + Keychain key (S1–S3), A3 Assistant panel + Ask from ⌘Y (A1–A5, K3–K4), A4 read-only folders + fact-check against a file (S5, K4); all pushed, xtask ci green; mock provider only, no live key tested
 - 2026-10-13 Icons (§11, classic ribbon keeps old ones), Review panel (phase 7), command field ⌘Y/⌥Q (phase 6), A1 outside assistants as tracked suggestions + Settings › Assistant; branch assistant/outside pushed, xtask ci green
 - 2026-10-13 Assistant interview + plan (docs/decisions.md)
 - 2026-10-13 Design phases 3–5 (editor, Home, dialogs incl. all dialog dropdowns + number fields) merged on branch design/phases-3-5; Insert Table hover grid wired; `cargo xtask ci` all 6 steps green; live window checked
@@ -35,6 +36,10 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - Product name: "Margin" chosen 2026-10-12. Near-clash: an early Mac markdown notes app "Margin" (peerlist) and iPad tracker "The Margin". No formal trademark search done.
 
 ## Known bugs
+- Assistant work log is per session only (not saved with the document).
+- Fact-check reads txt/md/docx/odt/rtf/html; no PDF (no text extraction in the repo).
+- Outside assistants can no longer read any file unless a folder is allowed in Settings (A4 behaviour change).
+- Upstream floating format bar can overlap a heading over a selection (handoff dropped it).
 - 2026-10-13 Incident: disk full stopped two design helpers mid-build. Cause: each worktree had its own target dir (up to 22 GB each). Fix: worktrees removed after merge; one shared target only, and with a shared target `touch` sources before CI (cargo reused a binary built from another worktree).
 - E19: switching Page numbers off only shows a message — no engine command removes page numbers.
 - Review "Show": Simple markup / Original draw like All / No markup (engine has markup on/off only).
