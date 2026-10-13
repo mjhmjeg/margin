@@ -19,7 +19,10 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 OUT=${OUT:-$ROOT/plan/word/authorship-spike}
 UPSTREAM_CLI=${UPSTREAM_CLI:-}
 WORD_TIMEOUT=${WORD_TIMEOUT:-180}
-CANDIDATES=(a-bookmarks b-offsets c-ignorable d-sdt e-style)
+# f-feature is not a synthetic candidate: it is the A5 feature's own output, a document whose
+# assistant suggestions were accepted in Margin (hidden `_MarginAI_` bookmarks + the
+# `urn:margin:authorship` store), with the same text and spans as the candidates.
+CANDIDATES=(a-bookmarks b-offsets c-ignorable d-sdt e-style f-feature)
 STAGES=(src margin margin-edit upstream upstream-edit word word-edit)
 
 # The scripted edits, as WordCraft commands: a paragraph-start insertion (shifts every offset),
@@ -84,8 +87,37 @@ roundtrip_word() {
   done
 }
 
+# The feature's own document: the assistant (author "Claude", tracked) writes the three spans,
+# a person writes the rest, then the person accepts the assistant's changes (review.acceptAll by
+# author), which wraps each accepted insertion in a mark and records it in the store.
+make_feature() {
+  local out=$1
+  "$MARGIN_CLI" run --template blank --author Person \
+    --cmd 'text.insert={"text":"The valley wakes slowly. ","raw":true}' \
+    --cmd 'file.setAuthor={"name":"Claude"}' --cmd 'review.trackChanges={"value":true}' \
+    --cmd 'text.insert={"text":"Mist lifts off the river by eight,","raw":true}' \
+    --cmd 'review.trackChanges={"value":false}' --cmd 'file.setAuthor={"name":"Person"}' \
+    --cmd 'text.insert={"text":" and the bakery opens at nine.","raw":true}' \
+    --cmd text.newParagraph \
+    --cmd 'file.setAuthor={"name":"Claude"}' --cmd 'review.trackChanges={"value":true}' \
+    --cmd 'text.insert={"text":"Seewis sits above the Prättigau, a village of six hundred people and a view that pays for the climb.","raw":true}' \
+    --cmd 'review.trackChanges={"value":false}' --cmd 'file.setAuthor={"name":"Person"}' \
+    --cmd text.newParagraph \
+    --cmd 'text.insert={"text":"Notes for the trip: ","raw":true}' \
+    --cmd 'file.setAuthor={"name":"Claude"}' --cmd 'review.trackChanges={"value":true}' \
+    --cmd 'text.insert={"text":"pack a map and ","raw":true}' --cmd format.bold \
+    --cmd 'text.insert={"text":"good boots","raw":true}' --cmd format.bold \
+    --cmd 'review.trackChanges={"value":false}' --cmd 'file.setAuthor={"name":"Person"}' \
+    --cmd 'text.insert={"text":" before Friday.","raw":true}' \
+    --cmd text.newParagraph \
+    --cmd 'text.insert={"text":"A closing line written by a person.","raw":true}' \
+    --cmd 'review.acceptAll={"author":"Claude"}' \
+    --save "$out" > /dev/null
+}
+
 mkdir -p "$OUT/src"
 "$SPIKE" make "$OUT/src" > /dev/null
+make_feature "$OUT/src/f-feature.docx"
 for f in "${CANDIDATES[@]}"; do check "$OUT/src/$f.docx"; done
 
 roundtrip_cli margin "$MARGIN_CLI"

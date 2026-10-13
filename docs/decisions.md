@@ -176,3 +176,44 @@ to the user, no anchor).
 
 **Open.** Whether to store the accepted text in the part (precise repair after edits, file grows
 by the AI share) or hash only: report recommends text with a cap; decide when A5 is built.
+
+## 2026-10-13 — Assistant A5: authorship view and persistence (V1–V4)
+
+**Context.** HANDOFF §10: keep "this text was written by the AI" after a suggestion is accepted,
+show it (pill, dotted text, chips, status split) and store it in the `.docx`. The spike (ADR above)
+chose candidate A; the owner decided to build V1–V4 and persistence now, on A, without a Word
+measurement (Word is not installed on this Mac).
+
+**Decisions.**
+- **Storage A as built:** hidden `_MarginAI_<8 hex>` bookmarks around each accepted assistant
+  insertion + one custom XML part `urn:margin:authorship` (one span per bookmark: author as
+  written, model id, acceptedAt, the accepted text; hash only above 10,000 characters). The
+  stored text is kept (not hash only): it lets a person's edits inside a span be attributed to the
+  person by a bounded diff. Written only while there is authorship; a file without it is byte
+  for byte as before. Report: `docs/authorship-storage.md` §8.
+- **One matcher.** Who is an assistant is decided by `Session::is_assistant_author` over one
+  list (`Session::assistant_authors`: configured name + every name used by `enter_assistant`) with
+  one rule (`authorship::name_matches`); the UI's `review_panel::is_assistant` uses the same
+  rule over the same list. The parallel fix branch (optional author name, `AI · <model>` names,
+  a persisted set) only swaps those bodies. The author is stored as written on the change.
+- **Word's bookmark rule for typing:** text typed, pasted or split with Enter at a span's end goes
+  after the bookmark end (the person's); inside stays inside. Scoped to `_MarginAI_` bookmarks;
+  ordinary bookmarks unchanged (`docs/typing-parity.md`, tests in `tests_typing.rs`).
+- **Merging:** a new span touching or inside an *unedited* span of the same author extends it;
+  an edited one is left alone (no re-attribution of a person's letters).
+- **Pending suggestions are counted apart** (status bar "n % pending", pill note, never in chips).
+  Chips from 10 % AI characters per paragraph; percentages whole, summing to 100, grouped by
+  assistant name shown without an `AI · ` prefix.
+- **Other formats drop authorship** (store and bookmarks), with a log line, `authorshipDropped`
+  in the save result and a status message. Outside assistants may not create or remove marks
+  (`insert.bookmark` with a `_MarginAI` name is denied).
+- **Model id stored by default** (not a secret; empty for outside assistants).
+
+**Alternatives rejected.** Hash-only entries (cannot attribute a person's edit inside a span);
+authorship on runs or as a `Revision` field (would need docx reader/writer changes here and
+upstream and would not survive Word); counting pending suggestions as AI (they are not accepted
+text; the handoff's "cheaper first step" is kept as the separate pending share); leaving
+bookmarks in HTML/Markdown exports (they turn into anchors named `_MarginAI_…`).
+
+**Not measured.** Word round trips (`scripts/authorship-spike/run.sh`, Word stage skipped).
+Upstream round trips of the feature's own document: kept.

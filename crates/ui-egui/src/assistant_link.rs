@@ -156,6 +156,8 @@ pub fn poll(app: &mut WordApp) {
     }
     let on = app.ui.assistant.enabled && app.assistant_link.usable(&app.ui.assistant);
     crate::review_panel::set_assistant_enabled(on);
+    crate::review_panel::set_assistant_name(&app.ui.assistant.name());
+    sync_policy(app);
 }
 
 fn finish(app: &mut WordApp, answer: Answer) {
@@ -395,9 +397,18 @@ pub fn settings_command(app: &mut WordApp, p: &Value) -> Result<Value, String> {
     Ok(settings_json(app))
 }
 
-/// Hand the session what the permissions say about comments (the engine enforces it).
+/// Hand the session what the permissions say about comments (the engine enforces it), the
+/// names assistants write under (the engine's one matcher, `Session::is_assistant_author`,
+/// decides by them) and the model id recorded on accepted text.
 pub fn sync_policy(app: &mut WordApp) {
     app.session.assistant_comments = app.ui.assistant.comments;
+    for n in crate::review_panel::assistant_names() {
+        app.session.add_assistant_author(&n);
+    }
+    let model = app.ui.assistant.model(app.ui.assistant.provider_id()).unwrap_or("");
+    if app.session.assistant_model != model {
+        app.session.assistant_model = model.to_string();
+    }
 }
 
 /// The "+" of Read files in these folders: the native folder picker; its answer is added to the

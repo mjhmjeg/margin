@@ -107,6 +107,10 @@ pub struct ViewState {
     #[serde(skip)]
     pub read_line_spacing: Option<f32>,
     pub dark_mode: bool,
+    /// View › Show Authorship (Margin): accepted assistant text marked, chips and the split in
+    /// the status bar. Never saved.
+    #[serde(skip)]
+    pub authorship: bool,
     pub show_markup: bool,
     pub track_changes_pane: bool,
     /// Check spelling and grammar as you type.
@@ -181,6 +185,7 @@ impl Default for ViewState {
             read_zoom: default_read_zoom(),
             read_line_spacing: None,
             dark_mode: false,
+            authorship: false,
             show_markup: true,
             track_changes_pane: false,
             proofing: true,
@@ -303,6 +308,12 @@ pub struct Session {
     /// one and the ones outside the app) may not add comments or replies
     /// ([`crate::assistant::denied`]). The host sets it; the person's own commands ignore it.
     pub assistant_comments: bool,
+    /// Names assistants write changes under: the configured one (the host syncs Settings ›
+    /// Assistant), plus every name [`Session::enter_assistant`] has seen. The one list
+    /// [`Session::is_assistant_author`] decides by.
+    pub assistant_authors: Vec<String>,
+    /// The model id the configured assistant uses (recorded on accepted spans); empty = unknown.
+    pub assistant_model: String,
     /// Initials for comments (File › Options › General); empty = the name's initials.
     pub initials: String,
     /// Format painter: copied formatting waiting to be applied (and whether it stays on).
@@ -533,6 +544,8 @@ impl Session {
             registry: Arc::new(crate::cmd::registry()),
             author: "WordCraft User".into(),
             assistant_comments: true,
+            assistant_authors: vec![crate::authorship::DEFAULT_ASSISTANT_NAME.to_string()],
+            assistant_model: String::new(),
             initials: String::new(),
             painter: None,
             status: String::new(),
@@ -943,6 +956,8 @@ impl Session {
             author: _,
             // A preference of the person's, like `prefs`.
             assistant_comments: _,
+            assistant_authors: _,
+            assistant_model: _,
             initials: _,
             painter: _,
             status: _,

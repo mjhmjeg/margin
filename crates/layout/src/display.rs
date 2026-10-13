@@ -200,6 +200,20 @@ pub struct DisplayOptions {
     /// Per-author colours and line styles (Margin's review marks). `None`: colours by order of
     /// appearance, solid lines, thin change bars at the page edge (upstream's look).
     pub author_marks: Option<AuthorMarks>,
+    /// View › Show Authorship (Margin): accepted assistant text keeps its tint and dotted
+    /// underline. `None`: nothing of the kind is drawn (upstream's look).
+    pub authorship: Option<AuthorshipDisplay>,
+}
+
+/// How accepted assistant text is shown while View › Show Authorship is on: the split per
+/// paragraph (`wordcraft_doc::authorship::attribution`), the assistant colour for the dotted
+/// underline and the tint behind the text.
+#[derive(Clone, Debug)]
+pub struct AuthorshipDisplay {
+    pub shares: std::sync::Arc<wordcraft_doc::authorship::Attribution>,
+    pub color: Rgb,
+    /// Colour and opacity (0–255) of the tint.
+    pub tint: (Rgb, u8),
 }
 
 /// One author's marks on the page (Margin: people solid in their colour, an assistant dotted).
@@ -247,6 +261,7 @@ impl Default for DisplayOptions {
             hide_ink: false,
             revisions: MarkupOptions::default(),
             author_marks: None,
+            authorship: None,
         }
     }
 }
@@ -684,6 +699,32 @@ fn lines(
                     if x1 > x0 {
                         out.push(Draw::Fill { rect: Rect::new(x + x0, top, x1 - x0, line.height), color: tint, alpha: tint_alpha });
                     }
+                }
+            }
+        }
+        // Show Authorship: accepted assistant text keeps `assistant_tint` and a dotted underline.
+        if let Some(auth) = &opts.authorship
+            && let Some(share) = auth.shares.para(story, path)
+        {
+            let tint_alpha = f32::from(auth.tint.1) / 255.0 * alpha;
+            for (a0, b0) in &share.ai {
+                if *b0 <= line.start || *a0 >= line.stop {
+                    continue;
+                }
+                let (a, b) = ((*a0).max(line.start), (*b0).min(line.stop));
+                let size = (line.c0..line.c1)
+                    .filter_map(|k| pl.clusters.get(k))
+                    .find(|c| c.start < b && c.end > a)
+                    .and_then(|c| pl.styles.get(c.style as usize))
+                    .map_or(11.0, |st| st.size);
+                let uy = base + size * 0.12;
+                let width = (size / 18.0).max(0.6);
+                for (x0, x1) in pl.x_spans(li, a, b) {
+                    if x1 <= x0 {
+                        continue;
+                    }
+                    out.push(Draw::Fill { rect: Rect::new(x + x0, top, x1 - x0, line.height), color: auth.tint.0, alpha: tint_alpha });
+                    out.push(Draw::Line { x0: x + x0, y0: uy, x1: x + x1, y1: uy, width, color: auth.color, stroke: Stroke::Dotted, alpha });
                 }
             }
         }

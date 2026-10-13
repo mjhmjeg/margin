@@ -1,6 +1,7 @@
 //! Command implementations, one module per area. Each module exposes `specs()`.
 
 pub mod accessibility;
+pub mod authorship;
 pub mod canvas;
 pub mod caret;
 pub mod chart;
@@ -97,6 +98,7 @@ pub fn registry() -> Registry {
     v.extend(protect::specs());
     v.extend(speech::specs());
     v.extend(controls::specs());
+    v.extend(authorship::specs());
     Registry::new(v)
 }
 
@@ -266,7 +268,9 @@ fn insert_text(s: &mut Session, text: &str, enter: bool) -> Result<(), CmdError>
         props.ins = None;
         props.del = None;
     }
-    let mut at = s.sel.focus.clone();
+    // Typed at the end of an assistant's span: after its bookmark end (Word's rule), so a
+    // person's continuation is the person's.
+    let mut at = crate::authorship::past_span_end(&s.doc, &s.sel.focus);
     let mut first = true;
     for part in text.split(['\r', '\u{2029}']) {
         if !first {

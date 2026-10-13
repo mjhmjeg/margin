@@ -25,6 +25,7 @@ pub mod a11y_pane;
 pub mod assistant;
 pub mod assistant_link;
 pub mod assistant_panel;
+pub mod authorship_view;
 pub mod backstage;
 pub mod canvas;
 pub mod caret_glide;
@@ -372,6 +373,9 @@ pub struct WordApp {
     /// The Restrict Editing pane (#412).
     pub restrict: dialogs_review::RestrictPane,
     pub status_msg: Option<(String, f64)>,
+    /// View › Show Authorship: the split, computed once per (document, revision, assistant
+    /// names) by `authorship_view::attribution`.
+    pub authorship_cache: Option<((u64, u64, usize), std::sync::Arc<wordcraft_doc::authorship::Attribution>)>,
     pub previews: previews::Previews,
     /// Media key of the picture a pending Change Picture replaces (#147).
     pub change_picture_target: Option<String>,
@@ -492,6 +496,7 @@ impl WordApp {
             colors: None,
             restrict: Default::default(),
             status_msg: None,
+            authorship_cache: None,
             previews: previews::Previews::default(),
             integrated_titlebar: false,
             control_rx: None,

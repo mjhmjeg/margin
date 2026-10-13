@@ -289,6 +289,14 @@ fn resolve_para(
     props: bool,
     accept: bool,
 ) -> Result<(), CmdError> {
+    // Accepted assistant text keeps its authorship: wrap it in a mark first (Margin A5).
+    let (to, new_marks, mark_author) = if accept {
+        let author = crate::authorship::accepted_author(s, story, path, from, to);
+        let (to, names) = crate::authorship::wrap_before_accept(s, story, path, from, to)?;
+        (to, names, author)
+    } else {
+        (to, Vec::new(), None)
+    };
     let para = s.doc.para_mut(story, path)?;
     if props && (para.props.fmt_change.is_some() || para.props.num_change.is_some()) {
         fmt_revisions::resolve_para(&mut para.props, accept);
@@ -310,9 +318,14 @@ fn resolve_para(
             })?;
         }
     }
+    if !new_marks.is_empty() {
+        let at = now_iso();
+        crate::authorship::record_accepted(s, story, path, &new_marks, mark_author.as_deref().unwrap_or_default(), &at)?;
+    }
     if !mark {
         return Ok(());
     }
+    let para = s.doc.para_mut(story, path)?;
     if para.mark.fmt_change.is_some() || para.section.as_ref().is_some_and(|x| x.fmt_change.is_some()) {
         fmt_revisions::resolve_char(&mut para.mark, accept);
         if let Some(sec) = para.section.as_deref_mut() {
@@ -442,6 +455,7 @@ fn changes_by(s: &Session, author: &str) -> Vec<Change> {
 /// changes and the selection are left as they are.
 fn resolve_author(s: &mut Session, author: &str, accept: bool) -> CmdResult {
     let saved = s.sel.clone();
+    let marks_before = crate::authorship::mark_names(&s.doc);
     let mut resolved = 0usize;
     // Bounded: a change that refuses to resolve ends the loop instead of spinning.
     for _ in 0..MAX_AUTHOR_RESOLVES {
@@ -455,7 +469,11 @@ fn resolve_author(s: &mut Session, author: &str, accept: bool) -> CmdResult {
         }
         resolved += before - changes_by(s, author).len();
     }
-    s.sel = saved;
+    // The selection as it was, moved past the marks accepting put around assistant text.
+    s.sel = Selection {
+        anchor: crate::authorship::map_past_new_marks(&s.doc, &marks_before, &saved.anchor),
+        focus: crate::authorship::map_past_new_marks(&s.doc, &marks_before, &saved.focus),
+    };
     s.clamp_selection();
     let mut r = sel_result(s)?;
     r["resolved"] = json!(resolved);
@@ -466,6 +484,7 @@ fn resolve_author(s: &mut Session, author: &str, accept: bool) -> CmdResult {
 const MAX_AUTHOR_RESOLVES: usize = 20_000;
 
 fn resolve_everything(s: &mut Session, accept: bool) -> CmdResult {
+    let marks_before = crate::authorship::mark_names(&s.doc);
     let stories: Vec<StoryRef> = std::iter::once(StoryRef::Body).chain(s.doc.parts.keys().map(|k| StoryRef::Part(*k))).collect();
     for st in stories {
         for path in s.doc.para_paths(st).into_iter().rev() {
@@ -480,6 +499,12 @@ fn resolve_everything(s: &mut Session, accept: bool) -> CmdResult {
     }
     fmt_revisions::resolve_section(&mut s.doc.last_section, accept);
     s.doc.revisions.clear();
+    if accept {
+        s.sel = Selection {
+            anchor: crate::authorship::map_past_new_marks(&s.doc, &marks_before, &s.sel.anchor),
+            focus: crate::authorship::map_past_new_marks(&s.doc, &marks_before, &s.sel.focus),
+        };
+    }
     s.clamp_selection();
     sel_result(s)
 }
@@ -1373,7 +1398,9 @@ mod tests {
         let r = s.run("review.acceptAll", &json!({"author": "Claude"})).unwrap();
         assert_eq!(r["resolved"], 2);
         assert_eq!(authors(&mut s), ["Ana"], "Ana's insertion is still pending");
-        assert!(s.sel.is_collapsed() && s.sel.focus.off == 24, "the caret stays at the end of the text");
+        // Margin: "Claude" is the assistant's name, so its accepted text is wrapped in two
+        // zero-width marks; the end of the text is past them.
+        assert!(s.sel.is_collapsed() && s.sel.focus.off == body_para(&s).len(), "the caret stays at the end of the text");
         assert_eq!(s.doc.plain_text(wordcraft_doc::StoryRef::Body), "ana keep  more by claude");
 
         let mut s = build();

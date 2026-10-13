@@ -66,10 +66,16 @@ pub fn assistant_enabled() -> bool {
     ASSISTANT_ON.get()
 }
 
-/// Whether `author` is an assistant. The engine has no AI flag on authors yet, so this is the
-/// configured name (case-insensitive); an engine flag would be added here.
+/// Every name assistants write changes under: the one list the UI decides by (and hands the
+/// engine, `assistant_link::sync_policy`). Today the configured name; more names go here.
+pub fn assistant_names() -> Vec<String> {
+    vec![assistant_author_name()]
+}
+
+/// Whether `author` is an assistant: the one place the UI decides it, with the engine's rule
+/// (`wordcraft_engine::authorship::name_matches`) over [`assistant_names`].
 pub fn is_assistant(author: &str) -> bool {
-    author.trim().eq_ignore_ascii_case(&assistant_author_name())
+    assistant_names().iter().any(|n| wordcraft_engine::authorship::name_matches(n, author))
 }
 
 /// What the page and panel call an author with no name.

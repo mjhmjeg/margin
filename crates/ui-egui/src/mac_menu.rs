@@ -181,6 +181,7 @@ const VIEW: &[Entry] = &[
     key("Show Format Inspector", Margin(MarginAct::Inspector), "CmdOrCtrl+Alt+I"),
     it("Show Ruler", Cmd("view.ruler")),
     key("Show Invisibles", Keys("Mod+8"), "CmdOrCtrl+8"),
+    it("Show Authorship", Cmd("view.authorship")),
     Sep,
     it("Pageless", Margin(MarginAct::Pageless)),
     it("Dark Page", Cmd("view.darkMode")),
@@ -225,6 +226,7 @@ pub fn checked(app: &WordApp, act: &Act) -> Option<bool> {
         Keys("Mod+8") => v.marks,
         Cmd("view.ruler") => v.ruler,
         Cmd("view.darkMode") => v.dark_mode,
+        Cmd("view.authorship") => v.authorship,
         Cmd("view.focus") => v.focus_mode,
         _ => return None,
     })

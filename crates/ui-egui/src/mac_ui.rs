@@ -425,6 +425,16 @@ pub fn status_bar(app: &mut WordApp, ui: &mut Ui) {
                         run_from_ribbon(app, "review.trackChanges", json!({}));
                     }
                 }
+                // V4: the document's split while View › Show Authorship is on; a click hides it.
+                if let Some(split) = crate::authorship_view::status_text(app) {
+                    dot(ui);
+                    if item(ui, &split)
+                        .on_hover_text(tl!("Characters by origin; pending suggestions are counted apart. Click to hide authorship."))
+                        .clicked()
+                    {
+                        let _ = app.run("view.authorship", json!({"value": false}));
+                    }
+                }
                 if app.session.prefs.overtype {
                     dot(ui);
                     if item(ui, tl!("Overtype")).on_hover_text(tl!("Click to switch back to inserting")).clicked() {

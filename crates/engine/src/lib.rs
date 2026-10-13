@@ -9,6 +9,7 @@
 pub mod assistant;
 pub mod assistant_edits;
 pub mod assistant_source;
+pub mod authorship;
 pub mod catalog;
 pub mod cmd;
 pub mod file_access;
@@ -169,6 +170,8 @@ pub mod p {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_authorship;
 #[cfg(test)]
 mod tests_bidi;
 #[cfg(test)]

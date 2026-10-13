@@ -37,6 +37,9 @@ pub fn denied(s: &Session, id: &str, params: &Value, assistant: &str) -> Option<
         }
         "tools.macros" | "tools.recordMacro" => no("a macro replays commands outside this check"),
         "review.restrict" => no("document protection is the person's to change"),
+        "insert.bookmark" if params.get("name").and_then(Value::as_str).is_some_and(crate::authorship::is_mark_name) => {
+            no("authorship marks are written only when the person accepts a suggestion")
+        }
         "review.newComment" | "review.reply" if !s.assistant_comments => {
             no("the person has turned off comments by assistants in Settings › Assistant")
         }
@@ -74,6 +77,7 @@ impl Session {
         if !mutates && !replaces_document(id) {
             return None;
         }
+        self.add_assistant_author(name);
         let scope = AssistantScope { author: std::mem::replace(&mut self.author, name.to_string()), track: self.doc.settings.track_changes };
         self.doc.settings.track_changes = true;
         Some(scope)

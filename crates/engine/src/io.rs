@@ -42,6 +42,26 @@ pub fn is_word_package(ext: &str) -> bool {
     wordcraft_docx::Flavor::from_ext(ext).is_some()
 }
 
+/// Does a `.ext` copy keep the authorship of accepted assistant text (Margin A5)? Only Word
+/// packages (and the Flat OPC and JSON forms of the same model) do; every other export drops it.
+pub fn keeps_authorship(ext: &str) -> bool {
+    is_word_package(ext) || ext == "xml" || ext == "json"
+}
+
+/// A copy of `doc` without its authorship: no spans, no `_MarginAI_` bookmarks.
+fn without_authorship(doc: &Document) -> Document {
+    let mut d = doc.clone();
+    let scan = wordcraft_doc::authorship::scan(&d);
+    let mut gone: Vec<wordcraft_doc::Pos> = scan.stray;
+    for r in scan.ranges {
+        gone.push(r.start);
+        gone.push(r.end);
+    }
+    wordcraft_doc::authorship::remove_markers(&mut d, gone);
+    d.authorship = Default::default();
+    d
+}
+
 /// How a copy in another format is written.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ExportOptions {
@@ -197,6 +217,16 @@ pub fn save_bytes(name: &str, doc: &Document) -> Result<Vec<u8>, String> {
 /// [`save_bytes`] with export options (Print Markup).
 pub fn save_bytes_opts(name: &str, doc: &Document, opts: &ExportOptions) -> Result<Vec<u8>, String> {
     let ext = ext_of(name);
+    // Who wrote what (Margin A5) travels only in Word's formats: a copy in another format gets
+    // neither the store nor the `_MarginAI_` bookmarks (they would turn into anchors).
+    let stripped;
+    let doc = if !keeps_authorship(&ext) && !doc.authorship.is_empty() {
+        log::warn!("{name}: a .{ext} copy does not keep who wrote what ({} assistant span(s) are left out)", doc.authorship.spans.len());
+        stripped = without_authorship(doc);
+        &stripped
+    } else {
+        doc
+    };
     match ext.as_str() {
         // List paragraphs get their label and a tab, as in Word's plain-text save.
         "txt" | "text" => {

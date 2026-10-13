@@ -1,6 +1,6 @@
 # Authorship storage in .docx (A5 spike)
 
-> **Status:** spike done 2026-10-13 · Margin and upstream WordCraft round trips run · **Word round trip not run: Microsoft Word is not installed on this Mac** (harness ready, see §6) · Decision: ADR "A5 spike" in `docs/decisions.md`
+> **Status:** spike done 2026-10-13, **A5 built 2026-10-13 on candidate A** (§8, as built) · Margin and upstream WordCraft round trips run, also for the feature's own document (`f-feature`) · **Word round trip not run: Microsoft Word is not installed on this Mac** (harness ready, §7; run it on a Mac with Word) · Decisions: ADRs "A5 spike" and "Assistant A5" in `docs/decisions.md`
 
 ## 1. Question
 
@@ -137,3 +137,145 @@ a span's end: place the text after the `BookmarkEnd` object.
 - `scripts/authorship-spike/word-roundtrip.applescript` — Word via AppleScript only.
 - `scripts/authorship-spike/word-shot.sh` + `window-ids.swift` — screenshot of Word's window(s)
   by window id if a round trip hangs (a repair dialog), never the whole desktop.
+
+## 8. As built (A5, 2026-10-13)
+
+Candidate A, exactly as recommended, with the open question of §5 decided: **the accepted text is
+stored** (hash only above 10,000 characters per span).
+
+### 8.1 Model
+
+- `Document::authorship` (`crates/doc/src/authorship.rs`): one `Span` per mark — bookmark name
+  `_MarginAI_<8 hex>`, `author` **as written on the accepted change** (never normalised; it may be
+  a model's display name such as `AI · Mistral Large 4`), `model` (the id configured in Settings ›
+  Assistant when the change was accepted; empty when unknown, e.g. an outside assistant),
+  `acceptedAt` (ISO-8601 UTC), `text` (the accepted text, see 8.3) or, above the cap, only
+  `hash` (FNV-1a 64) and `len`.
+- The bookmarks are ordinary `InlineObject::BookmarkStart/End` markers in the paragraphs; the
+  paragraphs are the source of truth. Spans are per accepted insertion, never across a paragraph
+  on creation (Word or a person pressing Enter inside one can make them span two paragraphs
+  later; that stays valid).
+- Who is an assistant is decided in **one place**: `Session::is_assistant_author`, over the list
+  `Session::assistant_authors` (the configured name, synced from Settings › Assistant, plus every
+  name an assistant has written under in the session — `Session::enter_assistant` records it) with
+  one rule, `authorship::name_matches` (trimmed, case-insensitive). The UI's
+  `review_panel::is_assistant` uses the same rule over the same list. Changing how assistants
+  are recognised means changing those two bodies and nothing else.
+
+### 8.2 Accept, reject, typing
+
+- **Accept** (`review.accept`, `review.acceptAll`, by author, from the Review panel or the
+  Assistant panel — all go through `cmd::review::resolve_para`): before a paragraph range is
+  accepted, every assistant insertion in it (tracked `ins` whose revision author is an
+  assistant, not deleted again, with visible text) is wrapped in a new mark
+  (`engine::authorship::wrap_before_accept`); after the accept the text inside is recorded
+  (`record_accepted`). A new span touching or inside an **unedited** span of the same author in
+  the same paragraph extends that span (its stored text becomes the new whole; `acceptedAt` and
+  `model` are refreshed); if the existing span was edited by a person, the new one stays its
+  own, so the person's letters are never re-attributed to the AI. Undo takes marks and entry
+  back with the accept.
+- **Reject** leaves nothing: rejected insertions are removed, no mark, no entry.
+- **Typing** (Word's rule for bookmarks, `docs/typing-parity.md`): text typed, pasted as text or
+  split with Enter at the end of a span (the caret before its bookmark end) goes **after** the
+  bookmark end — a person's continuation is the person's. Text typed right after the opening
+  marker or inside stays inside (and counts as the person's through the diff, 8.4). Only
+  `_MarginAI_` bookmarks get this; ordinary bookmarks behave exactly as upstream
+  (`typing_at_the_end_of_an_ordinary_bookmark_still_extends_it`).
+- **Outside assistants** cannot forge or remove marks: `insert.bookmark` with a `_MarginAI`
+  name is on the deny list (`assistant::denied`); their accepted changes count as AI because the
+  author on the change is an assistant's name. `authorship.spans` / `authorship.shares` are
+  read-only and open to everyone.
+
+### 8.3 File format (`.docx`, `.docm`, `.dotx`, `.dotm`, Flat OPC `.xml`)
+
+Written by `crates/docx/src/authorship.rs` **only while the document has at least one span with
+a live bookmark**; a document without them is written byte for byte as before (test
+`a_document_without_spans_writes_no_part_and_a_plain_file_is_untouched`).
+
+| Part | Content |
+|---|---|
+| `customXml/itemN.xml` | `<mg:authorship xmlns:mg="urn:margin:authorship" mg:version="1">` with one `<mg:span mg:anchor="bookmark" mg:ref="_MarginAI_…" mg:author="…" mg:kind="ai" mg:acceptedAt="…" mg:model="…" mg:len="…" mg:hash="…"><mg:text>…</mg:text></mg:span>` per mark, in document order; `mg:text` is left out above the cap |
+| `customXml/itemPropsN.xml` | `ds:datastoreItem` with a fixed `ds:itemID` `{6D1F3B2A-0C4E-4F8B-9A7D-2E5C1B3F4A60}` and a `ds:schemaRef` to the namespace |
+| `customXml/_rels/itemN.xml.rels` | the item → its properties part (`customXmlProps`) |
+| `word/_rels/document.xml.rels` | `customXml` relationship `../customXml/itemN.xml` (related from the main document, as Word relates its own stores) |
+| `[Content_Types].xml` | overrides for both parts (`customXml+xml`, `customXmlProperties+xml`) |
+
+`N` is the first free item number: the bibliography keeps `item1`, foreign stores carried through
+from the opened file keep their names, ours is added beside them (test
+`ours_sits_beside_a_bibliography_and_a_foreign_store`). The stored text goes through `storable`
+(object placeholders removed, control characters other than tab and line feed replaced by U+FFFD)
+so the part is always well-formed; the live text is put through the same function before it is
+compared. A second save of an unchanged document writes identical bytes.
+
+**Privacy.** The part holds the bookmark name, the author name as written, the model id, the
+time of acceptance and the accepted text (which is in the document anyway). Never a prompt, a
+key, a file path, the scope that was sent, or the work log. The model id is stored by default
+(it is not a secret; it says which model wrote the text); a person who does not want it leaves
+the model unset in Settings › Assistant, and an outside assistant's model is unknown anyway
+(empty).
+
+**Other formats** (odt, rtf, md, html, txt, tex, pdf, png): authorship is dropped — the copy is
+written from a clone without the store **and without the `_MarginAI_` bookmarks** (they would
+have become anchors in HTML/Markdown). A warning is logged, `file.save` / `file.saveAs` answer
+`"authorshipDropped": true`, and the status line says "this format does not keep who wrote
+what". The open document keeps everything.
+
+### 8.4 Load repair (§6 as implemented, `wordcraft_doc::authorship::reconcile`)
+
+Run at the end of every `.docx` read; one log line per repair. Only `_MarginAI…` bookmarks are
+ever touched (read leniently: the spike's `_MarginAI1` names count too; new marks are always
+`_MarginAI_<8 hex>`).
+
+| Found | Done |
+|---|---|
+| Entry, bookmark with start and end in one story and container, start before end | Kept. Text compared on view (8.5), not changed |
+| Entry, bookmark missing | Entry dropped |
+| Entry, bookmark empty (collapsed, or only other markers inside) | Entry and both markers dropped |
+| Start without end / end without start | Marker dropped (the reader already skips ends whose id has no start) |
+| End before start, or start and end in different stories or table cells | Both markers dropped, entry dropped |
+| Two bookmarks with one name (a pasted copy) | The first start and the first end after it are kept; the other markers go |
+| Two entries with one name | The second entry dropped |
+| `_MarginAI_` bookmark with no entry (stale, or a file without the store) | Markers dropped; the text stays |
+| Part malformed, another namespace or another root | Ignored and carried through as a foreign store, like any custom XML part; an unparseable part cannot be recognised as ours |
+| More than 10,000 spans in a part, over-long names, authors, models, dates, texts | Capped / skipped; a span without text and without a 16-hex hash is skipped |
+
+### 8.5 Who wrote what (`wordcraft_doc::authorship::attribution`)
+
+- Per span, the live text inside the bookmark (no placeholders, no tracked deletions; a line
+  feed between paragraphs) is compared with the stored text. Equal → all the AI's. Different →
+  the common beginning and end are the AI's; the edited middle is compared character by
+  character (longest common subsequence) when both sides are at most 400 characters, else it
+  counts as the person's as a whole. Hash-only spans: the AI's as a whole, flagged `edited` when
+  the hash no longer matches.
+- Characters in a tracked deletion are not counted. A person's tracked insertion inside a span
+  is the person's. Nested or overlapping spans: a character is the AI's if any span says so.
+- **Pending suggestions** (tracked insertions by an assistant, not yet accepted) are **not AI
+  text yet**: they are counted apart. The status bar shows them as "· n % pending"; the pill
+  says "Pending suggestions not counted"; chips never include them. Percentages are whole
+  numbers that add up to 100 (people = the rest), grouped by the assistant's name as written,
+  shown without an `AI · ` prefix.
+- Counted over the body, headers, footers, notes and text boxes; comments are not document text.
+
+### 8.6 View (V1–V4, Margin layout only; Classic unchanged)
+
+`view.authorship` (View › Show Authorship; in the command field), `ViewState::authorship`, never
+saved. While on: the pill at the top of the desk (legend People solid · each assistant dotted,
+the pending note, Hide), accepted AI text with `assistant_tint` and a dotted `assistant`
+underline on the page (`DisplayOptions::authorship`, computed once per document revision), a
+chip "Claude 41 %" beside every paragraph with at least 10 % AI characters, and the split in the
+status bar. Screenshots: `docs/mac/assistant-a5/`.
+
+### 8.7 Round trips as built
+
+`scripts/authorship-spike/run.sh` now also builds `f-feature.docx` with Margin's own CLI (the
+assistant's tracked insertions accepted by author) and round-trips it with the five candidates:
+Margin and upstream (`storytold/wordcraft` main `159b84f`) open+save and save after the scripted
+edits keep all three spans, the store and the bookmarks (`spans=3 resolved=3`, the two edited
+spans flagged by the hash; under Margin the typing after span 3 lands after the bookmark end, so
+that span still matches — under upstream, which has no such rule, it is flagged too). The
+synthetic candidates B and E are not understood by the built reader (their store is in our
+namespace but anchors nothing Margin writes): their entries are dropped on save, the text is
+untouched. **Word: still not measured** — not installed on this Mac; run the
+script on a Mac with Word before relying on Word round trips. The only failure mode that matters
+is a file Word or WordCraft refuses or repairs; losing marks is tolerable and visible (the
+entries are dropped on load with a log line).

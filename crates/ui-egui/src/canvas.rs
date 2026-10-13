@@ -514,9 +514,17 @@ pub fn sync_fit_zoom(app: &mut WordApp, scale: f32) {
 }
 
 /// Fingerprint of a page's content for the texture cache.
-fn page_key(app: &WordApp, page: &Page, scale_px: f32, dim_body: bool, marks: Option<&wordcraft_layout::display::AuthorMarks>) -> u64 {
+fn page_key(
+    app: &WordApp,
+    page: &Page,
+    scale_px: f32,
+    dim_body: bool,
+    marks: Option<&wordcraft_layout::display::AuthorMarks>,
+    authorship: Option<&wordcraft_layout::display::AuthorshipDisplay>,
+) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     scale_px.to_bits().hash(&mut h);
+    authorship.map(|a| std::sync::Arc::as_ptr(&a.shares) as usize).hash(&mut h);
     let v = &app.session.view;
     (v.marks, app.session.prefs.marks, v.show_markup, v.dark_mode, wordcraft_render::DARK_PAPER, v.hide_ink, v.draw.replay).hash(&mut h);
     app.session.prefs.markup.hash(&mut h);
@@ -820,6 +828,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     if app.canvas.wheel.is_animating() {
         ui.ctx().request_repaint();
     }
+    // View › Show Authorship: the split the page marks and the desk chips read.
+    let authorship = crate::authorship_view::display(app);
     let out = scroll_area.show_viewport(&mut ui_area, |ui, viewport| {
         origin = ui.min_rect().min - viewport.min.to_vec2();
         let content = Rect::from_min_size(ui.min_rect().min, geo.size);
@@ -847,7 +857,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 rects.push(sr);
                 continue;
             }
-            let key = page_key(app, page, scale_px, dim_body, author_marks.as_ref());
+            let key = page_key(app, page, scale_px, dim_body, author_marks.as_ref(), authorship.as_ref());
             let mut fresh = app.canvas.textures.get(&i).is_some_and(|(k, _)| *k == key);
             // Hide White Space shows only a band of the page; everything below paints into it.
             let band_of = |r: Rect| Rect::from_min_max(pos2(r.min.x - 4.0, r.min.y + band_top), pos2(r.max.x + 4.0, r.min.y + band_bot));
@@ -864,6 +874,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 opts.display.hide_ink = app.session.view.hide_ink || app.session.view.draw.replay;
                 opts.display.revisions = app.session.prefs.markup.clone();
                 opts.display.author_marks = author_marks.clone();
+                opts.display.authorship = authorship.clone();
                 opts.dark = dark_page;
                 opts.dark_paper = dark_paper;
                 opts.display.dim_header = !dim_body;
@@ -994,6 +1005,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         comment_tags(app, ui, &painter, &rects, &layout, geo.scale);
         // A5: where the built-in assistant is working (removed when it stops).
         crate::assistant_panel::paint_presence(app, &painter, &rects, &layout, geo.scale);
+        // V1 + V3: the authorship pill and the chips beside paragraphs.
+        crate::authorship_view::paint(app, ui, &painter, &rects, &layout, geo.scale);
         // Find › Reading Highlight.
         let marks: Vec<(Pos, Pos)> = app.session.find_highlights().iter().take(5000).cloned().collect();
         for (a, b) in &marks {

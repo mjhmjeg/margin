@@ -841,3 +841,83 @@ fn typing_rtl_letters_into_an_empty_paragraph_makes_it_rtl() {
     let x = doc.layout().caret(&doc.sel.focus).map(|c| c.x).unwrap_or(f32::MAX);
     assert!(x < 300.0, "left-to-right paragraph: caret at {x}");
 }
+
+// ---------------------------------------------------------------------------------------------
+// Assistant spans (Margin A5): Word's bookmark rule for text typed at the ends of a mark.
+
+/// "AI text" in a paragraph "Before AI text after.", accepted from an assistant suggestion.
+fn with_ai_span() -> Session {
+    let mut s = s();
+    s.author = "Martijn".into();
+    typ(&mut s, "Before  after.");
+    run(&mut s, "select.range", json!({"anchor": {"block": 0, "off": 7}, "focus": {"block": 0, "off": 7}}));
+    s.run_as_assistant("Claude", "text.insert", &json!({"text": "AI text", "raw": true})).unwrap();
+    run(&mut s, "review.acceptAll", json!({"author": "Claude"}));
+    assert_eq!(span_texts(&s), vec!["AI text".to_string()]);
+    s
+}
+
+fn span_texts(s: &Session) -> Vec<String> {
+    wordcraft_doc::authorship::scan(&s.doc).ranges.iter().map(|r| wordcraft_doc::authorship::span_text(&s.doc, r)).collect()
+}
+
+fn caret_at(s: &mut Session, off: usize) {
+    run(s, "select.range", json!({"anchor": {"block": 0, "off": off}, "focus": {"block": 0, "off": off}}));
+}
+
+#[test]
+fn typing_at_the_end_of_an_ai_span_is_the_persons() {
+    // Word: text added right after a bookmark's closing bracket is not part of the bookmark.
+    let mut s = with_ai_span();
+    let end = wordcraft_doc::authorship::scan(&s.doc).ranges[0].end.off;
+    caret_at(&mut s, end);
+    typ(&mut s, " more");
+    assert_eq!(span_texts(&s), vec!["AI text".to_string()]);
+    assert_eq!(paras(&s)[0].0.replace('\u{FFFC}', ""), "Before AI text more after.");
+    // Already past the marker: the same.
+    let end = wordcraft_doc::authorship::scan(&s.doc).ranges[0].end.off;
+    caret_at(&mut s, end + 3);
+    typ(&mut s, "!");
+    assert_eq!(span_texts(&s), vec!["AI text".to_string()]);
+    assert_eq!(paras(&s)[0].0.replace('\u{FFFC}', ""), "Before AI text! more after.");
+    // Right after the opening bracket, and inside: part of the span, as Word's rule says.
+    let start = wordcraft_doc::authorship::scan(&s.doc).ranges[0].start.off + 3;
+    caret_at(&mut s, start);
+    typ(&mut s, ">");
+    caret_at(&mut s, start + 3);
+    typ(&mut s, "_");
+    assert_eq!(span_texts(&s), vec![">AI_ text".to_string()]);
+    let a = s.authorship();
+    assert_eq!((a.ai_chars, a.spans[0].edited), (7, true), "typed characters inside count as the person's");
+}
+
+#[test]
+fn enter_at_the_end_of_an_ai_span_starts_the_persons_paragraph() {
+    let mut s = with_ai_span();
+    let end = wordcraft_doc::authorship::scan(&s.doc).ranges[0].end.off;
+    caret_at(&mut s, end);
+    typ(&mut s, "\nNew");
+    let ranges = wordcraft_doc::authorship::scan(&s.doc).ranges;
+    assert_eq!(ranges.len(), 1);
+    assert_eq!((ranges[0].start.path.last(), ranges[0].end.path.last()), (0, 0), "both markers stay in the first paragraph");
+    assert_eq!(span_texts(&s), vec!["AI text".to_string()]);
+    assert_eq!(paras(&s)[1].0, "New after.");
+}
+
+#[test]
+fn typing_at_the_end_of_an_ordinary_bookmark_still_extends_it() {
+    // Upstream behaviour for every other bookmark is unchanged: typing before its end marker
+    // goes inside it.
+    let mut s = typed("Hello world");
+    run(&mut s, "select.range", json!({"anchor": {"block": 0, "off": 0}, "focus": {"block": 0, "off": 5}}));
+    run(&mut s, "insert.bookmark", json!({"name": "Intro"}));
+    let p = s.doc.para_at(&s.sel.focus).unwrap();
+    let end =
+        p.object_offsets().into_iter().find(|o| matches!(p.object_at(*o), Some(wordcraft_doc::para::InlineObject::BookmarkEnd { .. }))).unwrap();
+    caret_at(&mut s, end);
+    typ(&mut s, "!");
+    let p = s.doc.para_at(&s.sel.focus).unwrap();
+    let offs = p.object_offsets();
+    assert_eq!(p.text.get(offs[0] + 3..offs[1]), Some("Hello!"), "{:?}", p.text);
+    assert!(span_texts(&s).is_empty());
+}

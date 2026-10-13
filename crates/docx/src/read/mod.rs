@@ -91,6 +91,8 @@ pub(crate) struct Reader<'p> {
     content_types: Option<ContentTypes>,
     /// Parts kept for charts, diagrams and OLE objects (see `embed`).
     embedded: EmbeddedManifest,
+    /// Custom XML parts read into `Document::authorship` (not carried through as foreign stores).
+    authorship_parts: HashSet<String>,
     /// Linked text boxes as read: (`wps:txbx/@id` or `wps:linkedTxbx/@id`, `seq` (0 for the box
     /// holding the text), text box part). See [`link_text_boxes`].
     pub txbx_links: Vec<(u32, u32, u32)>,
@@ -155,6 +157,7 @@ pub(crate) fn read_opened(pkg: &Package) -> Result<Document, DocxError> {
         main: main.clone(),
         content_types: None,
         embedded: EmbeddedManifest::default(),
+        authorship_parts: HashSet::new(),
         txbx_links: Vec::new(),
     };
     r.pc.major_font = r.doc.settings.major_font.clone();
@@ -257,6 +260,7 @@ pub(crate) fn read_opened(pkg: &Package) -> Result<Document, DocxError> {
         r.doc.passthrough.insert(VBA_PROJECT_PART.into(), Arc::new(b.to_vec()));
         r.read_vba_related(&v);
     }
+    r.read_authorship(&root_rels, &rels);
     r.keep_custom_xml(&root_rels, &rels);
     if !r.embedded.parts.is_empty() {
         let manifest = r.embedded.to_bytes();
@@ -270,7 +274,41 @@ pub(crate) fn read_opened(pkg: &Package) -> Result<Document, DocxError> {
     }
     let mut doc = r.doc;
     doc.ensure_nonempty();
+    // Spans and `_MarginAI_` bookmarks must agree (docs/authorship-storage.md §6).
+    for line in wordcraft_doc::authorship::reconcile(&mut doc) {
+        log::info!("docx: authorship: {line}");
+    }
     Ok(doc)
+}
+
+/// Most custom XML parts looked at for authorship spans.
+const MAX_AUTHORSHIP_PARTS: usize = 64;
+
+impl Reader<'_> {
+    /// Read Margin's authorship part(s) (custom XML stores in `urn:margin:authorship`, related
+    /// from the package or the main document) into `Document::authorship`. Other stores are
+    /// untouched; a part that doesn't parse is left to `keep_custom_xml` as a foreign store.
+    fn read_authorship(&mut self, package: &Rels, document: &Rels) {
+        let mut seen: Vec<String> = Vec::new();
+        for rels in [package, document] {
+            for rel in rels.list.iter().filter(|r| !r.external && rel_is(&r.kind, rt::CUSTOM_XML)) {
+                if seen.len() >= MAX_AUTHORSHIP_PARTS || seen.contains(&rel.target) {
+                    continue;
+                }
+                seen.push(rel.target.clone());
+                let Some(bytes) = self.pkg.get(&rel.target) else { continue };
+                let Some(spans) = crate::authorship::read_part(bytes) else { continue };
+                self.authorship_parts.insert(rel.target.clone());
+                for s in spans {
+                    if self.doc.authorship.spans.len() >= wordcraft_doc::authorship::MAX_SPANS {
+                        log::warn!("docx: more than {} authorship spans; the rest are dropped", wordcraft_doc::authorship::MAX_SPANS);
+                        return;
+                    }
+                    self.doc.authorship.spans.push(s);
+                }
+            }
+        }
+    }
 }
 
 /// Most move ranges open at once, and most move names tracked, per file.
