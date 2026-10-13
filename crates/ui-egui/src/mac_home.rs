@@ -11,7 +11,13 @@ use crate::theme::{Tokens, regular};
 
 const SIDEBAR_W: f32 = 220.0;
 const CARD_W: f32 = 168.0;
-const CARD_H: f32 = CARD_W * 11.0 / 8.5;
+const CARD_H: f32 = (CARD_W - 2.0 * RING) * 11.0 / 8.5;
+/// Paper corners: barely rounded, like a sheet, not a tile.
+const PAPER_RADIUS: f32 = 3.0;
+/// Selection ring: a gap from the paper, then the ring.
+const RING_GAP: f32 = 3.0;
+const RING_W: f32 = 2.5;
+const RING: f32 = RING_GAP + RING_W;
 /// Recent files bigger than this show an icon instead of a rendered first page.
 const MAX_THUMB_BYTES: u64 = 20 << 20;
 
@@ -237,16 +243,24 @@ fn card(app: &mut WordApp, ui: &mut Ui, t: &Tokens, key: &str, label: &str, sub:
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 4.0;
         ui.set_width(CARD_W);
-        let (r, resp) = ui.allocate_exact_size(vec2(CARD_W, CARD_H), Sense::click());
-        // Soft shadow, then the paper.
-        let lift = if resp.hovered() { 3.0 } else { 1.0 };
-        ui.painter().rect_filled(r.translate(vec2(0.0, lift)).expand(1.0), 8.0, Color32::from_black_alpha(if resp.hovered() { 40 } else { 22 }));
-        ui.painter().rect_filled(r, 8.0, Color32::WHITE);
+        // Room around the page for the selection ring (2 pt gap + 2.5 pt ring).
+        let (outer, resp) = ui.allocate_exact_size(vec2(CARD_W, CARD_H + 2.0 * RING), Sense::click());
+        let r = Rect::from_center_size(outer.center(), vec2(CARD_W - 2.0 * RING, CARD_H));
+        // Paper: barely rounded, with a soft shadow that lifts on hover.
+        let shadow = egui::epaint::Shadow {
+            offset: [0, if resp.hovered() { 4 } else { 1 }],
+            blur: if resp.hovered() { 14 } else { 6 },
+            spread: 0,
+            color: Color32::from_black_alpha(if resp.hovered() { 46 } else { 30 }),
+        };
+        ui.painter().add(shadow.as_shape(r, PAPER_RADIUS));
+        ui.painter().rect_filled(r, PAPER_RADIUS, Color32::WHITE);
         let tex = if recent { recent_thumb(app, ui, key) } else { template_thumb(app, ui, key) };
         match tex {
             Some(h) => {
                 ui.painter().add(
-                    egui::epaint::RectShape::filled(r, 8.0, Color32::WHITE).with_texture(h.id(), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))),
+                    egui::epaint::RectShape::filled(r, PAPER_RADIUS, Color32::WHITE)
+                        .with_texture(h.id(), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))),
                 );
             }
             None => {
@@ -259,14 +273,17 @@ fn card(app: &mut WordApp, ui: &mut Ui, t: &Tokens, key: &str, label: &str, sub:
                 );
             }
         }
-        let ring = if selected { Stroke::new(3.0, t.accent) } else { Stroke::new(1.0, Color32::from_black_alpha(26)) };
-        ui.painter().rect_stroke(r, 8.0, ring, egui::StrokeKind::Outside);
+        ui.painter().rect_stroke(r, PAPER_RADIUS, Stroke::new(0.5, Color32::from_black_alpha(30)), egui::StrokeKind::Outside);
+        if selected {
+            ui.painter().rect_stroke(r.expand(RING_GAP), PAPER_RADIUS + RING_GAP, Stroke::new(RING_W, t.accent), egui::StrokeKind::Outside);
+        }
         ui.add_space(6.0);
-        let mut job = egui::text::LayoutJob::simple_singleline(label.to_string(), font(), t.text);
-        job.wrap = egui::text::TextWrapping::truncate_at_width(CARD_W);
+        // Up to two centred lines, then an ellipsis.
+        let mut job = egui::text::LayoutJob::single_section(label.to_string(), egui::text::TextFormat::simple(font(), t.text));
+        job.wrap = egui::text::TextWrapping { max_width: CARD_W, max_rows: 2, break_anywhere: false, overflow_character: Some('…') };
         job.halign = egui::Align::Center;
         ui.vertical_centered(|ui| {
-            ui.label(job);
+            ui.label(job).on_hover_text(label);
             if let Some(s) = sub {
                 ui.label(egui::RichText::new(s).font(font()).color(t.group_label));
             }
@@ -328,7 +345,7 @@ fn first_page_texture(ui: &Ui, s: &mut wordcraft_engine::Session, key: &str) -> 
     let ppp = ui.ctx().pixels_per_point();
     let l = s.export_layout();
     let page = l.pages.first()?;
-    let img = wordcraft_render::render_page(&s.doc, page, CARD_W / page.w * ppp, &crate::canvas::screen_render_options());
+    let img = wordcraft_render::render_page(&s.doc, page, (CARD_W - 2.0 * RING) / page.w * ppp, &crate::canvas::screen_render_options());
     let px = img.to_straight();
     let h = ui.ctx().load_texture(
         key,
