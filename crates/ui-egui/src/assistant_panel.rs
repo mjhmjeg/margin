@@ -38,8 +38,6 @@ pub const COMPOSER_H: f32 = 76.0;
 pub const SUGGESTION_H: f32 = 36.0;
 /// How long connecting and the first words of the answer may take (local models read slowly).
 const ASK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
-/// Tokens the model may write.
-const MAX_TOKENS: u32 = 4096;
 /// Entries kept per document.
 const MAX_ENTRIES: usize = 100;
 
@@ -81,6 +79,11 @@ pub struct Entry {
     /// Plain lines under the report: what was trimmed, skipped or went wrong.
     pub lines: Vec<String>,
     pub suggestions: Vec<Suggestion>,
+    /// What the model sent, kept (in memory, this session only, never saved) when it couldn't be
+    /// read in full, for "Show answer". Keys are taken out before it gets here.
+    pub answer: Option<String>,
+    /// "Show answer" is open.
+    pub show_answer: bool,
 }
 
 enum Event {
@@ -101,6 +104,8 @@ struct Job {
     name: String,
     /// A fact check: only comments are made.
     facts: bool,
+    /// The provider asked (JSON mode is remembered per provider).
+    provider: wordcraft_assistant::ProviderId,
 }
 
 /// The list of files "Check facts against a file…" offers, drawn as a window until one is
@@ -126,6 +131,8 @@ pub struct AssistantPanel {
     pub picker: Option<FilePicker>,
     /// (document, revision) the suggestion states were last checked at.
     checked: (u64, u64),
+    /// Providers whose server refused JSON mode this session: not asked for it again.
+    json_refused: std::collections::HashSet<wordcraft_assistant::ProviderId>,
 }
 
 fn now_hm() -> String {
@@ -228,6 +235,8 @@ fn ask_with(app: &mut WordApp, instruction: &str, kind: ScopeKind, file: Option<
         report: String::new(),
         lines: Vec::new(),
         suggestions: Vec::new(),
+        answer: None,
+        show_answer: false,
     };
     if scope.trimmed {
         entry.lines.push(crate::i18n::fmt(
@@ -250,7 +259,10 @@ fn ask_with(app: &mut WordApp, instruction: &str, kind: ScopeKind, file: Option<
             role: wordcraft_assistant::Role::User,
             content: edits::user_message_with(&entry.instruction, &scope, &edits::nonce(), source.as_ref()),
         }],
-        max_tokens: Some(MAX_TOKENS),
+        // Room for the whole scope to be rewritten (quotes and replacements), within limits.
+        max_tokens: Some(edits::output_budget(scope.text.chars().count())),
+        // JSON mode where the server takes it (Mistral, OpenAI, OpenRouter, Ollama…).
+        json: !app.assistant_panel.json_refused.contains(&p),
     };
     let (rx, stop) = spawn(app, request)?;
     let log = app.assistant_panel.logs.entry(doc).or_default();
@@ -261,7 +273,7 @@ fn ask_with(app: &mut WordApp, instruction: &str, kind: ScopeKind, file: Option<
     let index = log.len() - 1;
     let presence = scope.start();
     let facts = source.is_some();
-    app.assistant_panel.job = Some(Job { doc, entry: index, scope, rx, stop, buf: String::new(), quotes: 0, presence, name, facts });
+    app.assistant_panel.job = Some(Job { doc, entry: index, scope, rx, stop, buf: String::new(), quotes: 0, presence, name, facts, provider: p });
     set_open(app, true);
     app.assistant_panel.scope = kind;
     Ok(json!({"started": true, "scope": kind.id()}))
@@ -324,6 +336,7 @@ fn spawn(app: &mut WordApp, req: wordcraft_assistant::ChatRequest) -> Result<(Re
     let spawned = std::thread::Builder::new().name("assistant-ask".into()).spawn(move || {
         // The key is read here, off the UI thread.
         let answer = keys.get(p.id()).and_then(|key| wordcraft_assistant::Endpoint::new(p, Some(&url), key)).and_then(|ep| {
+            let key = ep.api_key.clone();
             wordcraft_assistant::http::chat_stream_until(&ep, &req, ASK_TIMEOUT, &flag, &mut |t| {
                 // A send error means the panel let go (Stop): the flag ends the stream.
                 if tx.send(Event::Text(t.to_string())).is_err() {
@@ -332,6 +345,13 @@ fn spawn(app: &mut WordApp, req: wordcraft_assistant::ChatRequest) -> Result<(Re
                 if let Some(c) = &wake {
                     c.request_repaint();
                 }
+            })
+            .map(|mut reply| {
+                // The answer may be shown ("Show answer"): never with the key in it.
+                if let Some(k) = key.as_deref().filter(|k| k.len() >= 4) {
+                    reply.text = reply.text.replace(k, "••••");
+                }
+                reply
             })
         });
         let _ = tx.send(Event::Done(answer));
@@ -422,33 +442,44 @@ fn finish(app: &mut WordApp, r: Result<ChatReply, AssistantError>) {
     let mut lines = Vec::new();
     let mut report = String::new();
     let mut suggestions = Vec::new();
+    let mut answer_text = None;
     let status = match r {
-        Ok(reply) => match edits::parse_answer(&reply.text) {
-            Ok(answer) => {
-                report = answer.report;
-                lines.extend(answer.skipped);
-                crate::assistant_link::sync_policy(app);
-                let out = if job.facts {
-                    edits::apply_comments_only(&mut app.session, &job.name, &job.scope, &answer.edits)
-                } else {
-                    edits::apply(&mut app.session, &job.name, &job.scope, &answer.edits)
-                };
-                lines.extend(out.log);
-                suggestions = out.applied.into_iter().map(|applied| Suggestion { applied, state: SugState::Pending }).collect::<Vec<_>>();
-                if matches!(reply.stop_reason.as_deref(), Some("max_tokens" | "length")) {
-                    lines.push(tl!("The answer was cut off at the model's length limit; some edits may be missing.").into());
-                }
-                if suggestions.is_empty() && answer.edits.is_empty() && report.is_empty() {
-                    lines.push(tl!("No changes suggested.").into());
-                }
-                log::info!("assistant: {} suggestions", suggestions.len());
-                Status::Done
+        Ok(reply) => {
+            if reply.json_refused {
+                app.assistant_panel.json_refused.insert(job.provider);
             }
-            Err(e) => {
-                lines.push(capitalise(&e));
-                Status::Failed
+            match edits::read_answer(&reply.text, reply.stop_reason.as_deref()) {
+                Ok(answer) => {
+                    report = answer.report;
+                    lines.extend(answer.skipped);
+                    crate::assistant_link::sync_policy(app);
+                    let out = if job.facts {
+                        edits::apply_comments_only(&mut app.session, &job.name, &job.scope, &answer.edits)
+                    } else {
+                        edits::apply(&mut app.session, &job.name, &job.scope, &answer.edits)
+                    };
+                    lines.extend(out.log);
+                    suggestions = out.applied.into_iter().map(|applied| Suggestion { applied, state: SugState::Pending }).collect::<Vec<_>>();
+                    if let Some(why) = answer.cut_off {
+                        lines.push(edits::cut_off_line(answer.edits.len(), why));
+                        answer_text = Some(reply.text.clone());
+                    }
+                    if suggestions.is_empty() && answer.edits.is_empty() && report.is_empty() {
+                        lines.push(tl!("No changes suggested.").into());
+                    }
+                    log::info!("assistant: {} suggestions", suggestions.len());
+                    Status::Done
+                }
+                Err(e) => {
+                    log::warn!("assistant: answer not usable ({e:?}, stop reason {:?}, {} characters)", reply.stop_reason, reply.text.len());
+                    lines.push(e.message());
+                    if !matches!(e, edits::AnswerError::Empty { .. }) {
+                        answer_text = Some(reply.text.clone());
+                    }
+                    Status::Failed
+                }
             }
-        },
+        }
         Err(AssistantError::Stopped) => Status::Stopped,
         Err(e) => {
             // Never holds the key (wordcraft_assistant::AssistantError).
@@ -468,6 +499,7 @@ fn finish(app: &mut WordApp, r: Result<ChatReply, AssistantError>) {
         }
         e.lines.extend(lines);
         e.suggestions = suggestions;
+        e.answer = answer_text.map(|t| t.chars().take(edits::MAX_ANSWER_CHARS).collect());
     }
     app.assistant_panel.checked = (job.doc, rev);
 }
@@ -580,7 +612,7 @@ fn entry_json(e: &Entry) -> Value {
             json!({"kind": s.applied.kind.id(), "deleted": s.applied.deleted, "inserted": s.applied.inserted, "quote": s.applied.quote, "note": s.applied.note, "state": state})
         })
         .collect();
-    json!({"time": e.time, "instruction": e.instruction, "scope": e.scope, "author": e.author, "replyTime": e.reply_time, "status": status, "report": e.report, "lines": e.lines, "suggestions": sug})
+    json!({"time": e.time, "instruction": e.instruction, "scope": e.scope, "author": e.author, "replyTime": e.reply_time, "status": status, "report": e.report, "lines": e.lines, "suggestions": sug, "answer": e.answer})
 }
 
 /// `ui.assistant.ask` / `.stop` / `.panel` / `.log` / `.suggestion`; `None` for other ids.
@@ -824,6 +856,7 @@ fn entry_ui(app: &mut WordApp, ui: &mut Ui, doc: u64, i: usize, t: &Tokens, m: &
     let top = ui.cursor().min;
     let mut clicked: Option<(usize, bool)> = None;
     let mut show_review = false;
+    let mut toggle_answer = false;
     let inner = ui.horizontal(|ui| {
         ui.add_space(12.0);
         ui.vertical(|ui| {
@@ -843,6 +876,18 @@ fn entry_ui(app: &mut WordApp, ui: &mut Ui, doc: u64, i: usize, t: &Tokens, m: &
             for l in &e.lines {
                 ui.add(egui::Label::new(egui::RichText::new(l).font(mc::font()).color(t.text_dim)).wrap());
             }
+            if let Some(raw) = &e.answer {
+                if mc::link(ui, if e.show_answer { "Hide answer" } else { "Show answer" }).clicked() {
+                    toggle_answer = true;
+                }
+                if e.show_answer {
+                    egui::Frame::NONE.stroke(Stroke::new(1.0, t.border)).corner_radius(6).inner_margin(egui::Margin::same(6)).show(ui, |ui| {
+                        egui::ScrollArea::vertical().id_salt(("assistant_answer", i)).max_height(220.0).show(ui, |ui| {
+                            ui.add(egui::Label::new(egui::RichText::new(raw.as_str()).monospace().color(t.text)).wrap().selectable(true));
+                        });
+                    });
+                }
+            }
             if !e.suggestions.is_empty() {
                 ui.add_space(4.0);
                 clicked = suggestions_group(ui, &e, t, m);
@@ -858,6 +903,9 @@ fn entry_ui(app: &mut WordApp, ui: &mut Ui, doc: u64, i: usize, t: &Tokens, m: &
         && let Err(err) = resolve(app, i, k, accept)
     {
         app.status(err);
+    }
+    if toggle_answer && let Some(x) = entry_mut(app, doc, i) {
+        x.show_answer = !x.show_answer;
     }
     if show_review {
         app.session.view.comments_pane = true;

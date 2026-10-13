@@ -3,7 +3,7 @@
 
 use serde_json::{Value, json};
 
-use crate::{AssistantError, ChatReply, ChatRequest, Connector, Endpoint, Model, Role};
+use crate::{AssistantError, ChatReply, ChatRequest, Connector, Endpoint, Model, ProviderId, Role};
 
 /// The `anthropic-version` header value the Messages API is called with.
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";
@@ -115,7 +115,12 @@ pub fn chat_request(ep: &Endpoint, req: &ChatRequest, stream: bool) -> Request {
             all.extend(messages);
             let mut b = json!({"model": req.model, "messages": all});
             if let Some(n) = req.max_tokens {
-                b["max_tokens"] = json!(n);
+                // OpenAI's newer models refuse `max_tokens`; everyone else documents it.
+                let field = if ep.provider == ProviderId::OpenAi { "max_completion_tokens" } else { "max_tokens" };
+                b[field] = json!(n);
+            }
+            if req.json {
+                b["response_format"] = json!({"type": "json_object"});
             }
             if stream {
                 b["stream"] = json!(true);
@@ -146,17 +151,47 @@ pub fn parse_chat(connector: Connector, body: &str) -> Result<ChatReply, Assista
                 .filter_map(|b| b.get("text").and_then(Value::as_str))
                 .collect();
             let stop_reason = v.get("stop_reason").and_then(Value::as_str).map(str::to_string);
-            Ok(ChatReply { text, model, stop_reason })
+            Ok(ChatReply { text, model, stop_reason, json_refused: false })
         }
         Connector::OpenAi => {
             let Some(choice) = v.get("choices").and_then(Value::as_array).and_then(|c| c.first()) else {
                 return Err(AssistantError::Protocol("the reply has no choices".into()));
             };
-            let text = choice.pointer("/message/content").and_then(Value::as_str).unwrap_or_default().to_string();
+            let text = choice.pointer("/message/content").map(content_text).unwrap_or_default();
             let stop_reason = choice.get("finish_reason").and_then(Value::as_str).map(str::to_string);
-            Ok(ChatReply { text, model, stop_reason })
+            Ok(ChatReply { text, model, stop_reason, json_refused: false })
         }
     }
+}
+
+/// The answer text of an OpenAI-compatible `content`: a string, or (Mistral with reasoning, and
+/// some others) a list of chunks, of which only `{"type": "text", "text": …}` are the answer;
+/// `thinking` chunks are the model's reasoning and are left out.
+/// Source: https://docs.mistral.ai/capabilities/reasoning/ (checked 2026-10-13).
+pub fn content_text(content: &Value) -> String {
+    match content {
+        Value::String(s) => s.clone(),
+        Value::Array(parts) => parts
+            .iter()
+            .filter(|p| p.get("type").and_then(Value::as_str).is_none_or(|t| t == "text" || t == "output_text"))
+            .filter_map(|p| p.get("text").and_then(Value::as_str))
+            .collect(),
+        _ => String::new(),
+    }
+}
+
+/// Whether a refused request (`status`, `body`) was refused for asking for JSON mode, so it can
+/// be sent again without it (LM Studio, for one, documents only `json_schema`).
+pub fn refuses_json_mode(status: u16, body: &str) -> bool {
+    let b = body.to_ascii_lowercase();
+    matches!(status, 400 | 422) && (b.contains("response_format") || b.contains("json_object") || b.contains("json mode"))
+}
+
+/// Whether a refused request was refused for its output-token number (too high for the model,
+/// or the field not supported), so it can be sent again without it.
+pub fn refuses_max_tokens(status: u16, body: &str) -> bool {
+    let b = body.to_ascii_lowercase();
+    matches!(status, 400 | 422) && (b.contains("max_tokens") || b.contains("max_completion_tokens") || b.contains("max_output_tokens"))
 }
 
 /// The error for an HTTP status that isn't success. `body` is the provider's answer; its message
@@ -259,9 +294,10 @@ impl StreamParser {
                     if let Some(r) = choice.get("finish_reason").and_then(Value::as_str) {
                         self.reply.stop_reason = Some(r.to_string());
                     }
-                    if let Some(t) = choice.pointer("/delta/content").and_then(Value::as_str).filter(|t| !t.is_empty()) {
-                        self.reply.text.push_str(t);
-                        return Ok(Some(t.to_string()));
+                    let t = choice.pointer("/delta/content").map(content_text).unwrap_or_default();
+                    if !t.is_empty() {
+                        self.reply.text.push_str(&t);
+                        return Ok(Some(t));
                     }
                 }
             }

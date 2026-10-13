@@ -129,11 +129,32 @@ pub fn chat_stream_until(
         return Err(AssistantError::Stopped);
     }
     let agent = agent(timeout, true);
-    let (status, mut resp) = send(&agent, &wire::chat_request(ep, req, true), ep, timeout)?;
-    if !(200..300).contains(&status) {
-        let body = read_body(&mut resp, ep, timeout)?;
-        return Err(wire::status_error(status, &body, ep.api_key.as_deref()));
+    // A server that refuses JSON mode or the token number is asked once more without it.
+    let mut req = req.clone();
+    let mut json_refused = false;
+    let mut resp = None;
+    for _ in 0..3 {
+        let (status, mut r) = send(&agent, &wire::chat_request(ep, &req, true), ep, timeout)?;
+        if (200..300).contains(&status) {
+            resp = Some(r);
+            break;
+        }
+        let body = read_body(&mut r, ep, timeout)?;
+        if req.json && wire::refuses_json_mode(status, &body) {
+            log::info!("assistant: the server refused JSON mode; asking again without it");
+            req.json = false;
+            json_refused = true;
+        } else if req.max_tokens.is_some() && wire::refuses_max_tokens(status, &body) {
+            log::info!("assistant: the server refused the output budget; asking again without it");
+            req.max_tokens = None;
+        } else {
+            return Err(wire::status_error(status, &body, ep.api_key.as_deref()));
+        }
+        if stop.load(Ordering::Relaxed) {
+            return Err(AssistantError::Stopped);
+        }
     }
+    let Some(mut resp) = resp else { return Err(AssistantError::Protocol("the server refused the request".into())) };
     let reader = resp.body_mut().with_config().limit(MAX_BODY).reader();
     let mut parser = wire::StreamParser::new(ep.connector);
     for line in BufReader::new(reader).lines() {
@@ -148,5 +169,7 @@ pub fn chat_stream_until(
             break;
         }
     }
-    Ok(parser.finish())
+    let mut reply = parser.finish();
+    reply.json_refused = json_refused;
+    Ok(reply)
 }
