@@ -439,14 +439,24 @@ fn agents(ui: &mut Ui) {
     ui.label(tl!("Every command is available to scripts and AI agents: run `wordcraft-cli mcp` for an MCP server, or start the app with `--control <port>` for the JSON control channel."));
 }
 
-/// Options › Assistant (Margin, HANDOFF §9 S4–S6): the name assistants write under, the rule that
-/// their edits are always suggestions, and whether assistants outside Margin may connect. The
-/// rest of §9 (switch, provider, key, folders) comes with the in-app assistant.
+/// Options › Assistant (Margin, HANDOFF §9): the master switch (S1), provider and model (S2), the
+/// API key (S3), the name assistants write under (S4), the rule that their edits are always
+/// suggestions (S5) and whether assistants outside Margin may connect (S6). Folder permissions
+/// (rest of S5) come with the in-app assistant.
 fn assistant(app: &mut WordApp, ui: &mut Ui) {
     use crate::mac_controls as mc;
     // The connected count changes on other threads: look again soon.
     ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
     mc::section(ui, "Assistant", |ui| {
+        if mc::switch(ui, "Let an assistant work in Margin", app.ui.assistant.enabled) {
+            let on = !app.ui.assistant.enabled;
+            let _ = app.run("ui.assistant", json!({"enabled": on}));
+        }
+        mc::hint(ui, "Off: nothing is sent anywhere, and the Assistant panel and the Ask rows are hidden. You bring the provider and its key.");
+    });
+    assistant_provider(app, ui);
+    assistant_key(app, ui);
+    mc::section(ui, "Author", |ui| {
         mc::labelled_row(ui, "Author name", |ui| {
             let r =
                 ui.add(egui::TextEdit::singleline(&mut app.ui.assistant.author_name).desired_width(220.0).hint_text(crate::assistant::DEFAULT_NAME));
@@ -488,6 +498,159 @@ fn assistant(app: &mut WordApp, ui: &mut Ui) {
         );
         mc::hint(ui, "`wordcraft-cli mcp` without the app edits files directly. This setting doesn't cover it.");
     });
+}
+
+/// S2: provider radios, the model popup (filled live from the provider) and, for On this Mac and
+/// Other, the server address.
+fn assistant_provider(app: &mut WordApp, ui: &mut Ui) {
+    use crate::mac_controls as mc;
+    use wordcraft_assistant::ProviderId;
+    mc::section(ui, "Provider", |ui| {
+        let current = app.ui.assistant.provider_id();
+        for p in ProviderId::ALL {
+            if mc::radio(ui, p.label(), p == current) && p != current {
+                let _ = app.run("ui.assistant", json!({"provider": p.id()}));
+            }
+        }
+        let p = app.ui.assistant.provider_id();
+        if p.preset().editable_url {
+            mc::labelled_row(ui, "Address", |ui| {
+                let id = egui::Id::new(("assistant_url", p.id()));
+                let mut url: String =
+                    ui.data(|d| d.get_temp(id)).unwrap_or_else(|| app.ui.assistant.base_urls.get(p.id()).cloned().unwrap_or_default());
+                let hint = if p == ProviderId::Local { wordcraft_assistant::LOCAL_BASE_URL } else { "https://…/v1" };
+                let r = ui.add(egui::TextEdit::singleline(&mut url).desired_width(300.0).hint_text(hint));
+                if r.lost_focus() {
+                    ui.data_mut(|d| d.remove::<String>(id));
+                    if let Err(e) = app.run("ui.assistant", json!({"baseUrl": url})) {
+                        app.assistant_link.last = Some(crate::assistant_link::LastTest { provider: p, result: Err(e) });
+                    }
+                } else if r.changed() || r.has_focus() {
+                    ui.data_mut(|d| d.insert_temp(id, url));
+                }
+            });
+            if p == ProviderId::Local {
+                mc::hint(ui, "Ollama listens on http://localhost:11434/v1, LM Studio on http://localhost:1234/v1.");
+            }
+        }
+        mc::labelled_row(ui, "Model", |ui| {
+            let models = app.assistant_link.models.get(&p).cloned().unwrap_or_default();
+            let chosen = app.ui.assistant.model(p).map(str::to_string);
+            if models.is_empty() {
+                // Not listed (yet, or the listing failed): the id can be typed.
+                let mut m = chosen.clone().unwrap_or_default();
+                let r = ui.add(egui::TextEdit::singleline(&mut m).desired_width(220.0).hint_text(tl!("Model id")));
+                if r.changed() {
+                    let _ = app.run("ui.assistant", json!({"model": m}));
+                }
+            } else {
+                let shown = chosen
+                    .as_deref()
+                    .map(|id| models.iter().find(|x| x.id == id).map_or(id.to_string(), |x| x.name.clone()))
+                    .unwrap_or_else(|| tl!("Choose a model").to_string());
+                let names: Vec<String> = models.iter().map(|x| x.name.clone()).collect();
+                if let Some(name) = mc::popup_button(ui, "assistant_model", 260.0, &shown, &names, names.len() > 12)
+                    && let Some(m) = models.iter().find(|x| x.name == name)
+                {
+                    let _ = app.run("ui.assistant", json!({"model": m.id}));
+                }
+            }
+            let can = app.ui.assistant.enabled && !app.assistant_link.busy();
+            ui.add_enabled_ui(can, |ui| {
+                if mc::link(ui, "Refresh").clicked() {
+                    let _ = app.run("ui.assistant.models", json!({"refresh": true}));
+                }
+            });
+        });
+        mc::hint(ui, "The list comes from the provider once a key is set.");
+    });
+}
+
+/// S3: the API key (only `••••` and its last four characters are shown), Change… / Remove, and
+/// Test connection with its outcome.
+fn assistant_key(app: &mut WordApp, ui: &mut Ui) {
+    use crate::mac_controls as mc;
+    let p = app.ui.assistant.provider_id();
+    let needs = p.preset().needs_key;
+    mc::section(ui, "API key", |ui| {
+        let t = Tokens::get(ui.ctx());
+        let hint = app.assistant_link.hint(p);
+        if !app.assistant_link.keys_supported() {
+            mc::hint(ui, "This system has no keychain Margin can use, so a key can't be stored here.");
+        } else if let Some(h) = hint.as_ref().filter(|_| !app.assistant_link.changing_key) {
+            mc::labelled_row(ui, "Key", |ui| {
+                ui.label(RichText::new(h).font(mc::font()).color(t.text));
+                ui.add_space(8.0);
+                if mc::link(ui, "Change…").clicked() {
+                    app.assistant_link.changing_key = true;
+                    app.assistant_link.key_draft.clear();
+                }
+                if mc::link(ui, "Remove").clicked() {
+                    let _ = app.run("ui.assistant", json!({"removeKey": true}));
+                }
+            });
+        } else {
+            mc::labelled_row(ui, "Key", |ui| {
+                let field = egui::TextEdit::singleline(&mut app.assistant_link.key_draft).password(true).desired_width(260.0).hint_text(if needs {
+                    tl!("Paste your API key")
+                } else {
+                    tl!("Not needed for most local servers")
+                });
+                let r = ui.add(field);
+                let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                let has_draft = !app.assistant_link.key_draft.trim().is_empty();
+                if (mc::button(ui, "Save", false, has_draft).clicked() || enter) && has_draft {
+                    crate::assistant_link::save_draft_key(app);
+                }
+                if app.assistant_link.changing_key && mc::link(ui, "Cancel").clicked() {
+                    app.assistant_link.changing_key = false;
+                    app.assistant_link.key_draft.clear();
+                }
+            });
+            if let Some(e) = app.assistant_link.key_error.clone() {
+                ui.label(RichText::new(sentence(&e)).font(mc::font()).color(t.red));
+            }
+        }
+        ui.horizontal(|ui| {
+            let on = app.ui.assistant.enabled;
+            let busy = app.assistant_link.busy();
+            if mc::button(ui, "Test connection", false, on && !busy).clicked()
+                && let Err(e) = app.run("ui.assistant.test", json!({}))
+            {
+                app.assistant_link.last = Some(crate::assistant_link::LastTest { provider: p, result: Err(e) });
+            }
+            ui.add_space(8.0);
+            if busy {
+                ui.add(egui::Spinner::new().size(14.0).color(t.text_dim));
+                ui.label(RichText::new(tl!("Connecting…")).font(mc::font()).color(t.text_dim));
+            } else if let Some(last) = app.assistant_link.last.as_ref().filter(|l| l.provider == p) {
+                match &last.result {
+                    Ok(n) => {
+                        let line = crate::i18n::fmt(tl!("Connected · {n} models"), &[("n", &n.to_string())]);
+                        ui.label(RichText::new(line).font(mc::font()).color(t.green));
+                    }
+                    Err(e) => {
+                        ui.add(egui::Label::new(RichText::new(sentence(e)).font(mc::font()).color(t.red)).wrap());
+                    }
+                }
+            } else if !on {
+                ui.label(RichText::new(tl!("Turn the assistant on to connect.")).font(mc::font()).color(t.text_dim));
+            }
+        });
+        let store = if cfg!(target_os = "macos") { "the macOS Keychain" } else { "the system keychain" };
+        let line = crate::i18n::fmt(tl!("Keys are kept in {store}, one per provider, never in Margin's settings files."), &[("store", tl!(store))]);
+        mc::hint(ui, &line);
+    });
+}
+
+/// An error message as a sentence: capital first letter and a full stop.
+fn sentence(e: &str) -> String {
+    let mut c = e.chars();
+    let mut s: String = c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default();
+    if !s.ends_with(['.', '!', '?']) {
+        s.push('.');
+    }
+    s
 }
 
 /// Interface theme: Light, Dark, or follow the system's appearance (#115).

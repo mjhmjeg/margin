@@ -202,7 +202,8 @@ fn save_prefs(app: &WordApp) {
 /// Native file dialogs, shown without blocking the window (`file_dialogs`, #94), File › Print
 /// through the system's PDF viewer (`print`, #15), the system clipboard's text, formatted copies,
 /// pictures and format names (`clipboard`, #45, #584, #687, #833), the system's animation setting
-/// (`animations`), and making WordCraft the default app for Word documents (`default_apps`, #295).
+/// (`animations`), making WordCraft the default app for Word documents (`default_apps`, #295),
+/// and the system keychain for assistant API keys (Settings › Assistant).
 fn services(file_dialog: file_dialogs::Hook, ctx: &egui::Context) -> Services {
     Services {
         file_dialog: Some(file_dialog),
@@ -214,6 +215,7 @@ fn services(file_dialog: file_dialogs::Hook, ctx: &egui::Context) -> Services {
         clipboard_html: Some(Box::new(clipboard::html)),
         clipboard_rtf: Some(Box::new(clipboard::rtf)),
         clipboard_formats: Some(Box::new(clipboard::formats)),
+        key_store: Some(std::sync::Arc::new(wordcraft_assistant::keys::SystemKeys)),
         ..Default::default()
     }
 }

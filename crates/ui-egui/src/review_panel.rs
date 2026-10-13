@@ -49,10 +49,21 @@ pub fn assistant_author_name() -> String {
     ASSISTANT_NAME.with(|n| n.borrow().clone())
 }
 
-/// Whether an assistant is switched on (Settings › Assistant, S1). False until that section
-/// exists: while it is, the command field hides its Ask rows and the context menu its "Ask…".
+thread_local! {
+    // Settings › Assistant S1 and a usable provider, copied each frame by `assistant_link::poll`.
+    static ASSISTANT_ON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Copy whether an assistant can work where [`assistant_enabled`] reads it.
+pub fn set_assistant_enabled(on: bool) {
+    ASSISTANT_ON.set(on);
+}
+
+/// Whether an assistant is switched on (Settings › Assistant, S1) with a provider it can use (a
+/// key where one is needed). While false, the command field hides its Ask rows and the context
+/// menu its "Ask…".
 pub fn assistant_enabled() -> bool {
-    false
+    ASSISTANT_ON.get()
 }
 
 /// Whether `author` is an assistant. The engine has no AI flag on authors yet, so this is the

@@ -28,7 +28,10 @@ pub fn denied(s: &Session, id: &str, params: &Value, assistant: &str) -> Option<
         "file.options" if params.get("author").is_some() || params.get("initials").is_some() => {
             no("the author of an assistant's changes is set in Settings › Assistant")
         }
-        "ui.assistant" => no("assistant settings belong to the person"),
+        // Settings, provider, key, switch, connection tests and model lists (Settings › Assistant).
+        _ if id == "ui.assistant" || id.starts_with("ui.assistant.") || id.starts_with("assistant.") => {
+            no("assistant settings, keys and connections belong to the person")
+        }
         "edit.undo" | "edit.redo" | "edit.undoTo" | "edit.repeat" => {
             no("it could undo or repeat the person's own work; reject a suggestion in Review instead")
         }
@@ -154,6 +157,10 @@ mod tests {
             ("file.options", json!({"author": "Someone"})),
             ("file.options", json!({"initials": "S"})),
             ("ui.assistant", json!({"authorName": "Someone"})),
+            ("ui.assistant", json!({"apiKey": "sk-x", "enabled": true})),
+            ("ui.assistant.test", json!({})),
+            ("ui.assistant.models", json!({"refresh": true})),
+            ("assistant.test", json!({})),
             ("edit.undo", json!({})),
             ("tools.macros", json!({"run": "x"})),
             ("review.restrict", json!({})),

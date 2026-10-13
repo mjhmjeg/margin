@@ -23,6 +23,7 @@ macro_rules! tl {
 pub mod a11y;
 pub mod a11y_pane;
 pub mod assistant;
+pub mod assistant_link;
 pub mod backstage;
 pub mod canvas;
 pub mod caret_glide;
@@ -149,6 +150,10 @@ pub struct Services {
     /// `xdg-mime`. `None` (web, macOS) hides the button; macOS shows how to do it in Finder
     /// instead. An error means nothing changed.
     pub make_default_app: Option<Box<dyn Fn() -> Result<DefaultApp, String>>>,
+    /// Desktop: where assistant API keys are kept (the system keychain). `None` keeps them in
+    /// memory for this run only (tests, the screenshot tool, the browser, where the assistant
+    /// doesn't connect anyway).
+    pub key_store: Option<std::sync::Arc<dyn wordcraft_assistant::keys::KeyStore>>,
 }
 
 /// What [`Services::make_default_app`] did.
@@ -425,6 +430,8 @@ pub struct WordApp {
     pub(crate) outline_prev_tab: Option<String>,
     /// Zotero commands in flight (`ui.zotero.*`).
     pub zotero: zotero::ZoteroLink,
+    /// Settings › Assistant at work: keychain, model lists, connection tests (`ui.assistant.*`).
+    pub assistant_link: assistant_link::AssistantLink,
     /// The egui context, once the first frame has run (background work wakes the UI with it).
     pub(crate) ctx: Option<egui::Context>,
     /// Read Aloud: the start of the sentence the caret was last moved to, and the last error shown.
@@ -470,6 +477,8 @@ impl WordApp {
         if let Some(tag) = sys_locale::get_locale() {
             wordcraft_engine::set_system_locale(&tag);
         }
+        // Without a keychain from the host, keys are kept in memory only (tests, screenshots).
+        let key_store = services.key_store.clone().unwrap_or_else(|| std::sync::Arc::new(wordcraft_assistant::keys::MemoryKeys::default()));
         WordApp {
             session,
             ui: UiState::default(),
@@ -511,6 +520,7 @@ impl WordApp {
             smart_art_typing: None,
             outline_prev_tab: None,
             zotero: zotero::ZoteroLink::default(),
+            assistant_link: assistant_link::AssistantLink::new(key_store),
             ctx: None,
             read_aloud_at: None,
             read_aloud_error: None,
@@ -1132,26 +1142,11 @@ impl WordApp {
                 }
                 json!({"caretAnimation": self.ui.caret_animation})
             }
-            // File › Options › Assistant: `authorName` (the name assistants' changes and comments
-            // carry) and `allowOutside` (assistants outside Margin may connect; off drops the ones
-            // connected); no value reads them. The person's command: assistants themselves are
-            // refused it (`wordcraft_engine::assistant::denied`).
-            "ui.assistant" => {
-                if let Some(v) = p.get("authorName") {
-                    let name = v.as_str().map(assistant::clean_name).filter(|n| !n.is_empty());
-                    let Some(name) = name else { return Some(Err("`authorName` must be a non-blank string".into())) };
-                    self.ui.assistant.author_name = name;
-                }
-                if let Some(v) = p.get("allowOutside") {
-                    let Some(on) = v.as_bool() else { return Some(Err("`allowOutside` must be true or false".into())) };
-                    self.ui.assistant.allow_outside = on;
-                    if !on {
-                        assistant::outside::disconnect_all();
-                    }
-                }
-                review_panel::set_assistant_name(&self.ui.assistant.name());
-                self.ui.assistant.to_json()
-            }
+            // File › Options › Assistant (HANDOFF §9): see [`assistant_link::settings_command`]. The
+            // person's command: assistants themselves are refused it
+            // (`wordcraft_engine::assistant::denied`). The key is write-only.
+            "ui.assistant" => return Some(assistant_link::settings_command(self, p)),
+            "ui.assistant.test" | "ui.assistant.models" => return assistant_link::command(self, id, p),
             "ui.startScreen" => {
                 // File › Options › General › Start-up (#766): `value` true or false turns showing
                 // File › Home at start-up on or off; no value reads it.
@@ -1399,6 +1394,7 @@ impl WordApp {
         }
         self.drain_control(ctx);
         zotero::poll(self, ctx);
+        assistant_link::poll(self);
         read_aloud::poll(self, ctx);
         self.clear_stale_change_picture();
         let _ = self.poll_file_dialog();

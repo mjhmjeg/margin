@@ -32,6 +32,7 @@ People trust WordCraft with their writing; a crash loses their work. **This outr
 | Layer | Crate | Job |
 |---|---|---|
 | L0 | `geom` | units, rects, measurement parsing |
+| L0 | `assistant` | assistant connectors (Anthropic Messages, OpenAI-compatible), provider presets, keys in the system keychain; network and keychain native-only (standalone, no workspace deps) |
 | L1 | `doc`, `fonts` | document model + edit primitives; font DB, shaping, Word font substitution |
 | L2 | `layout`, `docx`, `formats` | line breaking, pagination, tables, headers/footers, hit testing; OOXML I/O; TXT/MD/HTML/RTF/ODT |
 | L3 | `render`, `pdf`, `proof` | vello_cpu rasteriser; krilla PDF; proofing |

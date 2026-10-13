@@ -6,8 +6,11 @@
 //! edits are tracked changes under [`AssistantPrefs::name`], and they cannot accept, reject or
 //! loosen it. [`crate::control::handle_outside`] applies it to every request a connection sends.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use wordcraft_assistant::ProviderId;
 use wordcraft_engine::cmd::file::MAX_AUTHOR_CHARS;
 
 /// The name assistants write under until the person changes it.
@@ -21,11 +24,27 @@ pub struct AssistantPrefs {
     /// S6: assistants outside Margin may use the control channel (which only exists when the app
     /// was started with `--control`). On by default, as the channel itself is an opt-in.
     pub allow_outside: bool,
+    /// S1: "Let an assistant work in Margin". Off by default; while off nothing is sent anywhere.
+    pub enabled: bool,
+    /// S2: the provider id (`wordcraft_assistant::ProviderId::id`); Mistral until chosen.
+    pub provider: String,
+    /// The model chosen per provider id.
+    pub models: BTreeMap<String, String>,
+    /// The base URL per provider id, for those where it can be changed (On this Mac, Other).
+    pub base_urls: BTreeMap<String, String>,
+    // API keys are not here: they live in the system keychain (`crate::assistant_link`).
 }
 
 impl Default for AssistantPrefs {
     fn default() -> Self {
-        AssistantPrefs { author_name: DEFAULT_NAME.into(), allow_outside: true }
+        AssistantPrefs {
+            author_name: DEFAULT_NAME.into(),
+            allow_outside: true,
+            enabled: false,
+            provider: ProviderId::Mistral.id().into(),
+            models: BTreeMap::new(),
+            base_urls: BTreeMap::new(),
+        }
     }
 }
 
@@ -42,8 +61,41 @@ impl AssistantPrefs {
         if n.is_empty() { DEFAULT_NAME.into() } else { n }
     }
 
-    pub fn to_json(&self) -> Value {
-        json!({"authorName": self.name(), "allowOutside": self.allow_outside, "connected": outside::connected(), "trackedChanges": "always"})
+    /// The chosen provider (Mistral when the setting names none we know).
+    pub fn provider_id(&self) -> ProviderId {
+        ProviderId::from_id(&self.provider).unwrap_or(ProviderId::Mistral)
+    }
+
+    /// The model chosen for `p`, if any.
+    pub fn model(&self, p: ProviderId) -> Option<&str> {
+        self.models.get(p.id()).map(|m| m.trim()).filter(|m| !m.is_empty())
+    }
+
+    /// The base URL for `p`: the person's for editable presets, else the preset's.
+    pub fn base_url(&self, p: ProviderId) -> String {
+        let preset = p.preset();
+        match self.base_urls.get(p.id()).map(|u| u.trim()).filter(|u| !u.is_empty()) {
+            Some(u) if preset.editable_url => u.to_string(),
+            _ => preset.base_url.to_string(),
+        }
+    }
+
+    /// The settings as commands report them. `has_key` / `usable` come from the keychain cache;
+    /// the key itself is never part of this.
+    pub fn to_json(&self, has_key: bool, usable: bool) -> Value {
+        let p = self.provider_id();
+        json!({
+            "authorName": self.name(),
+            "allowOutside": self.allow_outside,
+            "connected": outside::connected(),
+            "trackedChanges": "always",
+            "enabled": self.enabled,
+            "provider": p.id(),
+            "model": self.model(p),
+            "baseUrl": self.base_url(p),
+            "hasKey": has_key,
+            "usable": usable,
+        })
     }
 }
 
@@ -218,7 +270,7 @@ mod tests {
         a.run("ui.assistant", json!({"authorName": "Margin AI", "allowOutside": false})).unwrap();
         let bytes = serde_json::to_vec(&a.ui).unwrap();
         let back = crate::UiState::from_json(&bytes).unwrap();
-        assert_eq!(back.assistant, AssistantPrefs { author_name: "Margin AI".into(), allow_outside: false });
+        assert_eq!(back.assistant, AssistantPrefs { author_name: "Margin AI".into(), allow_outside: false, ..AssistantPrefs::default() });
         let odd = crate::UiState::from_json(br#"{"assistant": {"authorName": 5, "allowOutside": "yes"}}"#).unwrap();
         assert_eq!(odd.assistant, AssistantPrefs::default());
         assert_eq!(crate::UiState::from_json(b"{}").unwrap().assistant, AssistantPrefs::default());

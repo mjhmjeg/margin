@@ -113,3 +113,10 @@ and upstream's Backstage tests run in Classic). Recent thumbnails: one render pe
    Format menu). Decided 2026-10-13: **⌘/** (free, two keys; Notion/Slack use it for commands).
 2. Review and Assistant panels: 320 pt (as drawn).
 3. Toolbar label: "AI Assistant".
+
+## 2026-10-13 — Assistant A2: providers and key
+
+- New crate `wordcraft-assistant` (L0, standalone). Two connectors: Anthropic Messages, OpenAI-compatible chat completions; seven presets (Mistral pre-selected, Anthropic, OpenAI, Gemini, OpenRouter, On this Mac, Other). Base URLs checked against the providers' docs (cited in `crates/assistant/src/lib.rs`).
+- HTTP: `ureq` 3 with rustls (ring, webpki roots), blocking, on a background thread; 15 s timeout. Keys: `keyring` 3.6 (macOS Keychain, Windows Credential Manager, Linux kernel keyring, which lasts until logout). Both are target-gated off wasm32; the browser build has no assistant network.
+- Rejected: `keyring` 4 (new store architecture, more surface for no gain here), Secret Service on Linux (C libdbus or a second zbus), tokio/reqwest.
+- Commands are `ui.assistant` (settings; `apiKey` write-only), `ui.assistant.test`, `ui.assistant.models`. Outside assistants are refused all three. A key is never sent over plain http to another computer.

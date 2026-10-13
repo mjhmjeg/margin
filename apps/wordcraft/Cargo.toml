@@ -17,6 +17,8 @@ wordcraft-proof = { workspace = true }
 # Fonts the user added (#582) load from the settings folder at start-up.
 wordcraft-fonts = { workspace = true }
 wordcraft-ui-egui = { workspace = true }
+# Assistant API keys in the system keychain (Settings › Assistant).
+wordcraft-assistant = { workspace = true }
 # The control key file's location (shared with the MCP bridge).
 wordcraft-control-key = { workspace = true }
 eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit", "wayland", "x11", "links"] }
