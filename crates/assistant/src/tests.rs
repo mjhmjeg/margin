@@ -75,7 +75,8 @@ fn serve(answers: Vec<Answer>) -> (String, JoinHandle<Vec<Seen>>) {
 }
 
 fn endpoint(connector: Connector, base: &str, key: Option<&str>) -> Endpoint {
-    Endpoint { connector, base_url: base.to_string(), api_key: key.map(str::to_string), local: false }
+    let provider = if connector == Connector::Anthropic { ProviderId::Anthropic } else { ProviderId::Other };
+    Endpoint { provider, connector, base_url: base.to_string(), api_key: key.map(str::to_string), local: false }
 }
 
 fn chat_req() -> ChatRequest {
@@ -84,6 +85,7 @@ fn chat_req() -> ChatRequest {
         system: Some("Be brief.".into()),
         messages: vec![Message { role: Role::User, content: "Hi".into() }],
         max_tokens: None,
+        json: false,
     }
 }
 
@@ -273,7 +275,7 @@ fn an_openai_compatible_chat_call() {
     let (base, h) =
         serve(vec![ok_json(json!({"model": "m1", "choices": [{"message": {"role": "assistant", "content": "Hello!"}, "finish_reason": "stop"}]}))]);
     let r = http::chat(&endpoint(Connector::OpenAi, &base, Some(KEY)), &chat_req(), Duration::from_secs(5)).unwrap();
-    assert_eq!(r, ChatReply { text: "Hello!".into(), model: "m1".into(), stop_reason: Some("stop".into()) });
+    assert_eq!(r, ChatReply { text: "Hello!".into(), model: "m1".into(), stop_reason: Some("stop".into()), json_refused: false });
     let seen = h.join().unwrap();
     assert_eq!(seen[0].line.trim(), "POST /v1/chat/completions HTTP/1.1");
     let body: Value = serde_json::from_str(&seen[0].body).unwrap();
@@ -311,7 +313,7 @@ fn streamed_chats_arrive_in_pieces() {
     let sse = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-x\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"Hi\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
     let (base, h) = serve(vec![Answer(200, "text/event-stream", sse.into(), Duration::ZERO)]);
     let r = http::chat_stream(&endpoint(Connector::Anthropic, &base, Some(KEY)), &chat_req(), Duration::from_secs(5), &mut |_| {}).unwrap();
-    assert_eq!(r, ChatReply { text: "Hi".into(), model: "claude-x".into(), stop_reason: Some("end_turn".into()) });
+    assert_eq!(r, ChatReply { text: "Hi".into(), model: "claude-x".into(), stop_reason: Some("end_turn".into()), json_refused: false });
     h.join().unwrap();
 }
 
@@ -355,4 +357,79 @@ fn a_stopped_stream_ends_with_stopped() {
     let r =
         http::chat_stream_until(&endpoint(Connector::OpenAi, "http://127.0.0.1:9/v1", None), &chat_req(), Duration::from_secs(1), &stop, &mut |_| {});
     assert_eq!(r, Err(AssistantError::Stopped));
+}
+
+// Incident 2026-10-13: JSON mode, output budget, Mistral's chunked content.
+
+#[test]
+fn json_mode_and_the_output_budget_are_asked_for_per_provider() {
+    let req = ChatRequest { max_tokens: Some(8192), json: true, ..chat_req() };
+    let body = |ep: &Endpoint| -> Value { serde_json::from_str(wire::chat_request(ep, &req, true).body.as_deref().unwrap()).unwrap() };
+    let mistral = Endpoint::new(ProviderId::Mistral, None, Some("k".into())).unwrap();
+    let b = body(&mistral);
+    assert_eq!(b["response_format"], json!({"type": "json_object"}));
+    assert_eq!(b["max_tokens"], 8192);
+    let openai = Endpoint::new(ProviderId::OpenAi, None, Some("k".into())).unwrap();
+    let b = body(&openai);
+    assert_eq!(b["max_completion_tokens"], 8192, "OpenAI's newer models refuse max_tokens");
+    assert!(b.get("max_tokens").is_none());
+    let claude = Endpoint::new(ProviderId::Anthropic, None, Some("k".into())).unwrap();
+    let b = body(&claude);
+    assert_eq!(b["max_tokens"], 8192);
+    assert!(b.get("response_format").is_none(), "no JSON switch on the Messages API");
+    let plain = ChatRequest { json: false, ..req.clone() };
+    let b: Value = serde_json::from_str(wire::chat_request(&mistral, &plain, false).body.as_deref().unwrap()).unwrap();
+    assert!(b.get("response_format").is_none());
+}
+
+#[test]
+fn refusals_of_json_mode_and_of_the_budget_are_recognised() {
+    assert!(wire::refuses_json_mode(400, r#"{"error": {"message": "'response_format.type' must be 'json_schema' or 'text'"}}"#));
+    assert!(wire::refuses_json_mode(422, "json_object is not supported for this model"));
+    assert!(!wire::refuses_json_mode(500, "response_format"));
+    assert!(!wire::refuses_json_mode(400, "model not found"));
+    assert!(wire::refuses_max_tokens(400, "max_tokens: 16384 > 4096, which is the maximum allowed"));
+    assert!(wire::refuses_max_tokens(400, "Unsupported parameter: 'max_tokens'. Use 'max_completion_tokens' instead."));
+    assert!(!wire::refuses_max_tokens(429, "max_tokens"));
+}
+
+#[test]
+fn mistrals_chunked_reasoning_content_gives_only_the_answer_text() {
+    // https://docs.mistral.ai/capabilities/reasoning/: thinking chunks, then a transition event
+    // with the last thinking and the first text chunk, then plain strings.
+    let mut p = StreamParser::new(Connector::OpenAi);
+    let ev = |c: Value| format!("data: {}", json!({"model": "mistral-medium", "choices": [{"index": 0, "delta": {"content": c}}]}));
+    assert_eq!(p.line(&ev(json!([{"type": "thinking", "thinking": [{"type": "text", "text": "hmm {"}]}]))).unwrap(), None);
+    assert_eq!(
+        p.line(&ev(json!([{"type": "thinking", "thinking": [{"type": "text", "text": "ok"}]}, {"type": "text", "text": "{\"report\""}])))
+            .unwrap()
+            .as_deref(),
+        Some("{\"report\"")
+    );
+    assert_eq!(p.line(&ev(json!(": \"x\"}"))).unwrap().as_deref(), Some(": \"x\"}"));
+    assert_eq!(p.finish().text, "{\"report\": \"x\"}");
+    let whole = r#"{"model": "m", "choices": [{"message": {"content": [{"type": "thinking", "thinking": [{"type": "text", "text": "t"}]}, {"type": "text", "text": "answer"}]}, "finish_reason": "stop"}]}"#;
+    assert_eq!(wire::parse_chat(Connector::OpenAi, whole).unwrap().text, "answer");
+}
+
+#[test]
+fn a_server_refusing_json_mode_is_asked_once_more_without_it() {
+    let refusal =
+        Answer(400, "application/json", json!({"error": {"message": "response_format json_object is not supported"}}).to_string(), Duration::ZERO);
+    let ok = Answer(
+        200,
+        "text/event-stream",
+        format!("data: {}\n\ndata: [DONE]\n\n", json!({"choices": [{"delta": {"content": "{}"}, "finish_reason": "stop"}]})),
+        Duration::ZERO,
+    );
+    let (base, h) = serve(vec![refusal, ok]);
+    let ep = endpoint(Connector::OpenAi, &base, None);
+    let req = ChatRequest { json: true, max_tokens: Some(8192), ..chat_req() };
+    let r = http::chat_stream(&ep, &req, Duration::from_secs(5), &mut |_| {}).unwrap();
+    assert!(r.json_refused);
+    assert_eq!(r.text, "{}");
+    let seen = h.join().unwrap();
+    assert_eq!(seen.len(), 2);
+    assert!(seen[0].body.contains("response_format") && !seen[1].body.contains("response_format"));
+    assert!(seen[1].body.contains("\"max_tokens\":8192"), "the budget stays");
 }

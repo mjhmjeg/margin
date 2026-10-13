@@ -230,7 +230,7 @@ fn a_malformed_answer_is_an_error_line_and_no_edits() {
     wait(&mut a);
     let l = log(&mut a);
     assert_eq!(l["entries"][0]["status"], "failed");
-    assert!(l["entries"][0]["lines"].to_string().contains("expected form"), "{l}");
+    assert!(l["entries"][0]["lines"].to_string().contains("wasn't plain JSON"), "{l}");
     assert!(changes(&mut a).is_empty());
     assert!(a.session.doc.comments.is_empty());
 }
@@ -644,4 +644,216 @@ fn the_fact_check_asks_never_panic_on_hostile_params() {
     }
     assert!(!a.assistant_panel.working());
     let _ = std::fs::remove_dir_all(base);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Incident 2026-10-13: answers that are cut off or not plain JSON.
+
+/// One scripted reply of [`mock_script`].
+enum Reply {
+    /// A stream of raw `data:` payloads (JSON values or `[DONE]`), sent as they are.
+    Events(Vec<String>),
+    /// A plain HTTP answer: status and JSON body.
+    Status(u16, String),
+}
+
+/// A stream event carrying `content` (a string, or Mistral's list of chunks) as the delta.
+fn delta(content: Value) -> String {
+    json!({"model": "mock", "choices": [{"index": 0, "delta": {"role": "assistant", "content": content}, "finish_reason": null}]}).to_string()
+}
+
+/// `text` streamed in `pieces`, ending with `finish` and `[DONE]`, the way Mistral streams.
+fn stream_of(text: &str, pieces: usize, finish: &str) -> Reply {
+    let chars: Vec<char> = text.chars().collect();
+    let size = chars.len().div_ceil(pieces.max(1)).max(1);
+    let mut ev: Vec<String> = chars.chunks(size).map(|c| delta(json!(c.iter().collect::<String>()))).collect();
+    ev.push(json!({"model": "mock", "choices": [{"index": 0, "delta": {"content": ""}, "finish_reason": finish}]}).to_string());
+    ev.push("[DONE]".into());
+    Reply::Events(ev)
+}
+
+/// A provider that answers each connection with the next scripted reply (the last one repeats).
+fn mock_script(replies: Vec<Reply>) -> Mock {
+    let l = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://127.0.0.1:{}/v1", l.local_addr().unwrap().port());
+    let bodies = Arc::new(Mutex::new(Vec::new()));
+    let hits = Arc::new(AtomicUsize::new(0));
+    let (b2, h2) = (bodies.clone(), hits.clone());
+    std::thread::spawn(move || {
+        for (n, s) in l.incoming().enumerate() {
+            let Ok(mut s) = s else { break };
+            h2.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let mut r = BufReader::new(s.try_clone().unwrap());
+            let mut len = 0usize;
+            loop {
+                let mut line = String::new();
+                if r.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                    break;
+                }
+                if let Some((k, v)) = line.trim_end().split_once(':')
+                    && k.eq_ignore_ascii_case("content-length")
+                {
+                    len = v.trim().parse().unwrap_or(0);
+                }
+            }
+            let mut body = vec![0; len];
+            let _ = r.read_exact(&mut body);
+            b2.lock().unwrap().push(String::from_utf8_lossy(&body).into_owned());
+            let Some(reply) = replies.get(n).or(replies.last()) else { break };
+            match reply {
+                Reply::Status(code, body) => {
+                    let _ = write!(
+                        s,
+                        "HTTP/1.1 {code} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                }
+                Reply::Events(events) => {
+                    let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n");
+                    for e in events {
+                        let data = format!("data: {e}\n\n");
+                        let _ = write!(s, "{:x}\r\n{data}\r\n", data.len());
+                        let _ = s.flush();
+                    }
+                    let _ = write!(s, "0\r\n\r\n");
+                }
+            }
+            let _ = s.flush();
+        }
+    });
+    Mock { base, bodies, hits }
+}
+
+fn all_bodies(m: &Mock) -> Vec<Value> {
+    m.bodies.lock().unwrap().iter().map(|b| serde_json::from_str(b).unwrap_or(Value::Null)).collect()
+}
+
+const WHOLE: [&str; 3] = ["The cat sat on the very big mat.", "It was happy there.", "Then it slept for a long time."];
+
+#[test]
+fn an_answer_cut_off_at_the_length_limit_keeps_every_complete_edit() {
+    // The model ran out of tokens in the third edit: Mistral ends with finish_reason "length".
+    let full = r#"{"report": "Made it punchier.", "edits": [
+        {"kind": "replace", "quote": "very big", "with": "huge", "note": "shorter"},
+        {"kind": "replace", "quote": "It was happy there.", "with": "It loved it."},
+        {"kind": "replace", "quote": "Then it slept", "with": "Then it napp"#;
+    let m = mock_script(vec![stream_of(full, 7, "length")]);
+    let mut a = app_with(&WHOLE);
+    connect(&mut a, &m);
+    a.run("ui.assistant.ask", json!({"instruction": "Rework this section, make it more punchy", "scope": "document"})).unwrap();
+    wait(&mut a);
+    let l = log(&mut a);
+    let e = &l["entries"][0];
+    assert_eq!(e["status"], "done", "{l}");
+    assert_eq!(e["report"], "Made it punchier.");
+    assert_eq!(e["suggestions"].as_array().map(Vec::len), Some(2), "only the complete edits land: {l}");
+    let lines = e["lines"].to_string();
+    assert!(
+        lines.contains("The answer was cut off after 2 suggestions (the model's length limit). Ask for a smaller part, e.g. This section."),
+        "{lines}"
+    );
+    assert!(!text(&a).contains("napp"), "never a partial edit");
+    assert_eq!(e["answer"].as_str(), Some(full), "the raw answer is kept for Show answer");
+    // Asked for: JSON output and a real output budget.
+    let body = m.body();
+    assert_eq!(body["response_format"], json!({"type": "json_object"}), "{body}");
+    assert!(body["max_tokens"].as_u64().unwrap_or(0) >= 8192, "{body}");
+}
+
+#[test]
+fn an_answer_cut_off_before_any_complete_edit_says_so_and_changes_nothing() {
+    let m = mock_script(vec![stream_of(r#"{"report": "Made it punchier.", "edits": [{"kind": "replace", "quote": "very"#, 3, "length")]);
+    let mut a = app_with(&WHOLE);
+    connect(&mut a, &m);
+    a.run("ui.assistant.ask", json!({"instruction": "Rework this.", "scope": "document"})).unwrap();
+    wait(&mut a);
+    let l = log(&mut a);
+    let e = &l["entries"][0];
+    assert_eq!(e["status"], "failed", "{l}");
+    assert!(e["lines"].to_string().contains("cut off before the first complete suggestion"), "{l}");
+    assert!(changes(&mut a).is_empty());
+}
+
+#[test]
+fn prose_fences_and_odd_escapes_around_the_json_still_land() {
+    // Markdown fence, prose around it, and \' (not valid JSON) the way some models escape.
+    let text = "Here is the punchier version:\n```json\n{\"report\": \"Shorter now.\", \"edits\": [{\"kind\": \"replace\", \"quote\": \"very big\", \"with\": \"cat\\'s own\"},]}\n```\nLet me know!";
+    let m = mock_script(vec![stream_of(text, 4, "stop")]);
+    let mut a = app_with(&WHOLE);
+    connect(&mut a, &m);
+    a.run("ui.assistant.ask", json!({"instruction": "Punchier.", "scope": "document"})).unwrap();
+    wait(&mut a);
+    let l = log(&mut a);
+    assert_eq!(l["entries"][0]["status"], "done", "{l}");
+    assert!(changes(&mut a).iter().any(|(_, k, t)| k == "insert" && t == "cat's own"), "{l}");
+}
+
+#[test]
+fn a_reasoning_models_chunked_content_is_read() {
+    // Mistral with reasoning: delta.content is a list of chunks (thinking, then text) until the
+    // answer phase, where it is a plain string again. The thinking holds braces of its own.
+    let ev = vec![
+        delta(json!([{"type": "thinking", "thinking": [{"type": "text", "text": "Draft: {\"edits\": [ maybe"}]}])),
+        delta(
+            json!([{"type": "thinking", "thinking": [{"type": "text", "text": " done.}"}]}, {"type": "text", "text": "{\"report\": \"Tighter.\", "}]),
+        ),
+        delta(json!("\"edits\": [{\"kind\": \"replace\", \"quote\": \"very big\", \"with\": \"huge\"}]}")),
+        json!({"model": "mock", "choices": [{"index": 0, "delta": {"content": ""}, "finish_reason": "stop"}]}).to_string(),
+        "[DONE]".into(),
+    ];
+    let m = mock_script(vec![Reply::Events(ev)]);
+    let mut a = app_with(&WHOLE);
+    connect(&mut a, &m);
+    a.run("ui.assistant.ask", json!({"instruction": "Punchier.", "scope": "document"})).unwrap();
+    wait(&mut a);
+    let l = log(&mut a);
+    assert_eq!(l["entries"][0]["status"], "done", "{l}");
+    assert_eq!(l["entries"][0]["report"], "Tighter.");
+    assert_eq!(l["entries"][0]["suggestions"].as_array().map(Vec::len), Some(1), "{l}");
+}
+
+#[test]
+fn json_mode_refused_by_a_server_is_retried_once_without_it_and_remembered() {
+    let ok = answer(json!([{"kind": "replace", "quote": "very big", "with": "huge"}]));
+    let m = mock_script(vec![
+        Reply::Status(400, json!({"error": {"message": "Invalid value for 'response_format.type': must be 'json_schema' or 'text'"}}).to_string()),
+        stream_of(&ok, 2, "stop"),
+    ]);
+    let mut a = app_with(&WHOLE);
+    connect(&mut a, &m);
+    a.run("ui.assistant.ask", json!({"instruction": "Punchier.", "scope": "document"})).unwrap();
+    wait(&mut a);
+    let l = log(&mut a);
+    assert_eq!(l["entries"][0]["status"], "done", "{l}");
+    let b = all_bodies(&m);
+    assert_eq!(b.len(), 2);
+    assert!(b[0].get("response_format").is_some() && b[1].get("response_format").is_none(), "{b:?}");
+    // The next ask (same provider, same session) doesn't try again.
+    a.session.run("review.rejectAll", &json!({})).unwrap();
+    a.run("ui.assistant.ask", json!({"instruction": "Punchier.", "scope": "document"})).unwrap();
+    wait(&mut a);
+    let b = all_bodies(&m);
+    assert_eq!(b.len(), 3);
+    assert!(b[2].get("response_format").is_none(), "{b:?}");
+}
+
+#[test]
+fn each_failure_says_which_case_happened_and_keeps_the_answer() {
+    for (reply, status, says, kept) in [
+        (stream_of("Sure, I made it punchier for you!", 2, "stop"), "failed", "wasn't plain JSON", true),
+        (stream_of("", 1, "stop"), "failed", "empty answer", false),
+        (Reply::Status(500, json!({"error": {"message": "Service unavailable"}}).to_string()), "failed", "Service unavailable", false),
+    ] {
+        let m = mock_script(vec![reply]);
+        let mut a = app_with(&WHOLE);
+        connect(&mut a, &m);
+        a.run("ui.assistant.ask", json!({"instruction": "Punchier.", "scope": "document"})).unwrap();
+        wait(&mut a);
+        let l = log(&mut a);
+        let e = &l["entries"][0];
+        assert_eq!(e["status"], status, "{l}");
+        assert!(e["lines"].to_string().contains(says), "{says}: {l}");
+        assert_eq!(e["answer"].is_string(), kept, "{l}");
+        assert!(changes(&mut a).is_empty());
+    }
 }

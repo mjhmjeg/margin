@@ -160,6 +160,8 @@ impl ProviderId {
 /// Where a call goes and with which key. `Debug` never shows the key.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Endpoint {
+    /// The provider it belongs to (a few request fields differ between them).
+    pub provider: ProviderId,
     pub connector: Connector,
     /// Without a trailing slash.
     pub base_url: String,
@@ -171,6 +173,7 @@ pub struct Endpoint {
 impl std::fmt::Debug for Endpoint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Endpoint")
+            .field("provider", &self.provider)
             .field("connector", &self.connector)
             .field("base_url", &self.base_url)
             .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
@@ -195,7 +198,7 @@ impl Endpoint {
         if base_url.starts_with("http://") && !loopback && key.is_some() {
             return Err(AssistantError::Setup("use an https:// address for a server on another computer: the key would travel unencrypted".into()));
         }
-        Ok(Endpoint { connector: preset.connector, base_url, api_key: key, local: provider == ProviderId::Local || loopback })
+        Ok(Endpoint { provider, connector: preset.connector, base_url, api_key: key, local: provider == ProviderId::Local || loopback })
     }
 
     /// `base_url` + `/` + `path`.
@@ -248,8 +251,9 @@ pub struct Model {
     pub name: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Role {
+    #[default]
     User,
     Assistant,
 }
@@ -261,13 +265,17 @@ pub struct Message {
 }
 
 /// A plain chat call.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct ChatRequest {
     pub model: String,
     pub system: Option<String>,
     pub messages: Vec<Message>,
-    /// Required by Anthropic (4096 when `None`); left out for OpenAI-compatible servers when `None`.
+    /// Required by Anthropic (4096 when `None`); left out for OpenAI-compatible servers when `None`
+    /// (sent as `max_completion_tokens` to OpenAI, whose newer models refuse `max_tokens`).
     pub max_tokens: Option<u32>,
+    /// Ask an OpenAI-compatible server for a JSON object (`response_format: json_object`). The
+    /// Anthropic Messages API has no such switch; it is ignored there.
+    pub json: bool,
 }
 
 /// What came back.
@@ -277,6 +285,8 @@ pub struct ChatReply {
     pub model: String,
     /// Why it stopped (`end_turn`, `stop`, `max_tokens`, `length`…), when the provider says.
     pub stop_reason: Option<String>,
+    /// The server refused JSON mode (`ChatRequest::json`), so the call was made again without it.
+    pub json_refused: bool,
 }
 
 /// Why a call failed, in words a person can act on. Never contains the key.
