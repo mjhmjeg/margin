@@ -106,3 +106,10 @@ page thumbnails; shown at launch and on File › New (⌘N). Built in `ui-egui/s
 document pages are upstream's, reused. Only in the Mac layout (Classic ribbon keeps the Backstage,
 and upstream's Backstage tests run in Classic). Recent thumbnails: one render per frame, files over
 20 MB show an icon.
+
+## 2026-10-13 — Claude Design open questions (HANDOFF.md §12)
+
+1. Command field shortcut: Martijn prefers ⌘J "if free". It is not: ⌘J = Justify (Word's, in
+   Format menu). Decided 2026-10-13: **⌘/** (free, two keys; Notion/Slack use it for commands).
+2. Review and Assistant panels: 320 pt (as drawn).
+3. Toolbar label: "AI Assistant".

@@ -285,7 +285,7 @@ fn card(app: &mut WordApp, ui: &mut Ui, t: &Tokens, key: &str, label: &str, sub:
         ui.vertical_centered(|ui| {
             ui.label(job).on_hover_text(label);
             if let Some(s) = sub {
-                ui.label(egui::RichText::new(s).font(font()).color(t.group_label));
+                ui.label(egui::RichText::new(s).font(font()).color(t.text_dim));
             }
         });
         resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, label));
