@@ -306,6 +306,9 @@ pub enum AssistantError {
     /// A setting that can't work (address, key format).
     #[error("{0}")]
     Setup(String),
+    /// The person stopped it.
+    #[error("stopped")]
+    Stopped,
     /// Not available here (browser build, no keychain).
     #[error("{0}")]
     Unsupported(String),

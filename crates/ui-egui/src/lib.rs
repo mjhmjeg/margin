@@ -24,6 +24,7 @@ pub mod a11y;
 pub mod a11y_pane;
 pub mod assistant;
 pub mod assistant_link;
+pub mod assistant_panel;
 pub mod backstage;
 pub mod canvas;
 pub mod caret_glide;
@@ -432,6 +433,8 @@ pub struct WordApp {
     pub zotero: zotero::ZoteroLink,
     /// Settings › Assistant at work: keychain, model lists, connection tests (`ui.assistant.*`).
     pub assistant_link: assistant_link::AssistantLink,
+    /// The Assistant panel and the built-in assistant's asks (`ui.assistant.ask` …).
+    pub assistant_panel: assistant_panel::AssistantPanel,
     /// The egui context, once the first frame has run (background work wakes the UI with it).
     pub(crate) ctx: Option<egui::Context>,
     /// Read Aloud: the start of the sentence the caret was last moved to, and the last error shown.
@@ -521,6 +524,7 @@ impl WordApp {
             outline_prev_tab: None,
             zotero: zotero::ZoteroLink::default(),
             assistant_link: assistant_link::AssistantLink::new(key_store),
+            assistant_panel: Default::default(),
             ctx: None,
             read_aloud_at: None,
             read_aloud_error: None,
@@ -1147,6 +1151,9 @@ impl WordApp {
             // (`wordcraft_engine::assistant::denied`). The key is write-only.
             "ui.assistant" => return Some(assistant_link::settings_command(self, p)),
             "ui.assistant.test" | "ui.assistant.models" => return assistant_link::command(self, id, p),
+            "ui.assistant.ask" | "ui.assistant.stop" | "ui.assistant.panel" | "ui.assistant.log" | "ui.assistant.suggestion" => {
+                return assistant_panel::command(self, id, p);
+            }
             "ui.startScreen" => {
                 // File › Options › General › Start-up (#766): `value` true or false turns showing
                 // File › Home at start-up on or off; no value reads it.
@@ -1395,6 +1402,7 @@ impl WordApp {
         self.drain_control(ctx);
         zotero::poll(self, ctx);
         assistant_link::poll(self);
+        assistant_panel::poll(self);
         read_aloud::poll(self, ctx);
         self.clear_stale_change_picture();
         let _ = self.poll_file_dialog();
@@ -1563,7 +1571,9 @@ impl WordApp {
                 let _legacy_icons = icons::Legacy::enter();
                 chrome::status_bar(self, ui);
             }
-            if mac && self.ui.margin.inspector && !self.session.view.comments_pane {
+            if mac && assistant_panel::visible(self) {
+                assistant_panel::show(self, ui);
+            } else if mac && self.ui.margin.inspector && !self.session.view.comments_pane {
                 mac_ui::inspector(self, ui);
             }
             panes::show(self, ui);

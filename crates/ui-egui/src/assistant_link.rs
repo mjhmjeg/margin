@@ -78,6 +78,11 @@ impl AssistantLink {
         }
     }
 
+    /// The key store (read off the UI thread by the calls that need a key).
+    pub(crate) fn key_store(&self) -> Arc<dyn KeyStore> {
+        self.keys.clone()
+    }
+
     /// Whether keys can be kept on this system at all.
     pub fn keys_supported(&self) -> bool {
         self.keys.supported()

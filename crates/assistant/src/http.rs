@@ -2,6 +2,7 @@
 //! background thread, never the UI thread.
 
 use std::io::{BufRead, BufReader};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use ureq::Agent;
@@ -112,6 +113,21 @@ pub fn chat(ep: &Endpoint, req: &ChatRequest, timeout: Duration) -> Result<ChatR
 /// A chat call streamed: `on_text` gets each piece of text as it arrives. `timeout` covers
 /// connecting and the start of the answer; the whole answer may take up to ten minutes.
 pub fn chat_stream(ep: &Endpoint, req: &ChatRequest, timeout: Duration, on_text: &mut dyn FnMut(&str)) -> Result<ChatReply, AssistantError> {
+    chat_stream_until(ep, req, timeout, &AtomicBool::new(false), on_text)
+}
+
+/// [`chat_stream`] that ends with [`AssistantError::Stopped`] once `stop` is set (checked
+/// between the lines of the answer; the connection is dropped).
+pub fn chat_stream_until(
+    ep: &Endpoint,
+    req: &ChatRequest,
+    timeout: Duration,
+    stop: &AtomicBool,
+    on_text: &mut dyn FnMut(&str),
+) -> Result<ChatReply, AssistantError> {
+    if stop.load(Ordering::Relaxed) {
+        return Err(AssistantError::Stopped);
+    }
     let agent = agent(timeout, true);
     let (status, mut resp) = send(&agent, &wire::chat_request(ep, req, true), ep, timeout)?;
     if !(200..300).contains(&status) {
@@ -121,6 +137,9 @@ pub fn chat_stream(ep: &Endpoint, req: &ChatRequest, timeout: Duration, on_text:
     let reader = resp.body_mut().with_config().limit(MAX_BODY).reader();
     let mut parser = wire::StreamParser::new(ep.connector);
     for line in BufReader::new(reader).lines() {
+        if stop.load(Ordering::Relaxed) {
+            return Err(AssistantError::Stopped);
+        }
         let line = line.map_err(|e| transport_error(ureq::Error::Io(e), ep, timeout))?;
         if let Some(t) = parser.line(&line)? {
             on_text(&t);

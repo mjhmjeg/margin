@@ -131,8 +131,16 @@ pub fn toolbar(app: &mut WordApp, ui: &mut Ui) {
             let mut right_start = band.max.x;
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
-                // R1 / E5: panel toggles, one panel open at a time. Right to left: Review, Format.
-                // (The Assistant toggle waits for its panel, phase 8.)
+                // R1 / E5: panel toggles, one panel open at a time. Right to left: Assistant (only
+                // while an assistant is on; labelled with its author name), Review, Format.
+                if crate::review_panel::assistant_enabled() {
+                    let open = crate::assistant_panel::visible(app);
+                    let name = app.ui.assistant.name();
+                    let tip = crate::i18n::fmt(tl!("Ask {name} for suggestions"), &[("name", &name)]);
+                    if panel_toggle(ui, "assistant", &name, open, 0).on_hover_text(tip).clicked() {
+                        crate::assistant_panel::set_open(app, !open);
+                    }
+                }
                 let review_open = app.session.view.comments_pane;
                 let n = review_count(app, ui.ctx());
                 if panel_toggle(ui, "review", tl!("Review"), review_open, n).on_hover_text(tl!("Comments and changes")).clicked() {
@@ -140,13 +148,15 @@ pub fn toolbar(app: &mut WordApp, ui: &mut Ui) {
                     app.session.view.comments_pane = open;
                     if open {
                         app.ui.margin.inspector = false;
+                        app.assistant_panel.open = false;
                     }
                 }
-                let format_open = app.ui.margin.inspector && !app.session.view.comments_pane;
+                let format_open = app.ui.margin.inspector && !app.session.view.comments_pane && !crate::assistant_panel::visible(app);
                 if panel_toggle(ui, "inspector", tl!("Format"), format_open, 0).on_hover_text(tl!("Show or hide the Format inspector")).clicked() {
                     app.ui.margin.inspector = !format_open;
                     if !format_open {
                         app.session.view.comments_pane = false;
+                        app.assistant_panel.open = false;
                     }
                 }
                 mc::toolbar_divider(ui);

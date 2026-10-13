@@ -180,7 +180,7 @@ pub fn rows(hits: &[&CommandSpec], query: &str, mode: Mode, assistant: bool) -> 
     let q = query.trim();
     let ask = (!q.is_empty()).then(|| Row::Ask(q.to_string()));
     match mode {
-        Mode::Ask => QUICK_ASKS.iter().map(|(l, i)| Row::Quick(l, i)).chain(ask).collect(),
+        Mode::Ask => QUICK_ASKS.iter().filter(|(l, _)| *l != NEEDS_FILES).map(|(l, i)| Row::Quick(l, i)).chain(ask).collect(),
         Mode::Commands => {
             let first = ask.is_some() && (hits.is_empty() || sentence_like(q));
             let mut out: Vec<Row> = Vec::new();
@@ -196,9 +196,18 @@ pub fn rows(hits: &[&CommandSpec], query: &str, mode: Mode, assistant: bool) -> 
     }
 }
 
-/// Send an ask to the assistant. Wired in step A3; until then every ask is refused, quietly.
-pub fn submit_ask(_app: &mut WordApp, _instruction: &str, _scope: &Scope) -> Result<(), String> {
-    Err("assistant not configured".to_string())
+/// Quick asks that need folder access (Settings › Assistant S5, step A4) stay hidden until then.
+const NEEDS_FILES: &str = "Check facts against a file…";
+
+/// Send an ask to the assistant: the Assistant panel opens and shows it working. Scoped to the
+/// selection when the field was opened on one, else the whole document.
+pub fn submit_ask(app: &mut WordApp, instruction: &str, scope: &Scope) -> Result<(), String> {
+    let kind = if scope.words > 0 && !app.session.sel.is_collapsed() {
+        wordcraft_engine::assistant_edits::ScopeKind::Selection
+    } else {
+        wordcraft_engine::assistant_edits::ScopeKind::Document
+    };
+    crate::assistant_panel::ask(app, instruction, kind).map(|_| ())
 }
 
 /// Focus the field (Help › Search Commands…, the shortcut, Alt+Q). In the Classic ribbon layout
@@ -412,7 +421,11 @@ fn paint_field(app: &mut WordApp, ui: &mut Ui, rect: Rect, t: &Tokens, m: &Margi
         t.text_dim,
         t.accent,
     );
-    let placeholder = if assistant { tl!("Search commands or ask Claude") } else { tl!("Search commands") };
+    let placeholder = if assistant {
+        crate::i18n::fmt(tl!("Search commands or ask {name}"), &[("name", &crate::review_panel::assistant_author_name())])
+    } else {
+        tl!("Search commands").to_string()
+    };
     let hint_w = if focused || !f.query.is_empty() { 0.0 } else { 44.0 };
     let edit_rect = Rect::from_min_max(pos2(rect.min.x + 30.0, rect.min.y + 2.0), pos2(rect.max.x - 8.0 - hint_w, rect.max.y - 2.0));
     let te = ui.put(
@@ -423,7 +436,7 @@ fn paint_field(app: &mut WordApp, ui: &mut Ui, rect: Rect, t: &Tokens, m: &Margi
             .vertical_align(egui::Align::Center)
             .font(mc::font())
             .text_color(t.text)
-            .hint_text(egui::RichText::new(placeholder).color(t.text_dim).font(mc::font()))
+            .hint_text(egui::RichText::new(&placeholder).color(t.text_dim).font(mc::font()))
             .desired_width(edit_rect.width()),
     );
     if f.focus && live {
@@ -441,7 +454,7 @@ fn paint_field(app: &mut WordApp, ui: &mut Ui, rect: Rect, t: &Tokens, m: &Margi
     if hint_w > 0.0 {
         ui.painter().text(pos2(rect.max.x - 10.0, rect.center().y), Align2::RIGHT_CENTER, SHORTCUT_LABEL, mc::font(), t.text_dim);
     }
-    te.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, placeholder));
+    te.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, &placeholder));
     live && te.has_focus()
 }
 
@@ -658,9 +671,17 @@ mod tests {
     fn asking_without_an_assistant_is_an_error_not_a_panic() {
         let mut app = WordApp::new(session(), crate::Services::default());
         let r = submit_ask(&mut app, "Shorten this.", &Scope { words: 3 });
-        assert_eq!(r, Err("assistant not configured".to_string()));
+        assert!(r.as_ref().is_err_and(|e| e.contains("Let an assistant work in Margin")), "{r:?}");
         ask(&mut app, "Shorten this.");
-        assert_eq!(app.status_msg.as_ref().map(|(m, _)| m.as_str()), Some("assistant not configured"));
+        assert!(app.status_msg.as_ref().is_some_and(|(m, _)| m.contains("Let an assistant work in Margin")));
+        assert!(!app.assistant_panel.working());
+    }
+
+    #[test]
+    fn the_file_quick_ask_waits_for_folder_access() {
+        let on = rows(&[], "", Mode::Ask, true);
+        assert!(on.iter().all(|r| !matches!(r, Row::Quick(l, _) if *l == NEEDS_FILES)), "{on:?}");
+        assert_eq!(on.len(), 3, "Shorten, Fix grammar and spelling, Make it plainer");
     }
 
     #[test]

@@ -335,3 +335,24 @@ fn hostile_model_lists_never_panic() {
     }
     assert_eq!(wire::parse_models(Connector::OpenAi, "[{\"id\": \"x\"}]").unwrap().0.len(), 1);
 }
+
+#[test]
+fn a_stopped_stream_ends_with_stopped() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let sse =
+        "data: {\"choices\":[{\"delta\":{\"content\":\"one\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"two\"}}]}\n\ndata: [DONE]\n\n";
+    let (base, h) = serve(vec![Answer(200, "text/event-stream", sse.into(), Duration::ZERO)]);
+    let stop = AtomicBool::new(false);
+    let mut pieces = Vec::new();
+    let r = http::chat_stream_until(&endpoint(Connector::OpenAi, &base, None), &chat_req(), Duration::from_secs(5), &stop, &mut |t| {
+        pieces.push(t.to_string());
+        stop.store(true, Ordering::Relaxed);
+    });
+    assert_eq!(r, Err(AssistantError::Stopped));
+    assert_eq!(pieces, ["one"], "nothing after the stop");
+    h.join().unwrap();
+    // Stopped before it starts: nothing is sent.
+    let r =
+        http::chat_stream_until(&endpoint(Connector::OpenAi, "http://127.0.0.1:9/v1", None), &chat_req(), Duration::from_secs(1), &stop, &mut |_| {});
+    assert_eq!(r, Err(AssistantError::Stopped));
+}

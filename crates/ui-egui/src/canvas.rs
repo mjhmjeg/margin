@@ -992,6 +992,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         app.canvas.page_rects = rects.clone();
         balloons(app, ui, &painter, &rects, &layout, geo.scale);
         comment_tags(app, ui, &painter, &rects, &layout, geo.scale);
+        // A5: where the built-in assistant is working (removed when it stops).
+        crate::assistant_panel::paint_presence(app, &painter, &rects, &layout, geo.scale);
         // Find › Reading Highlight.
         let marks: Vec<(Pos, Pos)> = app.session.find_highlights().iter().take(5000).cloned().collect();
         for (a, b) in &marks {

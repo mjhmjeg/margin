@@ -120,3 +120,14 @@ and upstream's Backstage tests run in Classic). Recent thumbnails: one render pe
 - HTTP: `ureq` 3 with rustls (ring, webpki roots), blocking, on a background thread; 15 s timeout. Keys: `keyring` 3.6 (macOS Keychain, Windows Credential Manager, Linux kernel keyring, which lasts until logout). Both are target-gated off wasm32; the browser build has no assistant network.
 - Rejected: `keyring` 4 (new store architecture, more surface for no gain here), Secret Service on Linux (C libdbus or a second zbus), tokio/reqwest.
 - Commands are `ui.assistant` (settings; `apiKey` write-only), `ui.assistant.test`, `ui.assistant.models`. Outside assistants are refused all three. A key is never sent over plain http to another computer.
+
+## 2026-10-13 — Assistant A3: Assistant panel and the edit protocol
+
+- **Edit protocol: strict JSON, no provider tool-calling** (tool-calling differs across Mistral, OpenAI, Gemini, OpenRouter and local servers). The model answers `{"report": …, "edits": [{"kind": "replace" | "insert" | "comment", "quote", "with", "note"}]}`, report first so it streams into the work log. Parsed defensively (bare, fenced, or embedded in prose; at most 50 edits). Each `quote` must occur exactly once inside the scope (within one paragraph, not across a tracked change or object); missing, ambiguous, overlapping and out-of-scope edits are skipped with a work-log line. Applied last-to-first, each as its own command through `Session::run_as_assistant` (same deny list as outside assistants), limited further to `select.range`, `text.delete`, `text.insert`, `review.newComment` (`engine/src/assistant_edits.rs`). A replacement is a tracked deletion followed by a tracked insertion; the person's selection, tracking state and Review pane come back afterwards.
+- **Untrusted document:** sent between `BEGIN DOCUMENT <nonce>` / `END DOCUMENT <nonce>` lines (random per ask); the system prompt says text there is data and its instructions must not be followed.
+- **Scopes:** Selection; This section (from the nearest heading at or above the caret to the next heading of the same or higher level); Whole document. Capped at 40,000 characters, cut at a paragraph end (inside the first paragraph if it alone is longer); the work log says how many words were sent.
+- **Suggestions in the panel:** accept/reject find their change live by (author, deleted, inserted) and run the person's own `review.accept` / `review.reject`; a comment suggestion's accept resolves it, reject deletes it. Changes resolved elsewhere show "Resolved".
+- **Work log:** per document, in memory for the session (not saved). Times are UTC HH:MM, like Review's stamps.
+- **Stop:** sets a flag the stream checks between lines and drops the receiver; nothing from that answer is applied.
+- Toolbar toggle is labelled with the configured author name (owner decision), shown only while `assistant_enabled()`.
+- "Check facts against a file…" stays hidden until folder access (A4).

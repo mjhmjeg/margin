@@ -437,6 +437,28 @@ fn resolve_change(app: &mut WordApp, c: &ChangeRow, accept: bool) {
     app.canvas.want_focus = true;
 }
 
+/// The pending changes by `author` (a replacement counts as one), in document order:
+/// (deleted, inserted, start, end). The Assistant panel's suggestions find their change on the
+/// page this way, so edits made since don't lose track of it.
+pub(crate) fn changes_by(app: &mut WordApp, author: &str) -> Vec<(String, String, Pos, Pos)> {
+    build_items(app)
+        .into_iter()
+        .filter_map(|it| match it {
+            Item::Change(c) if c.author == author => Some((c.deleted, c.inserted, c.a, c.b)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Accept or reject the change `a..b` the way the Review panel's buttons do (the person's own
+/// action, never an assistant's).
+pub(crate) fn resolve_range(app: &mut WordApp, a: &Pos, b: &Pos, accept: bool) -> Result<(), String> {
+    app.run("select.range", json!({"anchor": a, "focus": b}))?;
+    app.run(if accept { "review.accept" } else { "review.reject" }, json!({}))?;
+    app.canvas.want_focus = true;
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------------------------
 // The panel
 
@@ -621,7 +643,7 @@ fn person_row(app: &mut WordApp, ui: &mut Ui, a: &AuthorInfo, changes: usize, co
 }
 
 /// A 28 × 24 icon button.
-fn icon_button(ui: &mut Ui, icon: &str, tip: &str, t: &Tokens) -> bool {
+pub(crate) fn icon_button(ui: &mut Ui, icon: &str, tip: &str, t: &Tokens) -> bool {
     let (r, resp) = ui.allocate_exact_size(vec2(28.0, 24.0), Sense::click());
     if resp.hovered() {
         ui.painter().rect_filled(r, 5.0, t.hover);
@@ -802,7 +824,7 @@ fn comment_row(app: &mut WordApp, ui: &mut Ui, c: &CommentRow, cur: bool, people
     }
 }
 
-fn clip(s: &str, max: usize) -> String {
+pub(crate) fn clip(s: &str, max: usize) -> String {
     let flat: String = s.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
     if flat.chars().count() <= max {
         return flat;
@@ -814,7 +836,7 @@ fn clip(s: &str, max: usize) -> String {
 
 /// How an excerpt part is marked: deletions struck, insertions underlined.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Deco {
+pub(crate) enum Deco {
     None,
     Strike,
     Underline,
@@ -822,7 +844,7 @@ enum Deco {
 
 /// "deleted → inserted" in the author colour (R5): deletions struck, insertions underlined, both
 /// dotted for the assistant. The lines are drawn rather than set as text format so they can be dotted.
-fn excerpt(ui: &mut Ui, parts: &[(String, Deco)], color: Color32, dotted: bool, t: &Tokens) {
+pub(crate) fn excerpt(ui: &mut Ui, parts: &[(String, Deco)], color: Color32, dotted: bool, t: &Tokens) {
     let mut job = egui::text::LayoutJob::default();
     job.wrap.max_width = ui.available_width();
     for (text, deco) in parts {
