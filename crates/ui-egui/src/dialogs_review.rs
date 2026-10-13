@@ -12,7 +12,6 @@ use wordcraft_engine::Password;
 use wordcraft_engine::cmd::tools::AutoCorrectPrefs;
 
 use crate::WordApp;
-use crate::theme::semibold;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "form", rename_all = "camelCase")]
@@ -82,7 +81,7 @@ fn buttons(ui: &mut Ui, ok_enabled: bool) -> (bool, bool) {
 
 fn heading(ui: &mut Ui, s: &str) {
     ui.add_space(6.0);
-    ui.label(egui::RichText::new(tl!(s)).font(semibold(12.5)));
+    crate::dialogs::group_label(ui, tl!(s));
 }
 
 fn error(ui: &mut Ui, message: &str) {
@@ -196,9 +195,9 @@ fn compare_ui(app: &mut WordApp, ui: &mut Ui, f: &mut CompareForm) -> bool {
     egui::Grid::new("compare_files").num_columns(2).spacing(vec2(16.0, 4.0)).show(ui, |ui| {
         ui.vertical(|ui| {
             heading(ui, "Original document");
-            ui.radio_value(&mut f.original_current, true, tl!("This document"));
+            crate::dialogs::radio_value(ui, &mut f.original_current, true, tl!("This document"));
             ui.horizontal(|ui| {
-                ui.radio_value(&mut f.original_current, false, "");
+                crate::dialogs::radio_value(ui, &mut f.original_current, false, "");
                 ui.add_enabled(browse, egui::TextEdit::singleline(&mut f.original).desired_width(170.0).hint_text(tl!("Another file")));
                 if ui.add_enabled(browse, egui::Button::new(tl!("Browse…"))).clicked() {
                     pick = Some(false);
@@ -214,7 +213,7 @@ fn compare_ui(app: &mut WordApp, ui: &mut Ui, f: &mut CompareForm) -> bool {
                 }
             });
             ui.horizontal(|ui| {
-                ui.label(tl!("Label changes with:"));
+                crate::dialogs::form_label(ui, tl!("Label changes with:"));
                 ui.add(egui::TextEdit::singleline(&mut f.author).desired_width(120.0));
             });
         });
@@ -229,7 +228,7 @@ fn compare_ui(app: &mut WordApp, ui: &mut Ui, f: &mut CompareForm) -> bool {
         egui::Grid::new("compare_settings").num_columns(2).spacing(vec2(16.0, 2.0)).show(ui, |ui| {
             for (i, (_, label)) in COMPARE_SETTINGS.iter().enumerate() {
                 if let Some(on) = f.settings.get_mut(i) {
-                    ui.checkbox(on, tl!(label));
+                    crate::dialogs::checkbox(ui, on, tl!(label));
                 }
                 if i % 2 == 1 {
                     ui.end_row();
@@ -244,13 +243,13 @@ fn compare_ui(app: &mut WordApp, ui: &mut Ui, f: &mut CompareForm) -> bool {
         egui::Grid::new("compare_show").num_columns(2).spacing(vec2(24.0, 2.0)).show(ui, |ui| {
             ui.vertical(|ui| {
                 heading(ui, "Show changes at:");
-                ui.radio_value(&mut f.character_level, false, tl!("Word level"));
-                ui.radio_value(&mut f.character_level, true, tl!("Character level"));
+                crate::dialogs::radio_value(ui, &mut f.character_level, false, tl!("Word level"));
+                crate::dialogs::radio_value(ui, &mut f.character_level, true, tl!("Character level"));
             });
             ui.vertical(|ui| {
                 heading(ui, "Show changes in:");
                 for (v, l) in [("original", "Original document"), ("revised", "Revised document"), ("new", "New document")] {
-                    ui.radio_value(&mut f.show_in, v.to_string(), tl!(l));
+                    crate::dialogs::radio_value(ui, &mut f.show_in, v.to_string(), tl!(l));
                 }
             });
             ui.end_row();
@@ -386,15 +385,15 @@ fn autocorrect_ui(app: &mut WordApp, ui: &mut Ui, f: &mut AutoCorrectForm) -> bo
         1 => {
             let o = &mut f.options;
             heading(ui, "Replace as you type");
-            ui.checkbox(&mut o.smart_quotes, tl!("Smart quotes instead of straight quotes"));
-            ui.checkbox(&mut o.fractions, tl!("Fractions (1/2) as fraction characters (½)"));
-            ui.checkbox(&mut o.ordinals, tl!("Ordinals (1st) as superscript"));
-            ui.checkbox(&mut o.dashes, tl!("Hyphens (--) as dashes (—)"));
-            ui.checkbox(&mut o.links, tl!("Internet addresses as links"));
+            crate::dialogs::checkbox(ui, &mut o.smart_quotes, tl!("Smart quotes instead of straight quotes"));
+            crate::dialogs::checkbox(ui, &mut o.fractions, tl!("Fractions (1/2) as fraction characters (½)"));
+            crate::dialogs::checkbox(ui, &mut o.ordinals, tl!("Ordinals (1st) as superscript"));
+            crate::dialogs::checkbox(ui, &mut o.dashes, tl!("Hyphens (--) as dashes (—)"));
+            crate::dialogs::checkbox(ui, &mut o.links, tl!("Internet addresses as links"));
             heading(ui, "Apply as you type");
-            ui.checkbox(&mut o.bullets, tl!("Automatic bulleted lists"));
-            ui.checkbox(&mut o.numbering, tl!("Automatic numbered lists"));
-            ui.checkbox(&mut o.border_lines, tl!("Border lines"));
+            crate::dialogs::checkbox(ui, &mut o.bullets, tl!("Automatic bulleted lists"));
+            crate::dialogs::checkbox(ui, &mut o.numbering, tl!("Automatic numbered lists"));
+            crate::dialogs::checkbox(ui, &mut o.border_lines, tl!("Border lines"));
         }
         _ => math_tab(ui, f),
     }
@@ -412,8 +411,8 @@ fn autocorrect_ui(app: &mut WordApp, ui: &mut Ui, f: &mut AutoCorrectForm) -> bo
 
 fn autocorrect_tab(app: &mut WordApp, ui: &mut Ui, f: &mut AutoCorrectForm) {
     let o = &mut f.options;
-    ui.checkbox(&mut o.two_initial_caps, tl!("Correct TWo INitial CApitals"));
-    ui.checkbox(&mut o.cap_sentences, tl!("Capitalize first letter of sentences"));
+    crate::dialogs::checkbox(ui, &mut o.two_initial_caps, tl!("Correct TWo INitial CApitals"));
+    crate::dialogs::checkbox(ui, &mut o.cap_sentences, tl!("Capitalize first letter of sentences"));
     ui.horizontal(|ui| {
         ui.add_space(18.0);
         if ui.small_button(tl!("Exceptions…")).clicked() {
@@ -424,12 +423,12 @@ fn autocorrect_tab(app: &mut WordApp, ui: &mut Ui, f: &mut AutoCorrectForm) {
         exceptions(app, ui, f);
     }
     let o = &mut f.options;
-    ui.checkbox(&mut o.cap_cells, tl!("Capitalize first letter of table cells"));
-    ui.checkbox(&mut o.cap_days, tl!("Capitalize names of days"));
-    ui.checkbox(&mut o.caps_lock, tl!("Correct accidental usage of cAPS LOCK key"));
-    ui.checkbox(&mut o.replace_text, tl!("Replace text as you type"));
+    crate::dialogs::checkbox(ui, &mut o.cap_cells, tl!("Capitalize first letter of table cells"));
+    crate::dialogs::checkbox(ui, &mut o.cap_days, tl!("Capitalize names of days"));
+    crate::dialogs::checkbox(ui, &mut o.caps_lock, tl!("Correct accidental usage of cAPS LOCK key"));
+    crate::dialogs::checkbox(ui, &mut o.replace_text, tl!("Replace text as you type"));
     egui::Grid::new("ac_boxes").num_columns(2).spacing(vec2(8.0, 2.0)).show(ui, |ui| {
-        ui.label(tl!("Replace:"));
+        crate::dialogs::form_label(ui, tl!("Replace:"));
         ui.label(tl!("With:"));
         ui.end_row();
         ui.add(egui::TextEdit::singleline(&mut f.from).desired_width(110.0));
@@ -514,7 +513,7 @@ fn exceptions(app: &mut WordApp, ui: &mut Ui, f: &mut AutoCorrectForm) {
 fn math_tab(ui: &mut Ui, f: &mut AutoCorrectForm) {
     ui.label(egui::RichText::new(tl!("In equations, typing a name after a backslash replaces it with its symbol.")).small().weak());
     ui.horizontal(|ui| {
-        ui.label(tl!("Replace:"));
+        crate::dialogs::form_label(ui, tl!("Replace:"));
         ui.add(egui::TextEdit::singleline(&mut f.math_filter).desired_width(140.0));
     });
     let filter = f.math_filter.trim().trim_start_matches('\\').to_string();
@@ -584,7 +583,7 @@ pub fn restrict_pane(app: &mut WordApp, ui: &mut Ui) {
 
 fn setup_ui(app: &mut WordApp, ui: &mut Ui, st: &mut RestrictPane) {
     heading(ui, "1. Formatting restrictions");
-    ui.checkbox(&mut st.formatting, tl!("Limit formatting to a selection of styles"));
+    crate::dialogs::checkbox(ui, &mut st.formatting, tl!("Limit formatting to a selection of styles"));
     if st.formatting && ui.small_button(tl!("Settings…")).clicked() {
         st.show_styles = !st.show_styles;
     }
@@ -608,7 +607,7 @@ fn setup_ui(app: &mut WordApp, ui: &mut Ui, st: &mut RestrictPane) {
         egui::ScrollArea::vertical().id_salt("restrict_styles").max_height(160.0).show(ui, |ui| {
             for (id, name) in &styles {
                 let mut on = allowed.contains(id);
-                if ui.checkbox(&mut on, tl!(name.as_str())).changed() {
+                if crate::dialogs::checkbox(ui, &mut on, tl!(name.as_str())).changed() {
                     if on {
                         allowed.push(id.clone());
                     } else {
@@ -619,10 +618,10 @@ fn setup_ui(app: &mut WordApp, ui: &mut Ui, st: &mut RestrictPane) {
         });
     }
     heading(ui, "2. Editing restrictions");
-    ui.checkbox(&mut st.editing, tl!("Only allow this kind of editing:"));
+    crate::dialogs::checkbox(ui, &mut st.editing, tl!("Only allow this kind of editing:"));
     ui.add_enabled_ui(st.editing, |ui| {
         let current = EDIT_MODES.get(st.mode).map(|m| m.1).unwrap_or("");
-        egui::ComboBox::from_id_salt("restrict_mode").selected_text(tl!(current)).width(220.0).show_ui(ui, |ui| {
+        crate::dialogs::combo("restrict_mode").selected_text(tl!(current)).width(220.0).show_ui(ui, |ui| {
             for (i, (_, label)) in EDIT_MODES.iter().enumerate() {
                 ui.selectable_value(&mut st.mode, i, tl!(label));
             }
@@ -689,7 +688,7 @@ fn setup_ui(app: &mut WordApp, ui: &mut Ui, st: &mut RestrictPane) {
 
 fn passwords(ui: &mut Ui, st: &mut RestrictPane, confirm: bool) {
     egui::Grid::new("restrict_pw").num_columns(2).spacing(vec2(8.0, 4.0)).show(ui, |ui| {
-        ui.label(tl!("Password:"));
+        crate::dialogs::form_label(ui, tl!("Password:"));
         ui.add(egui::TextEdit::singleline(st.password.as_mut_string()).password(true).desired_width(140.0));
         ui.end_row();
         if confirm {

@@ -316,15 +316,25 @@ pub fn hint(ui: &mut Ui, text: &str) {
 
 /// Checkbox (14, radius 4) with its label; returns true when clicked.
 pub fn checkbox(ui: &mut Ui, label: &str, on: bool) -> bool {
+    toggle_mark(ui, label, on, false).clicked()
+}
+
+/// [`checkbox`] for callers that need the response (dialogs: `changed()`).
+pub fn checkbox_response(ui: &mut Ui, label: &str, on: bool) -> Response {
     toggle_mark(ui, label, on, false)
 }
 
 /// Radio (14, round) with its label; returns true when clicked.
 pub fn radio(ui: &mut Ui, label: &str, on: bool) -> bool {
+    toggle_mark(ui, label, on, true).clicked()
+}
+
+/// [`radio`] for callers that need the response.
+pub fn radio_response(ui: &mut Ui, label: &str, on: bool) -> Response {
     toggle_mark(ui, label, on, true)
 }
 
-fn toggle_mark(ui: &mut Ui, label: &str, on: bool, round: bool) -> bool {
+fn toggle_mark(ui: &mut Ui, label: &str, on: bool, round: bool) -> Response {
     let (t, m) = tokens(ui);
     let text_w = ui.painter().layout_no_wrap(tl!(label).to_string(), font(), t.text).size().x;
     let (r, resp) = ui.allocate_exact_size(vec2(14.0 + 8.0 + text_w, ROW_H), Sense::click());
@@ -346,7 +356,7 @@ fn toggle_mark(ui: &mut Ui, label: &str, on: bool, round: bool) -> bool {
     focus_ring(ui, &resp, b, radius);
     let wt = if round { egui::WidgetType::RadioButton } else { egui::WidgetType::Checkbox };
     resp.widget_info(|| egui::WidgetInfo::selected(wt, true, on, tl!(label)));
-    resp.clicked()
+    resp
 }
 
 /// Switch 30 × 18, knob 14: on = `accent`, off = `segment_track` + `input_border` ring.

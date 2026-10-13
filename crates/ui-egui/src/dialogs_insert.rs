@@ -355,7 +355,7 @@ fn columns_ui(app: &mut WordApp, ui: &mut Ui, f: &mut ColumnsForm) -> bool {
     let t = Tokens::get(ui.ctx());
     let unit = crate::options::unit();
     ui.set_width(420.0);
-    ui.label(egui::RichText::new(tl!("Presets")).font(semibold(12.5)));
+    crate::dialogs::group_label(ui, tl!("Presets"));
     let current = f.current_preset();
     ui.horizontal(|ui| {
         for (key, label, widths) in [
@@ -372,22 +372,22 @@ fn columns_ui(app: &mut WordApp, ui: &mut Ui, f: &mut ColumnsForm) -> bool {
     });
     ui.add_space(6.0);
     ui.horizontal(|ui| {
-        ui.label(tl!("Number of columns:"));
+        crate::dialogs::form_label(ui, tl!("Number of columns:"));
         let mut n = f.count;
         if ui.add(egui::DragValue::new(&mut n).range(1..=12)).changed() {
             f.set_count(n);
         }
         ui.add_space(16.0);
-        ui.checkbox(&mut f.separator, tl!("Line between"));
+        crate::dialogs::checkbox(ui, &mut f.separator, tl!("Line between"));
     });
     ui.add_space(6.0);
-    ui.label(egui::RichText::new(tl!("Width and spacing")).font(semibold(12.5)));
+    crate::dialogs::group_label(ui, tl!("Width and spacing"));
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
             let mut changed = None;
             egui::ScrollArea::vertical().id_salt("columns_widths").max_height(130.0).show(ui, |ui| {
                 egui::Grid::new("columns_grid").num_columns(3).spacing(vec2(12.0, 4.0)).show(ui, |ui| {
-                    ui.label(tl!("Col #:"));
+                    crate::dialogs::form_label(ui, tl!("Col #:"));
                     ui.label(tl!("Width:"));
                     ui.label(tl!("Spacing:"));
                     ui.end_row();
@@ -433,13 +433,13 @@ fn columns_ui(app: &mut WordApp, ui: &mut Ui, f: &mut ColumnsForm) -> bool {
     });
     ui.add_space(4.0);
     ui.horizontal(|ui| {
-        ui.label(tl!("Apply to:"));
+        crate::dialogs::form_label(ui, tl!("Apply to:"));
         let mut options = vec![("document", "Whole document"), ("forward", "This point forward")];
         if f.sections {
             options.insert(0, ("section", "This section"));
         }
         let shown = options.iter().find(|(k, _)| *k == f.apply).map(|(_, l)| *l).unwrap_or("This section");
-        egui::ComboBox::from_id_salt("columns_apply").selected_text(tl!(shown)).width(180.0).show_ui(ui, |ui| {
+        crate::dialogs::combo("columns_apply").selected_text(tl!(shown)).width(180.0).show_ui(ui, |ui| {
             for (k, l) in &options {
                 ui.selectable_value(&mut f.apply, (*k).to_string(), tl!(l));
             }
@@ -719,14 +719,9 @@ fn symbol_cell(app: &mut WordApp, ui: &mut Ui, font: &str, c: char, selected: bo
 fn symbol_ui(app: &mut WordApp, ui: &mut Ui, f: &mut SymbolForm) -> bool {
     let t = Tokens::get(ui.ctx());
     ui.set_width(GRID_COLS as f32 * CELL + 24.0);
-    ui.horizontal(|ui| {
-        for (i, l) in ["Symbols", "Special Characters"].into_iter().enumerate() {
-            if ui.selectable_label(f.tab == i as u8, tl!(l)).clicked() {
-                f.tab = i as u8;
-            }
-        }
-    });
-    ui.separator();
+    if let Some(i) = crate::dialogs::dialog_tabs(ui, &["Symbols", "Special Characters"], f.tab as usize) {
+        f.tab = i as u8;
+    }
     let mut insert: Option<(Value, String, String)> = None;
     if f.tab == 1 {
         if special_ui(app, ui, f, &mut insert, &t) {
@@ -735,7 +730,7 @@ fn symbol_ui(app: &mut WordApp, ui: &mut Ui, f: &mut SymbolForm) -> bool {
     } else {
         f.load();
         ui.horizontal(|ui| {
-            ui.label(tl!("Font:"));
+            crate::dialogs::form_label(ui, tl!("Font:"));
             let normal = tl!("(normal text)").to_string();
             let mut items = vec![normal.clone()];
             items.extend(app.previews.families());
@@ -763,7 +758,7 @@ fn symbol_ui(app: &mut WordApp, ui: &mut Ui, f: &mut SymbolForm) -> bool {
             ui.label(tl!("Subset:"));
             let current = f.selected.and_then(subset_of).unwrap_or("");
             let mut chosen = None;
-            egui::ComboBox::from_id_salt("symbol_subset").selected_text(current).width(170.0).show_ui(ui, |ui| {
+            crate::dialogs::combo("symbol_subset").selected_text(current).width(170.0).show_ui(ui, |ui| {
                 for (name, a, b) in SUBSETS {
                     let i = f.chars.partition_point(|c| (*c as u32) < *a);
                     if f.chars.get(i).is_some_and(|c| (*c as u32) <= *b) && ui.selectable_label(*name == current, *name).clicked() {
@@ -1120,10 +1115,10 @@ fn field_ui(app: &mut WordApp, ui: &mut Ui, f: &mut FieldForm) -> bool {
         // Left: category and field names.
         ui.vertical(|ui| {
             ui.set_width(200.0);
-            ui.label(egui::RichText::new(tl!("Pick a field from the list")).font(semibold(12.5)));
+            crate::dialogs::group_label(ui, tl!("Pick a field from the list"));
             ui.label(tl!("Categories:"));
             let shown = tl!(f.category.as_str()).to_string();
-            egui::ComboBox::from_id_salt("field_category").selected_text(shown).width(190.0).show_ui(ui, |ui| {
+            crate::dialogs::combo("field_category").selected_text(shown).width(190.0).show_ui(ui, |ui| {
                 for c in FIELD_CATEGORIES {
                     ui.selectable_value(&mut f.category, (*c).to_string(), tl!(c));
                 }
@@ -1146,7 +1141,7 @@ fn field_ui(app: &mut WordApp, ui: &mut Ui, f: &mut FieldForm) -> bool {
         ui.add_space(14.0);
         // Right: the field's options, or its code.
         ui.vertical(|ui| {
-            ui.label(egui::RichText::new(tl!("Field properties")).font(semibold(12.5)));
+            crate::dialogs::group_label(ui, tl!("Field properties"));
             if let Some((_, _, desc)) = FIELDS.iter().find(|(n, _, _)| *n == f.name) {
                 ui.label(egui::RichText::new(format!("{} {}", tl!("Description:"), tl!(desc))).small().color(t.text_dim));
             }
@@ -1158,7 +1153,7 @@ fn field_ui(app: &mut WordApp, ui: &mut Ui, f: &mut FieldForm) -> bool {
             } else {
                 field_options(ui, f, &t);
                 ui.add_space(4.0);
-                ui.checkbox(&mut f.preserve, tl!("Preserve formatting during updates"));
+                crate::dialogs::checkbox(ui, &mut f.preserve, tl!("Preserve formatting during updates"));
             }
         });
     });
@@ -1207,14 +1202,11 @@ fn field_options(ui: &mut Ui, f: &mut FieldForm, t: &Tokens) {
             }
             ui.label(tl!("Format:"));
             let shown = NUMBER_FORMATS.iter().find(|(v, _)| *v == f.number_format).map(|(_, l)| *l).unwrap_or("(none)");
-            egui::ComboBox::from_id_salt("field_number").selected_text(if shown == "(none)" { tl!(shown) } else { shown }).width(200.0).show_ui(
-                ui,
-                |ui| {
-                    for (v, l) in NUMBER_FORMATS {
-                        ui.selectable_value(&mut f.number_format, (*v).to_string(), if *l == "(none)" { tl!(l) } else { l });
-                    }
-                },
-            );
+            crate::dialogs::combo("field_number").selected_text(if shown == "(none)" { tl!(shown) } else { shown }).width(200.0).show_ui(ui, |ui| {
+                for (v, l) in NUMBER_FORMATS {
+                    ui.selectable_value(&mut f.number_format, (*v).to_string(), if *l == "(none)" { tl!(l) } else { l });
+                }
+            });
         }
         FieldKind::Bookmark => {
             ui.label(tl!("Bookmark name:"));
@@ -1222,7 +1214,7 @@ fn field_options(ui: &mut Ui, f: &mut FieldForm, t: &Tokens) {
                 ui.add(egui::TextEdit::singleline(&mut f.target).desired_width(200.0));
                 ui.label(egui::RichText::new(tl!("The document has no bookmarks yet.")).small().color(t.text_dim));
             } else {
-                egui::ComboBox::from_id_salt("field_bookmark").selected_text(f.target.clone()).width(200.0).show_ui(ui, |ui| {
+                crate::dialogs::combo("field_bookmark").selected_text(f.target.clone()).width(200.0).show_ui(ui, |ui| {
                     for b in &f.bookmarks {
                         ui.selectable_value(&mut f.target, b.clone(), b);
                     }
