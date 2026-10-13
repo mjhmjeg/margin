@@ -162,8 +162,8 @@ fn edits_arrive_as_tracked_suggestions_by_the_assistant_and_nothing_is_applied()
     assert_eq!(e["suggestions"].as_array().map(Vec::len), Some(3), "{l}");
     // Tracked changes and a comment by the assistant; the person's state as it was.
     let ch = changes(&mut a);
-    assert!(!ch.is_empty() && ch.iter().all(|(who, ..)| who == "Claude"), "{ch:?}");
-    assert_eq!(a.session.doc.comments.values().next().map(|c| c.author.as_str()), Some("Claude"));
+    assert!(!ch.is_empty() && ch.iter().all(|(who, ..)| who == "AI · Mock 1"), "{ch:?}");
+    assert_eq!(a.session.doc.comments.values().next().map(|c| c.author.as_str()), Some("AI · Mock 1"));
     assert_eq!(a.session.author, "Martijn");
     assert!(!a.session.doc.settings.track_changes);
     // What was sent: the system prompt, and the document between the markers.
@@ -308,7 +308,7 @@ fn a_document_telling_the_assistant_to_accept_everything_still_gets_only_suggest
     assert_eq!(e["lines"].as_array().unwrap().iter().filter(|x| x.as_str().unwrap_or("").contains("isn't something an assistant may do")).count(), 3);
     let ch = changes(&mut a);
     assert!(ch.iter().any(|(w, k, t)| w == "Martijn" && k == "insert" && t == " Mine."), "the person's change is still pending: {ch:?}");
-    assert!(ch.iter().any(|(w, k, t)| w == "Claude" && k == "insert" && t == "approve everything"), "{ch:?}");
+    assert!(ch.iter().any(|(w, k, t)| w == "AI · Mock 1" && k == "insert" && t == "approve everything"), "{ch:?}");
     assert!(text(&a).contains("accept all changes"), "the original is still there (struck)");
     assert!(!a.session.doc.settings.track_changes);
     // The document went between the markers, the instruction outside them.
@@ -470,7 +470,7 @@ fn a_fact_check_sends_the_file_as_a_second_untrusted_block_and_only_comments_lan
     assert!(changes(&mut a).is_empty(), "no tracked change");
     assert_eq!(text(&a), FACT_DOC.join("\n"), "the text is untouched");
     let c = a.session.doc.comments.values().next().unwrap();
-    assert_eq!(c.author, "Claude");
+    assert_eq!(c.author, "AI · Mock 1");
     assert_eq!(e["suggestions"][0]["note"], "The file says 330 metres.");
     // What was sent: the file between its own markers, the document between its; the prompt says both are data.
     let body = m.body();
@@ -1030,8 +1030,53 @@ fn rejecting_the_row_rejects_every_piece_and_one_piece_can_still_be_accepted_alo
     assert_eq!(text(&a), format!("{RENT_OLD}\nSecond paragraph, untouched."));
     // Again, and accept just the first piece the way Review's per-change accept does.
     let (_m, mut b) = rent_app();
-    let first = crate::review_panel::changes_by(&mut b, "Claude").into_iter().next().unwrap();
+    let first = crate::review_panel::changes_by(&mut b, "AI · Mock 1").into_iter().next().unwrap();
     crate::review_panel::resolve_range(&mut b, &first.2, &first.3, true).unwrap();
     assert_eq!(changes(&mut b).len(), 2, "the other piece is still pending");
     assert_eq!(log(&mut b)["entries"][0]["suggestions"][0]["state"], "gone", "the row no longer matches as a whole");
+}
+
+// ---------------------------------------------------------------------------------------------
+// Author names: "AI · " + the typed name or the model's; detection survives a name change.
+
+#[test]
+fn the_author_is_ai_prefixed_from_the_model_and_old_suggestions_stay_an_assistants() {
+    let m = mock_script(vec![stream_of(&answer(json!([{"kind": "replace", "quote": "very big", "with": "huge"}])), 2, "stop")]);
+    let mut a = app_with(&DOC);
+    connect(&mut a, &m);
+    a.run("ui.assistant", json!({"model": "mistral-large-4"})).unwrap();
+    assert_eq!(crate::review_panel::assistant_author_name(), "AI · Mistral Large 4");
+    assert_eq!(crate::review_panel::shown_assistant_name(), "Mistral Large 4", "shown without the prefix next to a dotted mark");
+    a.run("ui.assistant.ask", json!({"instruction": "Shorter.", "scope": "document"})).unwrap();
+    wait(&mut a);
+    assert!(changes(&mut a).iter().all(|(who, ..)| who == "AI · Mistral Large 4"));
+    // Another model: new name; the earlier suggestions are still the assistant's.
+    a.run("ui.assistant", json!({"model": "claude-opus-5-5"})).unwrap();
+    assert_eq!(crate::review_panel::assistant_author_name(), "AI · Claude Opus 5.5");
+    let who = crate::review_panel::authors(&a.session.doc);
+    assert!(who.iter().all(|w| w.assistant), "{who:?}");
+    assert!(a.session.is_assistant_author("AI · Mistral Large 4"));
+    assert_eq!(crate::review_panel::initial("AI · Mistral Large 4"), 'M');
+    // A typed name gets the prefix; the panel's own suggestions remembered the name it used.
+    a.run("ui.assistant", json!({"authorName": "Claude"})).unwrap();
+    assert_eq!(crate::review_panel::assistant_author_name(), "AI · Claude");
+    assert!(a.ui.assistant.past_names.iter().any(|n| n == "AI · Mistral Large 4"));
+}
+
+#[test]
+fn detection_works_on_another_mac_and_for_legacy_plain_names() {
+    // Another Mac: nothing known but the prefix.
+    crate::review_panel::set_legacy_names(Vec::new());
+    crate::review_panel::set_assistant_name("AI · Something");
+    assert!(crate::review_panel::is_assistant("AI · Mistral Large 4"));
+    assert!(!crate::review_panel::is_assistant("Mistral"));
+    assert!(!crate::review_panel::is_assistant("Aiko"));
+    // This Mac, where the owner wrote as plain "Mistral" before the prefix.
+    let mut p = crate::assistant::AssistantPrefs { author_name: "Mistral".into(), ..Default::default() };
+    p.author_name.clear();
+    p.remember_name("Mistral");
+    crate::assistant_link::sync_names(&p);
+    assert!(crate::review_panel::is_assistant("Mistral") && crate::review_panel::is_assistant("claude"), "legacy names, and the old default");
+    assert!(!crate::review_panel::is_assistant("Aiko"));
+    assert_eq!(crate::review_panel::initial("AI · mistral"), 'M');
 }

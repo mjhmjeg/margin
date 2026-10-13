@@ -156,7 +156,7 @@ pub fn poll(app: &mut WordApp) {
     }
     let on = app.ui.assistant.enabled && app.assistant_link.usable(&app.ui.assistant);
     crate::review_panel::set_assistant_enabled(on);
-    crate::review_panel::set_assistant_name(&app.ui.assistant.name());
+    crate::assistant_link::sync_names(&app.ui.assistant);
     sync_policy(app);
 }
 
@@ -276,7 +276,16 @@ pub fn settings_command(app: &mut WordApp, p: &Value) -> Result<Value, String> {
     // Check everything before changing anything.
     let name = match obj.get("authorName") {
         None => None,
-        Some(v) => Some(v.as_str().map(crate::assistant::clean_name).filter(|n| !n.is_empty()).ok_or("`authorName` must be a non-blank string")?),
+        // Optional: blank goes back to the name derived from the model. The "AI · " prefix is
+        // always added, so a typed one is dropped.
+        Some(v) => Some(
+            v.as_str()
+                .map(crate::assistant::clean_name)
+                .ok_or("`authorName` must be a string")?
+                .trim_start_matches(wordcraft_engine::authorship::AI_PREFIX)
+                .trim()
+                .to_string(),
+        ),
     };
     let bool_of = |k: &str| -> Result<Option<bool>, String> {
         match obj.get(k) {
@@ -343,6 +352,9 @@ pub fn settings_command(app: &mut WordApp, p: &Value) -> Result<Value, String> {
         Some(v) => Some(v.as_str().ok_or("`apiKey` must be a string")?.to_string()),
     };
     if let Some(n) = name {
+        // The old typed name stays recognised (suggestions written under it before the prefix).
+        let old = prefs.author_name.clone();
+        prefs.remember_name(&old);
         prefs.author_name = n;
     }
     if let Some(on) = allow {
@@ -389,12 +401,19 @@ pub fn settings_command(app: &mut WordApp, p: &Value) -> Result<Value, String> {
             log::info!("assistant: not listing models: {e}");
         }
     }
-    crate::review_panel::set_assistant_name(&app.ui.assistant.name());
+    crate::assistant_link::sync_names(&app.ui.assistant);
     sync_policy(app);
     if pick_folder == Some(true) {
         pick_folder_dialog(app);
     }
     Ok(settings_json(app))
+}
+
+/// Copy the effective author name ("AI · …") and the legacy names where the UI's one rule
+/// (`review_panel::is_assistant`) reads them.
+pub fn sync_names(prefs: &crate::assistant::AssistantPrefs) {
+    crate::review_panel::set_assistant_name(&prefs.name());
+    crate::review_panel::set_legacy_names(prefs.legacy_names());
 }
 
 /// Hand the session what the permissions say about comments (the engine enforces it), the

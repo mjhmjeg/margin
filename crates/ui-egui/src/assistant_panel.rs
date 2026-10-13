@@ -474,6 +474,9 @@ fn finish(app: &mut WordApp, r: Result<ChatReply, AssistantError>) {
                         lines.push(tl!("No changes suggested.").into());
                     }
                     log::info!("assistant: {} suggestions", suggestions.len());
+                    if !suggestions.is_empty() {
+                        app.ui.assistant.remember_name(&job.name);
+                    }
                     Status::Done
                 }
                 Err(e) => {
@@ -805,7 +808,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
 fn content(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let m = MarginTokens::get(ui.ctx());
-    let name = app.ui.assistant.name();
+    let name = crate::review_panel::shown_assistant_name();
     header(app, ui, &name, &t, &m);
     egui::Panel::bottom("margin_assistant_composer")
         .resizable(false)
@@ -907,7 +910,9 @@ fn entry_ui(app: &mut WordApp, ui: &mut Ui, doc: u64, i: usize, t: &Tokens, m: &
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing.y = 4.0;
             let when = if e.status == Status::Working { tl!("now").to_string() } else { e.reply_time.clone() };
-            ui.label(egui::RichText::new(format!("{} · {when}", e.author)).font(mc::font()).color(t.text_dim));
+            ui.label(
+                egui::RichText::new(format!("{} · {when}", wordcraft_engine::authorship::display_name(&e.author))).font(mc::font()).color(t.text_dim),
+            );
             let report = match (e.status, e.report.trim().is_empty()) {
                 (Status::Working, true) => tl!("Reading…").to_string(),
                 (_, false) => e.report.clone(),
@@ -1165,7 +1170,7 @@ pub fn paint_presence(app: &WordApp, painter: &egui::Painter, rects: &[Rect], la
     let y1 = y0 + c.height * s;
     painter.line_segment([pos2(x, y0), pos2(x, y1)], Stroke::new(2.0, color));
     // The name tag sits on the caret's top, 11 pt white on `assistant`.
-    let name = crate::review_panel::assistant_author_name();
+    let name = crate::review_panel::shown_assistant_name();
     let g = painter.layout_no_wrap(name, crate::theme::regular(11.0), Color32::WHITE);
     let tag = Rect::from_min_size(pos2(x - 1.0, y0 - g.size().y - 4.0), g.size() + vec2(8.0, 4.0));
     painter.rect_filled(tag, 3.0, color);

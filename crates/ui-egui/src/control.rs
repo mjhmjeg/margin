@@ -303,7 +303,7 @@ pub fn handle_outside(app: &mut WordApp, ctx: &egui::Context, req: &ControlReque
         return err("assistants outside Margin are not allowed to connect: the person has turned this off in Settings › Assistant");
     }
     let name = app.ui.assistant.name();
-    crate::review_panel::set_assistant_name(&name);
+    crate::assistant_link::sync_names(&app.ui.assistant);
     crate::assistant_link::sync_policy(app);
     let (roots, _) = wordcraft_engine::file_access::AutomationRoots::for_app(&app.ui.assistant.allowed_folders());
     let p = &req.params;

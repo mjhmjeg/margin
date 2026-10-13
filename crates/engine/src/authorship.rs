@@ -2,10 +2,13 @@
 //! by an assistant is accepted, and how typing treats the marks afterwards. The model and the
 //! file format live in `wordcraft_doc::authorship` and the docx crate.
 //!
-//! * **Who is an assistant.** One list, [`Session::assistant_authors`]: the configured name
-//!   (the host syncs it), plus every name an assistant has written under in this session
-//!   ([`Session::enter_assistant`] records it). One rule, [`name_matches`]. Every decision goes
-//!   through [`Session::is_assistant_author`]; nothing compares names anywhere else.
+//! * **Who is an assistant.** An author name starting with [`AI_PREFIX`] ("AI · "): every
+//!   assistant writes under one ([`with_ai_prefix`]), so this holds on any computer and in other
+//!   word processors. Older suggestions written without the prefix are recognised by the legacy
+//!   list, [`Session::assistant_authors`]: names the host syncs (Settings › Assistant's earlier
+//!   names, persisted on this Mac) plus every name an assistant has written under in this
+//!   session, compared by [`name_matches`]. Every decision goes through
+//!   [`Session::is_assistant_author`] ([`is_assistant_name`]); nothing compares names elsewhere.
 //! * **Accept.** Before a paragraph's changes are accepted, each assistant insertion in the
 //!   accepted range is wrapped in a `_MarginAI_<8 hex>` bookmark ([`wrap_before_accept`]); after,
 //!   the text inside is recorded as a span with the author as written on the change, the model
@@ -25,6 +28,21 @@ use crate::{CmdError, Session};
 /// The assistant's author name while the host has set none (Settings › Assistant S4).
 pub const DEFAULT_ASSISTANT_NAME: &str = "Claude";
 
+/// The prefix every assistant author name carries: "AI", a space, a middle dot, a space.
+pub const AI_PREFIX: &str = "AI · ";
+
+/// `name` with [`AI_PREFIX`] in front (never doubled); empty stays empty.
+pub fn with_ai_prefix(name: &str) -> String {
+    let n = name.trim();
+    if n.is_empty() || n.starts_with(AI_PREFIX) { n.to_string() } else { format!("{AI_PREFIX}{n}") }
+}
+
+/// The one rule for "is this author an assistant?": the name starts with [`AI_PREFIX`] (exactly:
+/// "Aiko" or "AI: x" don't), or matches one of the `legacy` names ([`name_matches`]).
+pub fn is_assistant_name<S: AsRef<str>>(author: &str, legacy: &[S]) -> bool {
+    author.trim_start().starts_with(AI_PREFIX) || legacy.iter().any(|n| name_matches(n.as_ref(), author))
+}
+
 /// The one rule for comparing author names: trimmed, case-insensitive, never empty.
 pub fn name_matches(a: &str, b: &str) -> bool {
     let (a, b) = (a.trim(), b.trim());
@@ -38,13 +56,14 @@ pub fn is_mark_name(name: &str) -> bool {
 
 /// An assistant author as chips and the status bar show it: without an `AI · ` prefix.
 pub fn display_name(author: &str) -> &str {
-    author.strip_prefix("AI · ").unwrap_or(author).trim()
+    let a = author.trim();
+    a.strip_prefix(AI_PREFIX).unwrap_or(a).trim()
 }
 
 impl Session {
     /// Is `author` (the name on a change or comment) an assistant?
     pub fn is_assistant_author(&self, author: &str) -> bool {
-        self.assistant_authors.iter().any(|n| name_matches(n, author))
+        is_assistant_name(author, &self.assistant_authors)
     }
 
     /// Remember `name` as an assistant's author name.

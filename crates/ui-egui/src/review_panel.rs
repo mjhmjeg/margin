@@ -66,16 +66,36 @@ pub fn assistant_enabled() -> bool {
     ASSISTANT_ON.get()
 }
 
-/// Every name assistants write changes under: the one list the UI decides by (and hands the
-/// engine, `assistant_link::sync_policy`). Today the configured name; more names go here.
+thread_local! {
+    // Names assistants wrote under without the "AI · " prefix (Settings › Assistant's legacy
+    // list, persisted on this Mac), copied with the configured name.
+    static LEGACY_NAMES: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(vec![DEFAULT_ASSISTANT_NAME.to_string()]);
+}
+
+/// Copy the legacy names where [`assistant_names`] reads them.
+pub fn set_legacy_names(names: Vec<String>) {
+    LEGACY_NAMES.with(|n| *n.borrow_mut() = names);
+}
+
+/// The names the legacy rule recognises besides the "AI · " prefix: the configured name and the
+/// names assistants wrote under before the prefix (handed to the engine too,
+/// `assistant_link::sync_policy`).
 pub fn assistant_names() -> Vec<String> {
-    vec![assistant_author_name()]
+    let mut v = vec![assistant_author_name()];
+    LEGACY_NAMES.with(|n| v.extend(n.borrow().iter().cloned()));
+    v
 }
 
 /// Whether `author` is an assistant: the one place the UI decides it, with the engine's rule
-/// (`wordcraft_engine::authorship::name_matches`) over [`assistant_names`].
+/// (`wordcraft_engine::authorship::is_assistant_name`: the "AI · " prefix, or a legacy name).
 pub fn is_assistant(author: &str) -> bool {
-    assistant_names().iter().any(|n| wordcraft_engine::authorship::name_matches(n, author))
+    wordcraft_engine::authorship::is_assistant_name(author, &assistant_names())
+}
+
+/// The assistant's name where the dotted mark (or the word "Assistant") already says it is one:
+/// without the "AI · " prefix. Review rows, the panel header, the toolbar toggle, the Ask rows.
+pub fn shown_assistant_name() -> String {
+    wordcraft_engine::authorship::display_name(&assistant_author_name()).to_string()
 }
 
 /// What the page and panel call an author with no name.
@@ -164,7 +184,7 @@ pub fn marks(doc: &Document) -> AuthorMarks {
 
 /// The initial on a comment tag in the page margin.
 pub fn initial(author: &str) -> char {
-    shown_name(author).chars().next().map(|c| c.to_uppercase().next().unwrap_or(c)).unwrap_or('A')
+    shown_name(wordcraft_engine::authorship::display_name(author)).chars().next().map(|c| c.to_uppercase().next().unwrap_or(c)).unwrap_or('A')
 }
 
 /// A 2 pt mark line from `a` to `b`: solid, or dotted (dots 2 pt across, 3.5 apart).
@@ -752,7 +772,9 @@ fn header(ui: &mut Ui, who: &AuthorInfo, icon: Option<&str>, date: &str, t: &Tok
             Some(i) => crate::icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(16.0, 16.0)), i, color, color),
             None => mark_line(ui.painter(), pos2(r.center().x, r.min.y + 4.0), pos2(r.center().x, r.max.y - 4.0), color, who.assistant),
         }
-        ui.label(egui::RichText::new(&who.name).font(mc::font()).color(t.text));
+        // An assistant without "AI · ": its dotted mark says so.
+        let shown = if who.assistant { wordcraft_engine::authorship::display_name(&who.name) } else { who.name.as_str() };
+        ui.label(egui::RichText::new(shown).font(mc::font()).color(t.text));
         ui.label(egui::RichText::new(crate::panes::comment_stamp(date)).font(mc::font()).color(t.text_dim));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 0.0;

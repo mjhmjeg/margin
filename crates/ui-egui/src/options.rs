@@ -42,7 +42,7 @@ pub fn length(pt: f32) -> String {
 
 /// Copy the session's settings the UI reads without the app.
 pub(crate) fn sync(app: &WordApp) {
-    crate::review_panel::set_assistant_name(&app.ui.assistant.name());
+    crate::assistant_link::sync_names(&app.ui.assistant);
     UNIT.set(app.session.units());
     DECIMAL.set(app.session.region().decimal());
 }
@@ -458,16 +458,28 @@ fn assistant(app: &mut WordApp, ui: &mut Ui) {
     assistant_key(app, ui);
     mc::section(ui, "Author", |ui| {
         mc::labelled_row(ui, "Author name", |ui| {
-            let r =
-                ui.add(egui::TextEdit::singleline(&mut app.ui.assistant.author_name).desired_width(220.0).hint_text(crate::assistant::DEFAULT_NAME));
+            // The prefix is fixed: shown before the field, never part of it.
+            ui.label(egui::RichText::new(wordcraft_engine::authorship::AI_PREFIX.trim_end()).font(mc::font()));
+            let hint = crate::i18n::fmt(tl!("{name} (from the model)"), &[("name", &app.ui.assistant.derived_name())]);
+            let before = app.ui.assistant.author_name.clone();
+            let r = ui.add(egui::TextEdit::singleline(&mut app.ui.assistant.author_name).desired_width(220.0).hint_text(hint));
+            if r.gained_focus() {
+                app.ui.assistant.remember_name(&before);
+            }
             if r.lost_focus() {
-                app.ui.assistant.author_name = app.ui.assistant.name();
+                let typed = crate::assistant::clean_name(&app.ui.assistant.author_name);
+                app.ui.assistant.author_name = typed.trim_start_matches(wordcraft_engine::authorship::AI_PREFIX).trim().to_string();
             }
             if r.changed() || r.lost_focus() {
-                crate::review_panel::set_assistant_name(&app.ui.assistant.name());
+                crate::assistant_link::sync_names(&app.ui.assistant);
             }
         });
-        mc::hint(ui, "Written into the changes and comments an assistant makes. Its mark is always dotted.");
+        let shown = crate::i18n::fmt(tl!("Shown as: {name}"), &[("name", &app.ui.assistant.name())]);
+        ui.label(egui::RichText::new(shown).font(mc::font()).color(Tokens::get(ui.ctx()).text_dim));
+        mc::hint(
+            ui,
+            "Optional. Written into the changes and comments an assistant makes, always after “AI · ”, so they are recognised anywhere. Its mark is always dotted.",
+        );
     });
     mc::section(ui, "Permissions", |ui| {
         // Required, so shown on and not changeable.

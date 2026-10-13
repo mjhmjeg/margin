@@ -470,7 +470,7 @@ fn paint_field(app: &mut WordApp, ui: &mut Ui, rect: Rect, t: &Tokens, m: &Margi
         t.accent,
     );
     let placeholder = if assistant {
-        crate::i18n::fmt(tl!("Search commands or ask {name}"), &[("name", &crate::review_panel::assistant_author_name())])
+        crate::i18n::fmt(tl!("Search commands or ask {name}"), &[("name", &crate::review_panel::shown_assistant_name())])
     } else {
         tl!("Search commands").to_string()
     };
@@ -596,7 +596,7 @@ fn paint_row(app: &WordApp, ui: &mut Ui, row: &Row, highlighted: bool, t: &Token
             resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, tl!(label)));
         }
         Row::Ask(text) => {
-            let label = crate::i18n::fmt(tl!("Ask {name} “{text}”"), &[("name", &crate::review_panel::assistant_author_name()), ("text", text)]);
+            let label = crate::i18n::fmt(tl!("Ask {name} “{text}”"), &[("name", &crate::review_panel::shown_assistant_name()), ("text", text)]);
             ask_row(ui, r, &label, t, &font);
             resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
         }

@@ -227,3 +227,39 @@ fn the_view_switch_is_a_command() {
     assert_eq!(run(&mut s, "view.authorship", json!({"value": false}))["value"], false);
     assert!(s.registry.get("view.authorship").is_some_and(|c| c.label == "Show Authorship"));
 }
+
+/// The "AI · " prefix makes an author an assistant on any computer (no names configured); an
+/// older plain name counts only through the legacy list; a person whose name starts with "Ai"
+/// never does.
+#[test]
+fn the_ai_prefix_and_legacy_names_decide_who_is_an_assistant() {
+    use crate::authorship::{display_name, is_assistant_name, with_ai_prefix};
+    let none: [&str; 0] = [];
+    assert!(is_assistant_name("AI · Mistral Large 4", &none), "another Mac: no names known");
+    assert!(!is_assistant_name("Mistral", &none));
+    assert!(is_assistant_name("Mistral", &["Mistral"]), "legacy name");
+    for person in ["Aiko", "AI Weiwei", "AI: x", "ai · lower", "Martijn"] {
+        assert!(!is_assistant_name(person, &["Mistral", "Claude"]), "{person}");
+    }
+    assert_eq!(with_ai_prefix("Mistral Large 4"), "AI · Mistral Large 4");
+    assert_eq!(with_ai_prefix("AI · Claude"), "AI · Claude", "never doubled");
+    assert_eq!(display_name(" AI · Mistral Large 4 "), "Mistral Large 4");
+
+    // Accepted text by the prefixed name and by the legacy name counts as AI; Aiko's doesn't.
+    let mut s = session("One two three.");
+    s.assistant_authors = vec!["Mistral".into()];
+    for (who, off, text) in [("AI · Mistral Large 4", 3, " big"), ("Mistral", 7, " small")] {
+        caret(&mut s, 0, off);
+        s.run_as_assistant(who, "text.insert", &json!({"text": text, "raw": true})).unwrap();
+    }
+    // Aiko is a person: her suggestion is tracked under her name.
+    s.author = "Aiko".into();
+    run(&mut s, "review.trackChanges", json!({"value": true}));
+    caret(&mut s, 0, 13 + " big".len() + " small".len());
+    run(&mut s, "text.insert", json!({"text": " end", "raw": true}));
+    run(&mut s, "review.trackChanges", json!({"value": false}));
+    assert!(s.is_assistant_author("AI · Mistral Large 4") && s.is_assistant_author("Mistral") && !s.is_assistant_author("Aiko"));
+    run(&mut s, "review.acceptAll", json!({}));
+    let (_, _, ai, _) = shares(&mut s);
+    assert_eq!(ai as usize, " big".len() + " small".len(), "Aiko's words are hers");
+}

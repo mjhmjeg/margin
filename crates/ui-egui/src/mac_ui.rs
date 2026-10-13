@@ -135,7 +135,7 @@ pub fn toolbar(app: &mut WordApp, ui: &mut Ui) {
                 // while an assistant is on; labelled with its author name), Review, Format.
                 if crate::review_panel::assistant_enabled() {
                     let open = crate::assistant_panel::visible(app);
-                    let name = app.ui.assistant.name();
+                    let name = crate::review_panel::shown_assistant_name();
                     let tip = crate::i18n::fmt(tl!("Ask {name} for suggestions"), &[("name", &name)]);
                     if panel_toggle(ui, "assistant", &name, open, 0).on_hover_text(tip).clicked() {
                         crate::assistant_panel::set_open(app, !open);
