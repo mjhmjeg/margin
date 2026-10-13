@@ -259,8 +259,10 @@ pub fn command(app: &mut WordApp, id: &str, params: &Value) -> Option<Result<Val
 
 /// `ui.assistant`: change any of `authorName` (S4), `allowOutside` (S6), `enabled` (S1),
 /// `provider` (S2, a provider id), `model` (for the chosen provider), `baseUrl` (On this Mac and
-/// Other), `apiKey` (S3, stored in the keychain for the chosen provider; write-only) and
-/// `removeKey: true`. No value reads them. Replies never contain the key, only `hasKey`.
+/// Other), `apiKey` (S3, stored in the keychain for the chosen provider; write-only),
+/// `removeKey: true`, and the permissions of S5: `comments` (add and reply to comments),
+/// `addFolder` / `removeFolder` (the folders assistants may read from, read-only) and
+/// `pickFolder: true` (the native folder picker, which adds its answer). No value reads them. Replies never contain the key, only `hasKey`.
 pub fn settings_command(app: &mut WordApp, p: &Value) -> Result<Value, String> {
     let none = serde_json::Map::new();
     let obj = match p {
@@ -283,6 +285,28 @@ pub fn settings_command(app: &mut WordApp, p: &Value) -> Result<Value, String> {
     let allow = bool_of("allowOutside")?;
     let enabled = bool_of("enabled")?;
     let remove_key = bool_of("removeKey")?;
+    let comments = bool_of("comments")?;
+    let pick_folder = bool_of("pickFolder")?;
+    let add_folder = match obj.get("addFolder") {
+        None => None,
+        Some(v) => {
+            let f = crate::assistant::check_folder(v.as_str().ok_or("`addFolder` must be a string")?)?;
+            if !prefs.folders.contains(&f) && prefs.folders.len() >= crate::assistant::MAX_FOLDERS {
+                return Err(format!("at most {} folders can be shared", crate::assistant::MAX_FOLDERS));
+            }
+            Some(f)
+        }
+    };
+    let remove_folder = match obj.get("removeFolder") {
+        None => None,
+        Some(v) => {
+            let raw = v.as_str().ok_or("`removeFolder` must be a string")?.trim();
+            // As it is listed, or as the file system names it now.
+            let canon = std::fs::canonicalize(raw).ok().map(|p| p.to_string_lossy().into_owned());
+            let found = prefs.folders.iter().find(|f| f.as_str() == raw || Some(f.as_str()) == canon.as_deref()).cloned();
+            Some(found.ok_or("that folder isn't in the list")?)
+        }
+    };
     let provider = match obj.get("provider") {
         None => None,
         Some(v) => {
@@ -328,6 +352,17 @@ pub fn settings_command(app: &mut WordApp, p: &Value) -> Result<Value, String> {
     if let Some(on) = enabled {
         prefs.enabled = on;
     }
+    if let Some(on) = comments {
+        prefs.comments = on;
+    }
+    if let Some(f) = add_folder
+        && !prefs.folders.contains(&f)
+    {
+        prefs.folders.push(f);
+    }
+    if let Some(f) = remove_folder {
+        prefs.folders.retain(|x| *x != f);
+    }
     if let Some(p) = provider {
         prefs.provider = p.id().to_string();
     }
@@ -353,7 +388,22 @@ pub fn settings_command(app: &mut WordApp, p: &Value) -> Result<Value, String> {
         }
     }
     crate::review_panel::set_assistant_name(&app.ui.assistant.name());
+    sync_policy(app);
+    if pick_folder == Some(true) {
+        pick_folder_dialog(app);
+    }
     Ok(settings_json(app))
+}
+
+/// Hand the session what the permissions say about comments (the engine enforces it).
+pub fn sync_policy(app: &mut WordApp) {
+    app.session.assistant_comments = app.ui.assistant.comments;
+}
+
+/// The "+" of Read files in these folders: the native folder picker; its answer is added to the
+/// list when it arrives.
+fn pick_folder_dialog(app: &mut WordApp) {
+    let _ = app.ask_file(crate::file_dialogs::FileDialogRequest::Folder, crate::file_dialogs::AfterPick::AssistantFolder);
 }
 
 /// The settings as `ui.assistant` reports them.
@@ -619,9 +669,201 @@ mod tests {
     fn hostile_params_never_panic() {
         let mut a = app();
         for id in ["ui.assistant", "ui.assistant.test", "ui.assistant.models"] {
-            for p in [json!(null), json!(1), json!("x"), json!({"refresh": "x"}), json!({"apiKey": null}), json!({"baseUrl": "é".repeat(5000)})] {
+            for p in [
+                json!(null),
+                json!(1),
+                json!("x"),
+                json!({"refresh": "x"}),
+                json!({"apiKey": null}),
+                json!({"baseUrl": "é".repeat(5000)}),
+                json!({"addFolder": "é".repeat(5000)}),
+                json!({"addFolder": "\0"}),
+                json!({"addFolder": "../../.."}),
+                json!({"removeFolder": "\0"}),
+                json!({"removeFolder": ["a"]}),
+                json!({"comments": 1, "folders": 5}),
+                json!({"pickFolder": null}),
+            ] {
                 let _ = a.run(id, p);
             }
         }
+    }
+
+    /// A fresh scratch folder holding `shared/a.txt`, `shared/sub/b.md`, `other/c.txt` and `outside/secret.txt`.
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let base = std::env::temp_dir().join(format!("margin-folders-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        for d in ["shared/sub", "other", "outside"] {
+            std::fs::create_dir_all(base.join(d)).unwrap();
+        }
+        std::fs::write(base.join("shared/a.txt"), "The tower is 330 metres tall.").unwrap();
+        std::fs::write(base.join("shared/sub/b.md"), "Paris is in France.").unwrap();
+        std::fs::write(base.join("other/c.txt"), "Other file.").unwrap();
+        std::fs::write(base.join("outside/secret.txt"), "Secret.").unwrap();
+        std::fs::canonicalize(&base).unwrap()
+    }
+
+    fn s(p: &std::path::Path) -> String {
+        p.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn the_folder_list_and_the_comments_switch_are_settings_that_persist() {
+        let base = scratch("persist");
+        let mut a = app();
+        let r = a.run("ui.assistant", json!({})).unwrap();
+        assert_eq!(r["comments"], true, "comments are on by default");
+        assert_eq!(r["folders"], json!([]), "no folder: no file access");
+        let r = a.run("ui.assistant", json!({"addFolder": s(&base.join("shared"))})).unwrap();
+        assert_eq!(r["folders"], json!([s(&base.join("shared"))]));
+        // Another route to the same folder is the same entry; a second folder joins the list.
+        a.run("ui.assistant", json!({"addFolder": format!("{}/sub/..", s(&base.join("shared")))})).unwrap();
+        a.run("ui.assistant", json!({"addFolder": s(&base.join("other")), "comments": false})).unwrap();
+        assert_eq!(a.ui.assistant.folders.len(), 2);
+        assert!(!a.ui.assistant.comments && !a.session.assistant_comments, "the engine is told");
+        // Saved in ui.json and back.
+        let back = crate::UiState::from_json(&serde_json::to_vec(&a.ui).unwrap()).unwrap().assistant;
+        assert_eq!(back.folders, a.ui.assistant.folders);
+        assert!(!back.comments);
+        // A list that came back damaged falls back to the defaults, not to a crash.
+        let odd = crate::UiState::from_json(br#"{"assistant": {"folders": 5, "comments": "no"}}"#).unwrap().assistant;
+        assert!(odd.folders.is_empty() && odd.comments);
+        // Remove: as listed, and by another route to it.
+        a.run("ui.assistant", json!({"removeFolder": s(&base.join("other"))})).unwrap();
+        a.run("ui.assistant", json!({"removeFolder": format!("{}/../shared", s(&base.join("other")))})).unwrap();
+        assert!(a.ui.assistant.folders.is_empty());
+        assert!(a.run("ui.assistant", json!({"removeFolder": s(&base.join("shared"))})).is_err(), "not in the list");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn the_folder_list_refuses_what_is_not_a_folder() {
+        let base = scratch("refuse");
+        let mut a = app();
+        for junk in [
+            json!({"addFolder": s(&base.join("shared/a.txt"))}),
+            json!({"addFolder": s(&base.join("nope"))}),
+            json!({"addFolder": "/"}),
+            json!({"addFolder": ""}),
+            json!({"addFolder": "a\nb"}),
+            json!({"addFolder": 5}),
+            json!({"addFolder": null}),
+            json!({"removeFolder": 5}),
+            json!({"comments": "no"}),
+            json!({"pickFolder": "yes"}),
+        ] {
+            assert!(a.run("ui.assistant", junk.clone()).is_err(), "{junk}");
+        }
+        assert!(a.ui.assistant.folders.is_empty());
+        // A hand-edited ui.json can't put the top of the file system, a relative path or a flood in force.
+        a.ui.assistant.folders = vec!["/".into(), "relative".into(), s(&base.join("shared"))];
+        assert_eq!(a.ui.assistant.allowed_folders(), vec![s(&base.join("shared"))]);
+        a.ui.assistant.folders = (0..100).map(|i| s(&base.join(format!("f{i}")))).collect();
+        assert_eq!(a.ui.assistant.allowed_folders().len(), crate::assistant::MAX_FOLDERS);
+        // The limit holds for adding too.
+        a.ui.assistant.folders = (0..crate::assistant::MAX_FOLDERS).map(|i| s(&base.join(format!("f{i}")))).collect();
+        assert!(a.run("ui.assistant", json!({"addFolder": s(&base.join("shared"))})).unwrap_err().contains("at most"));
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn outside_assistants_cannot_change_the_folders_or_the_comments_switch() {
+        let base = scratch("deny");
+        let mut a = app();
+        a.run("ui.assistant", json!({"addFolder": s(&base.join("shared"))})).unwrap();
+        let before = a.ui.assistant.clone();
+        for (m, p) in [
+            ("engine.execute", json!({"command": "ui.assistant", "params": {"addFolder": s(&base.join("outside"))}})),
+            ("engine.execute", json!({"command": "ui.assistant", "params": {"removeFolder": s(&base.join("shared"))}})),
+            ("engine.execute", json!({"command": "ui.assistant", "params": {"comments": false}})),
+            ("engine.execute", json!({"command": "ui.assistant", "params": {"pickFolder": true}})),
+            ("ui.assistant", json!({"addFolder": "/etc"})),
+            ("ui.assistant", json!({"comments": false})),
+            ("command", json!({"id": "ui.assistant", "params": {"addFolder": s(&base.join("outside"))}})),
+            ("engine.execute", json!({"command": "ui.assistant.facts", "params": {}})),
+            ("engine.execute", json!({"command": "ui.assistant.ask", "params": {"instruction": "x", "file": s(&base.join("shared/a.txt"))}})),
+        ] {
+            let r = outside(&mut a, m, p);
+            assert_eq!(r["ok"], false, "{m}: {r}");
+            assert!(r["error"].as_str().unwrap_or_default().starts_with("not allowed for assistants: "), "{r}");
+        }
+        assert_eq!(a.ui.assistant, before);
+        assert!(a.assistant_panel.picker.is_none());
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn outside_assistants_read_files_only_from_the_allowed_folders() {
+        let base = scratch("outside-read");
+        let mut a = app();
+        let open =
+            |a: &mut WordApp, p: &std::path::Path| outside(a, "engine.execute", json!({"command": "insert.textFromFile", "params": {"path": s(p)}}));
+        // The default: no folder, no file.
+        let r = open(&mut a, &base.join("shared/a.txt"));
+        assert_eq!(r["ok"], false, "{r}");
+        assert!(r["error"].as_str().unwrap().contains("read authority is absent"), "{r}");
+        assert!(r["error"].as_str().unwrap().contains("Settings"), "says where to allow folders: {r}");
+        let r = outside(&mut a, "engine.execute", json!({"command": "file.open", "params": {"path": s(&base.join("shared/a.txt"))}}));
+        assert_eq!(r["ok"], false, "{r}");
+        // One folder allowed: files inside (also below it) are readable, others are not.
+        a.run("ui.assistant", json!({"addFolder": s(&base.join("shared"))})).unwrap();
+        let r = open(&mut a, &base.join("shared/a.txt"));
+        assert_eq!(r["ok"], true, "{r}");
+        assert!(a.session.doc.plain_text(wordcraft_doc::StoryRef::Body).contains("330 metres"));
+        assert_eq!(open(&mut a, &base.join("shared/sub/b.md"))["ok"], true);
+        for p in [
+            base.join("other/c.txt"),
+            base.join("outside/secret.txt"),
+            std::path::PathBuf::from(format!("{}/../outside/secret.txt", s(&base.join("shared")))),
+        ] {
+            let r = open(&mut a, &p);
+            assert_eq!(r["ok"], false, "{p:?}: {r}");
+            assert!(r["error"].as_str().unwrap().contains("outside the read root"), "{r}");
+        }
+        // Several folders: any of them.
+        a.run("ui.assistant", json!({"addFolder": s(&base.join("other"))})).unwrap();
+        assert_eq!(open(&mut a, &base.join("other/c.txt"))["ok"], true);
+        // A link inside an allowed folder that leads out is outside.
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(base.join("outside/secret.txt"), base.join("shared/leak.txt")).unwrap();
+            let r = open(&mut a, &base.join("shared/leak.txt"));
+            assert_eq!(r["ok"], false, "{r}");
+        }
+        // The person's own commands are never held to the list.
+        let r = inside(&mut a, "engine.execute", json!({"command": "insert.textFromFile", "params": {"path": s(&base.join("outside/secret.txt"))}}));
+        assert_eq!(r["ok"], true, "{r}");
+        // Writes are as they were: the folder list says nothing about them.
+        let out = base.join("outside/saved.txt");
+        let r = outside(&mut a, "engine.execute", json!({"command": "file.saveAs", "params": {"path": s(&out)}}));
+        assert_eq!(r["ok"], true, "{r}");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn with_comments_off_outside_assistants_are_refused_new_comments_and_replies() {
+        let mut a = app();
+        a.session.run("text.insert", &json!({"text": "Hello world"})).unwrap();
+        let r = outside(&mut a, "engine.execute", json!({"command": "review.newComment", "params": {"text": "ok while on"}}));
+        assert_eq!(r["ok"], true, "{r}");
+        let id = a.session.run("review.comments", &json!({})).unwrap()[0]["id"].clone();
+        a.run("ui.assistant", json!({"comments": false})).unwrap();
+        for (m, p) in [
+            ("engine.execute", json!({"command": "review.newComment", "params": {"text": "x"}})),
+            ("review.newComment", json!({"text": "x"})),
+            ("engine.execute", json!({"command": "review.reply", "params": {"id": id, "text": "x"}})),
+            ("review.reply", json!({"id": id, "text": "x"})),
+        ] {
+            let r = outside(&mut a, m, p);
+            assert_eq!(r["ok"], false, "{m}: {r}");
+            assert!(r["error"].as_str().unwrap_or_default().starts_with("not allowed for assistants: "), "{r}");
+        }
+        assert_eq!(a.session.doc.comments.len(), 1);
+        // The person still can, and tracked text edits by assistants are not affected.
+        inside(&mut a, "engine.execute", json!({"command": "review.newComment", "params": {"text": "mine"}}));
+        assert_eq!(a.session.doc.comments.len(), 2);
+        assert_eq!(outside(&mut a, "engine.execute", json!({"command": "text.insert", "params": {"text": "!"}}))["ok"], true);
+        a.run("ui.assistant", json!({"comments": true})).unwrap();
+        assert_eq!(outside(&mut a, "engine.execute", json!({"command": "review.newComment", "params": {"text": "again"}}))["ok"], true);
     }
 }

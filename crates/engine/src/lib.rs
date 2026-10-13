@@ -8,6 +8,7 @@
 
 pub mod assistant;
 pub mod assistant_edits;
+pub mod assistant_source;
 pub mod catalog;
 pub mod cmd;
 pub mod file_access;

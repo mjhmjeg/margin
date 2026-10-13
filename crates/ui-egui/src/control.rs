@@ -174,6 +174,18 @@ pub fn handle(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> O
             app.synthetic.push(egui::Event::PointerMoved(egui::pos2(x, y)));
             ok(json!({"queued": true}))
         }
+        "ui.scroll" => {
+            // A wheel turn of `dy` points (negative: down) with the pointer at x/y.
+            let (Some(x), Some(y), Some(dy)) = (f("x"), f("y"), f("dy")) else { return err("missing x/y/dy") };
+            app.synthetic.push(egui::Event::PointerMoved(egui::pos2(x, y)));
+            app.synthetic.push(egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, dy.clamp(-5000.0, 5000.0)),
+                phase: egui::TouchPhase::Move,
+                modifiers: mods(p),
+            });
+            ok(json!({"queued": true}))
+        }
         "ui.press" | "ui.release" => {
             let (Some(x), Some(y)) = (f("x"), f("y")) else { return err("missing x/y") };
             let pos = egui::pos2(x, y);
@@ -265,8 +277,8 @@ pub fn handle(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> O
 /// Methods that feed raw pointer or keyboard input (or the menu bar) to the window: they would
 /// reach the Review panel's Accept and Reject buttons and the Track Changes shortcut, which no
 /// command check can see, so assistants don't get them. Everything an assistant needs is a command.
-const RAW_INPUT: [&str; 10] =
-    ["ui.click", "ui.clickText", "ui.move", "ui.press", "ui.release", "ui.drag", "ui.key", "ui.text", "ui.menu", "app.quit"];
+const RAW_INPUT: [&str; 11] =
+    ["ui.scroll", "ui.click", "ui.clickText", "ui.move", "ui.press", "ui.release", "ui.drag", "ui.key", "ui.text", "ui.menu", "app.quit"];
 
 /// Methods that only look: they are answered as they are.
 const LOOKING: [&str; 7] = ["engine.commands", "document.inspect", "ui.inspect", "ui.parity", "ui.screenshot", "ui.render", "ui.resize"];
@@ -281,12 +293,19 @@ const LOOKING: [&str; 7] = ["engine.commands", "document.inspect", "ui.inspect",
 ///   tracking off, author changes…) and, when it changes the document, runs with track changes
 ///   forced on under the configured assistant name; the person's tracking state and author come
 ///   back afterwards.
+/// * Files a command reads (`file.open`, `insert.picture`, …) must lie inside the folders of
+///   Settings › Assistant › "Read files in these folders" (none: no file is read): the MCP
+///   sandbox's read root, with the person's list ([`wordcraft_engine::file_access`]). What
+///   commands write is as it was.
+/// * With "Add and reply to comments" off, `review.newComment` / `review.reply` are refused.
 pub fn handle_outside(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> Outcome {
     if !app.ui.assistant.allow_outside {
         return err("assistants outside Margin are not allowed to connect: the person has turned this off in Settings › Assistant");
     }
     let name = app.ui.assistant.name();
     crate::review_panel::set_assistant_name(&name);
+    crate::assistant_link::sync_policy(app);
+    let (roots, _) = wordcraft_engine::file_access::AutomationRoots::for_app(&app.ui.assistant.allowed_folders());
     let p = &req.params;
     let command: Option<(String, Value)> = match req.method.as_str() {
         m if RAW_INPUT.contains(&m) => {
@@ -301,12 +320,12 @@ pub fn handle_outside(app: &mut WordApp, ctx: &egui::Context, req: &ControlReque
         }
         other => Some((other.to_string(), p.clone())),
     };
-    let Some((id, params)) = command else { return handle(app, ctx, req) };
+    let Some((id, params)) = command else { return wordcraft_engine::file_access::confine(Some(&roots), || handle(app, ctx, req)) };
     if let Some(why) = wordcraft_engine::assistant::denied(&app.session, &id, &params, &name) {
         return err(why);
     }
     let scope = app.session.enter_assistant(&name, &id);
-    let out = handle(app, ctx, req);
+    let out = wordcraft_engine::file_access::confine(Some(&roots), || handle(app, ctx, req));
     app.session.leave_assistant(scope, &id);
     out
 }

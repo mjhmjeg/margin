@@ -37,6 +37,10 @@ pub fn denied(s: &Session, id: &str, params: &Value, assistant: &str) -> Option<
         }
         "tools.macros" | "tools.recordMacro" => no("a macro replays commands outside this check"),
         "review.restrict" => no("document protection is the person's to change"),
+        "review.newComment" | "review.reply" if !s.assistant_comments => {
+            no("the person has turned off comments by assistants in Settings › Assistant")
+        }
+        "review.editComment" if !s.assistant_comments => no("the person has turned off comments by assistants in Settings › Assistant"),
         "review.deleteComment" | "review.editComment" => {
             let own = params
                 .get("id")
@@ -221,5 +225,29 @@ mod tests {
         assert_eq!(s.author, "Martijn");
         // The new document is not tracked: the old document's setting was not carried over.
         assert!(!s.doc.settings.track_changes);
+    }
+
+    #[test]
+    fn with_comments_off_assistants_cannot_add_or_reply_but_the_person_can() {
+        let mut s = session();
+        s.run_as_assistant("Claude", "review.newComment", &json!({"text": "first"})).unwrap();
+        let id = s.run("review.comments", &json!({})).unwrap()[0]["id"].clone();
+        s.assistant_comments = false;
+        for (cmd, p) in [
+            ("review.newComment", json!({"text": "x"})),
+            ("review.reply", json!({"id": id, "text": "x"})),
+            ("review.editComment", json!({"id": id, "text": "x"})),
+        ] {
+            let e = s.run_as_assistant("Claude", cmd, &p).unwrap_err().to_string();
+            assert!(e.starts_with("not allowed for assistants: ") && e.contains("comments"), "{cmd}: {e}");
+        }
+        // Its own earlier comment can still be removed, and the person's commands are not affected.
+        s.run("review.newComment", &json!({"text": "mine"})).unwrap();
+        s.run("review.reply", &json!({"id": id, "text": "thanks"})).unwrap();
+        s.run_as_assistant("Claude", "review.deleteComment", &json!({"id": id})).unwrap();
+        // Tracked edits are not comments.
+        s.run_as_assistant("Claude", "text.insert", &json!({"text": "!"})).unwrap();
+        s.assistant_comments = true;
+        s.run_as_assistant("Claude", "review.newComment", &json!({"text": "again"})).unwrap();
     }
 }

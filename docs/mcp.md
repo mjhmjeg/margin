@@ -87,8 +87,14 @@ config works across the suite) keep the agent to the folders you give it:
   given once (`--flag <dir>` or `--flag=<dir>`).
 
 The flags confine the headless server; `--connect` with them is an error, since the server would
-otherwise talk to an app that isn't confined. WordCraft's desktop app has no equivalent flags yet,
-so a running app (`wordcraft --control`) is not confined.
+otherwise talk to an app that isn't confined. The desktop app has no flags: a running app
+(`wordcraft --control`, reached through `wordcraft-cli mcp --connect`) confines what assistants
+*read* to the folders listed in Settings › Assistant › "Read files in these folders" (the same
+check as the read root, with that list: several folders, none by default, so no file can be read
+until one is added; a refused path says so). What commands write is not limited by that list. The
+person's own commands are never held to it, and assistants cannot change the list (`ui.assistant`
+is refused to them). The built-in assistant's "Check facts against a file…" reads only from the
+same list. Headless `wordcraft-cli mcp` ignores the Settings list and uses its own flags.
 
 What the roots do not cover: commands that take no path (`text.insert`, `execute` of anything that
 works on the open document) can still read and change that document, and `get_text` and

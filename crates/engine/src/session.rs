@@ -299,6 +299,10 @@ pub struct Session {
     pub registry: Arc<Registry>,
     /// Author name for comments and tracked changes.
     pub author: String,
+    /// Settings › Assistant › "Add and reply to comments": when false, assistants (the built-in
+    /// one and the ones outside the app) may not add comments or replies
+    /// ([`crate::assistant::denied`]). The host sets it; the person's own commands ignore it.
+    pub assistant_comments: bool,
     /// Initials for comments (File › Options › General); empty = the name's initials.
     pub initials: String,
     /// Format painter: copied formatting waiting to be applied (and whether it stays on).
@@ -528,6 +532,7 @@ impl Session {
             page_hint: 0,
             registry: Arc::new(crate::cmd::registry()),
             author: "WordCraft User".into(),
+            assistant_comments: true,
             initials: String::new(),
             painter: None,
             status: String::new(),
@@ -936,6 +941,8 @@ impl Session {
             page_hint: _,
             registry: _,
             author: _,
+            // A preference of the person's, like `prefs`.
+            assistant_comments: _,
             initials: _,
             painter: _,
             status: _,

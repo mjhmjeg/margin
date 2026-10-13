@@ -7,6 +7,9 @@
 //!   its own tracked change (or comment) under the assistant's author name, through
 //!   `Session::run_as_assistant`, the same choke point and deny list outside assistants go
 //!   through. Nothing is accepted until the person accepts it here or in Review.
+//! * "Check facts against a file…" (K4) sends a second untrusted block, the text of a file inside
+//!   the folders allowed in Settings › Assistant (read-only, see
+//!   `wordcraft_engine::assistant_source`), and only comments land.
 //! * Nothing is sent while the S1 switch is off or no provider is usable. Stop drops the stream
 //!   and everything that would have come of it.
 //! * The work log is kept per document for the session (in memory, not saved).
@@ -20,6 +23,7 @@ use egui::{Color32, Rect, Sense, Stroke, Ui, pos2, vec2};
 use serde_json::{Value, json};
 use wordcraft_assistant::{AssistantError, ChatReply};
 use wordcraft_engine::assistant_edits::{self as edits, Applied, EditKind, ScopeKind, ScopeText};
+use wordcraft_engine::assistant_source as source;
 use wordcraft_engine::doc::Pos;
 
 use crate::WordApp;
@@ -95,6 +99,18 @@ struct Job {
     quotes: usize,
     presence: Option<Pos>,
     name: String,
+    /// A fact check: only comments are made.
+    facts: bool,
+}
+
+/// The list of files "Check facts against a file…" offers, drawn as a window until one is
+/// picked or the window is closed.
+pub struct FilePicker {
+    /// What to ask about the file.
+    pub instruction: String,
+    pub files: Vec<std::path::PathBuf>,
+    /// The scope the ask was opened with.
+    pub scope: ScopeKind,
 }
 
 /// The panel's state.
@@ -106,6 +122,8 @@ pub struct AssistantPanel {
     pub draft: String,
     logs: HashMap<u64, Vec<Entry>>,
     job: Option<Job>,
+    /// The file list of "Check facts against a file…" while it is open.
+    pub picker: Option<FilePicker>,
     /// (document, revision) the suggestion states were last checked at.
     checked: (u64, u64),
 }
@@ -162,6 +180,19 @@ fn refusal(app: &mut WordApp) -> Option<String> {
 
 /// Ask the assistant: `instruction` about `kind`. Opens the panel; the answer arrives in [`poll`].
 pub fn ask(app: &mut WordApp, instruction: &str, kind: ScopeKind) -> Result<Value, String> {
+    ask_with(app, instruction, kind, None)
+}
+
+/// "Check facts against a file…": [`ask`], with the text of the file at `path` (which must lie
+/// inside the allowed folders) as a second untrusted block; only comments come back.
+pub fn ask_file(app: &mut WordApp, instruction: &str, kind: ScopeKind, path: &str) -> Result<Value, String> {
+    ask_with(app, instruction, kind, Some(path))
+}
+
+/// The ask the file picker sends when the person didn't write one.
+pub const FACT_CHECK: &str = "Check the facts in this against the file.";
+
+fn ask_with(app: &mut WordApp, instruction: &str, kind: ScopeKind, file: Option<&str>) -> Result<Value, String> {
     if let Some(why) = refusal(app) {
         return Err(why);
     }
@@ -177,12 +208,20 @@ pub fn ask(app: &mut WordApp, instruction: &str, kind: ScopeKind) -> Result<Valu
         return Err(tl!("Choose a model in Settings › Assistant first.").into());
     };
     let scope = edits::scope(&app.session, kind).map_err(|e| capitalise(&e))?;
+    let source = match file {
+        None => None,
+        Some(path) => Some(source::read(path, &app.ui.assistant.allowed_folders()).map_err(|e| capitalise(&e))?),
+    };
+    crate::assistant_link::sync_policy(app);
     let name = app.ui.assistant.name();
     let doc = app.session.document_id();
     let mut entry = Entry {
         time: now_hm(),
         instruction: instruction.chars().take(edits::MAX_INSTRUCTION_CHARS).collect(),
-        scope: scope_label(&scope),
+        scope: match &source {
+            Some(src) => format!("{} · {}", scope_label(&scope), src.name),
+            None => scope_label(&scope),
+        },
         author: name.clone(),
         reply_time: String::new(),
         status: Status::Working,
@@ -196,12 +235,20 @@ pub fn ask(app: &mut WordApp, instruction: &str, kind: ScopeKind) -> Result<Valu
             &[("n", &scope.words().to_string())],
         ));
     }
+    if let Some(src) = source.as_ref().filter(|s| s.trimmed) {
+        // Same kind of line as the scope's: say what the model did not see.
+        log::info!("assistant: source {} trimmed to {} of {} characters", src.name, src.text.chars().count(), src.total_chars);
+        entry.lines.push(crate::i18n::fmt(
+            tl!("Only the first {n} words of {file} were sent: the file is longer than an ask can take."),
+            &[("n", &src.words().to_string()), ("file", &src.name)],
+        ));
+    }
     let request = wordcraft_assistant::ChatRequest {
         model,
-        system: Some(edits::system_prompt(&name)),
+        system: Some(edits::system_prompt_for(&name, source.is_some())),
         messages: vec![wordcraft_assistant::Message {
             role: wordcraft_assistant::Role::User,
-            content: edits::user_message(&entry.instruction, &scope, &edits::nonce()),
+            content: edits::user_message_with(&entry.instruction, &scope, &edits::nonce(), source.as_ref()),
         }],
         max_tokens: Some(MAX_TOKENS),
     };
@@ -213,10 +260,36 @@ pub fn ask(app: &mut WordApp, instruction: &str, kind: ScopeKind) -> Result<Valu
     }
     let index = log.len() - 1;
     let presence = scope.start();
-    app.assistant_panel.job = Some(Job { doc, entry: index, scope, rx, stop, buf: String::new(), quotes: 0, presence, name });
+    let facts = source.is_some();
+    app.assistant_panel.job = Some(Job { doc, entry: index, scope, rx, stop, buf: String::new(), quotes: 0, presence, name, facts });
     set_open(app, true);
     app.assistant_panel.scope = kind;
     Ok(json!({"started": true, "scope": kind.id()}))
+}
+
+/// Whether "Check facts against a file…" is offered: the assistant is usable and at least one
+/// folder is allowed.
+pub fn facts_available(app: &WordApp) -> bool {
+    !app.ui.assistant.allowed_folders().is_empty()
+}
+
+/// Open the list of files in the allowed folders. The number of files listed; an error says why
+/// there is nothing to pick from.
+pub fn open_file_picker(app: &mut WordApp, kind: ScopeKind) -> Result<usize, String> {
+    if let Some(why) = refusal(app) {
+        return Err(why);
+    }
+    let folders = app.ui.assistant.allowed_folders();
+    if folders.is_empty() {
+        return Err(tl!("Allow a folder in Settings › Assistant first: “Read files in these folders”.").into());
+    }
+    let files = source::list(&folders);
+    if files.is_empty() {
+        return Err(tl!("No text files were found in the allowed folders.").into());
+    }
+    let n = files.len();
+    app.assistant_panel.picker = Some(FilePicker { instruction: FACT_CHECK.into(), files, scope: kind });
+    Ok(n)
 }
 
 fn capitalise(s: &str) -> String {
@@ -354,7 +427,12 @@ fn finish(app: &mut WordApp, r: Result<ChatReply, AssistantError>) {
             Ok(answer) => {
                 report = answer.report;
                 lines.extend(answer.skipped);
-                let out = edits::apply(&mut app.session, &job.name, &job.scope, &answer.edits);
+                crate::assistant_link::sync_policy(app);
+                let out = if job.facts {
+                    edits::apply_comments_only(&mut app.session, &job.name, &job.scope, &answer.edits)
+                } else {
+                    edits::apply(&mut app.session, &job.name, &job.scope, &answer.edits)
+                };
                 lines.extend(out.log);
                 suggestions = out.applied.into_iter().map(|applied| Suggestion { applied, state: SugState::Pending }).collect::<Vec<_>>();
                 if matches!(reply.stop_reason.as_deref(), Some("max_tokens" | "length")) {
@@ -532,7 +610,19 @@ pub fn command(app: &mut WordApp, id: &str, p: &Value) -> Option<Result<Value, S
                     None => return Some(Err("`scope` must be selection, section or document".into())),
                 },
             };
-            ask(app, &instruction, kind)
+            match p.get("file") {
+                None | Some(Value::Null) => ask(app, &instruction, kind),
+                Some(Value::String(path)) => {
+                    let instruction = if instruction.trim().is_empty() { FACT_CHECK.to_string() } else { instruction };
+                    ask_file(app, &instruction, kind, path)
+                }
+                Some(_) => Err("`file` must be a path".into()),
+            }
+        }
+        "ui.assistant.facts" => {
+            // The quick ask: list the files in the allowed folders.
+            let kind = if app.session.sel.is_collapsed() { ScopeKind::Document } else { ScopeKind::Selection };
+            open_file_picker(app, kind).map(|n| json!({"files": n}))
         }
         "ui.assistant.stop" => Ok(json!({"stopped": stop(app)})),
         "ui.assistant.panel" => {
@@ -565,6 +655,66 @@ pub fn command(app: &mut WordApp, id: &str, p: &Value) -> Option<Result<Value, S
 
 // ---------------------------------------------------------------------------------------------
 // Drawing
+
+/// "Check facts against a file…": the files in the allowed folders, one click to ask. Nothing
+/// outside those folders can be chosen: only the listed files are offered, and the ask checks
+/// the path again.
+pub fn show_file_picker(app: &mut WordApp, ctx: &egui::Context) {
+    let Some(p) = app.assistant_panel.picker.take() else { return };
+    let t = Tokens::get(ctx);
+    let m = MarginTokens::get(ctx);
+    let folders = app.ui.assistant.allowed_folders();
+    let mut open = true;
+    let mut chosen: Option<std::path::PathBuf> = None;
+    egui::Window::new(tl!("Check facts against a file"))
+        .id(egui::Id::new("assistant_file_picker"))
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, -20.0))
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.set_width(480.0);
+            mc::hint(ui, tl!("Choose a file from the folders you allowed. It is only read, never changed, and the assistant answers with comments on claims the file doesn’t support."));
+            ui.add_space(8.0);
+            egui::ScrollArea::vertical().max_height(300.0).auto_shrink([false, true]).show(ui, |ui| {
+                for f in &p.files {
+                    let shown = shown_path(f, &folders);
+                    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::click());
+                    if resp.hovered() {
+                        ui.painter().rect_filled(r, 4.0, t.hover);
+                    }
+                    let clip = ui.painter().with_clip_rect(r.shrink2(vec2(8.0, 0.0)));
+                    clip.text(pos2(r.min.x + 8.0, r.center().y), egui::Align2::LEFT_CENTER, shown, mc::font(), t.text);
+                    if resp.clicked() {
+                        chosen = Some(f.clone());
+                    }
+                }
+            });
+        });
+    let _ = &m;
+    if let Some(f) = chosen {
+        let (instruction, kind) = (p.instruction.clone(), p.scope);
+        match ask_file(app, &instruction, kind, &f.to_string_lossy()) {
+            Ok(_) => {}
+            Err(e) => app.status(e),
+        }
+    } else if open {
+        app.assistant_panel.picker = Some(p);
+    }
+}
+
+/// A listed file as the person knows it: below its allowed folder, with the folder's name first.
+fn shown_path(f: &std::path::Path, folders: &[String]) -> String {
+    for folder in folders {
+        let base = std::path::Path::new(folder);
+        let canon = std::fs::canonicalize(base).unwrap_or_else(|_| base.to_path_buf());
+        if let Ok(rest) = f.strip_prefix(&canon) {
+            let top = canon.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            return format!("{top}/{}", rest.to_string_lossy());
+        }
+    }
+    f.to_string_lossy().into_owned()
+}
 
 /// The panel, docked on the right (320 wide).
 pub fn show(app: &mut WordApp, ui: &mut Ui) {

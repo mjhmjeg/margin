@@ -171,8 +171,8 @@ pub fn sentence_like(query: &str) -> bool {
 
 /// The popover's rows. Without the assistant: the matching commands. With it: the "Ask Claude"
 /// row last, or first when nothing matches or the query reads as a sentence; in Ask mode the
-/// quick asks and the ask row only.
-pub fn rows(hits: &[&CommandSpec], query: &str, mode: Mode, assistant: bool) -> Vec<Row> {
+/// quick asks and the ask row only; `files`: a folder is allowed, so "Check facts against a file…" shows.
+pub fn rows(hits: &[&CommandSpec], query: &str, mode: Mode, assistant: bool, files: bool) -> Vec<Row> {
     let command_rows = hits.iter().map(|c| Row::Command { id: c.id, label: c.label, location: c.location });
     if !assistant {
         return command_rows.collect();
@@ -180,7 +180,7 @@ pub fn rows(hits: &[&CommandSpec], query: &str, mode: Mode, assistant: bool) -> 
     let q = query.trim();
     let ask = (!q.is_empty()).then(|| Row::Ask(q.to_string()));
     match mode {
-        Mode::Ask => QUICK_ASKS.iter().filter(|(l, _)| *l != NEEDS_FILES).map(|(l, i)| Row::Quick(l, i)).chain(ask).collect(),
+        Mode::Ask => QUICK_ASKS.iter().filter(|(l, _)| files || *l != NEEDS_FILES).map(|(l, i)| Row::Quick(l, i)).chain(ask).collect(),
         Mode::Commands => {
             let first = ask.is_some() && (hits.is_empty() || sentence_like(q));
             let mut out: Vec<Row> = Vec::new();
@@ -196,8 +196,8 @@ pub fn rows(hits: &[&CommandSpec], query: &str, mode: Mode, assistant: bool) -> 
     }
 }
 
-/// Quick asks that need folder access (Settings › Assistant S5, step A4) stay hidden until then.
-const NEEDS_FILES: &str = "Check facts against a file…";
+/// Quick asks that need folder access (Settings › Assistant S5) stay hidden until a folder is allowed.
+pub const NEEDS_FILES: &str = "Check facts against a file…";
 
 /// Send an ask to the assistant: the Assistant panel opens and shows it working. Scoped to the
 /// selection when the field was opened on one, else the whole document.
@@ -257,6 +257,17 @@ fn run_row(app: &mut WordApp, ctx: &egui::Context, row: &Row) {
             let _ = app.run(id, json!({}));
         }
         Row::Ask(text) => ask(app, text),
+        Row::Quick(label, _) if *label == NEEDS_FILES => {
+            // Opens the list of allowed files; the ask is sent when one is picked.
+            let kind = if app.command_field.scope.is_some() && !app.session.sel.is_collapsed() {
+                wordcraft_engine::assistant_edits::ScopeKind::Selection
+            } else {
+                wordcraft_engine::assistant_edits::ScopeKind::Document
+            };
+            if let Err(e) = crate::assistant_panel::open_file_picker(app, kind) {
+                app.status(e);
+            }
+        }
         Row::Quick(_, instruction) => ask(app, instruction),
     }
     close(app, ctx);
@@ -300,7 +311,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui, rect: Rect) {
     let reg = app.session.registry.clone();
     let usage = Usage { recent: &app.ui.margin.command_recent, counts: &app.ui.margin.command_counts };
     let hits = if app.command_field.mode == Mode::Ask { Vec::new() } else { search(&reg, &app.command_field.query, usage) };
-    let list = rows(&hits, &app.command_field.query, app.command_field.mode, assistant);
+    let files = crate::assistant_panel::facts_available(app);
+    let list = rows(&hits, &app.command_field.query, app.command_field.mode, assistant, files);
     let f = &mut app.command_field;
     if f.sel >= list.len() {
         f.sel = list.len().saturating_sub(1);
@@ -651,17 +663,17 @@ mod tests {
         let s = session();
         let bold = search(&s.registry, "bold", NO_USE);
         assert!(!crate::review_panel::assistant_enabled(), "off until Settings › Assistant");
-        let off = rows(&bold, "bold", Mode::Commands, false);
+        let off = rows(&bold, "bold", Mode::Commands, false, false);
         assert!(off.iter().all(|r| matches!(r, Row::Command { .. })), "no ask row while off");
-        assert!(rows(&bold, "bold", Mode::Ask, false).iter().all(|r| matches!(r, Row::Command { .. })), "no Ask mode while off");
+        assert!(rows(&bold, "bold", Mode::Ask, false, false).iter().all(|r| matches!(r, Row::Command { .. })), "no Ask mode while off");
 
-        let on = rows(&bold, "bold", Mode::Commands, true);
+        let on = rows(&bold, "bold", Mode::Commands, true, false);
         assert!(matches!(on.last(), Some(Row::Ask(t)) if t == "bold"), "ask row is last");
-        let sentence = rows(&bold, "make the second paragraph shorter", Mode::Commands, true);
+        let sentence = rows(&bold, "make the second paragraph shorter", Mode::Commands, true, false);
         assert!(matches!(sentence.first(), Some(Row::Ask(_))), "a sentence puts the ask row first");
-        let none = rows(&[], "zzz", Mode::Commands, true);
+        let none = rows(&[], "zzz", Mode::Commands, true, false);
         assert_eq!(none, [Row::Ask("zzz".into())], "nothing matches: only the ask row");
-        let ask_mode = rows(&bold, "tighten it", Mode::Ask, true);
+        let ask_mode = rows(&bold, "tighten it", Mode::Ask, true, false);
         assert!(matches!(ask_mode.first(), Some(Row::Quick("Shorten", _))));
         assert!(matches!(ask_mode.last(), Some(Row::Ask(_))));
         assert_eq!(ask_mode.iter().filter(|r| matches!(r, Row::Command { .. })).count(), 0);
@@ -679,9 +691,16 @@ mod tests {
 
     #[test]
     fn the_file_quick_ask_waits_for_folder_access() {
-        let on = rows(&[], "", Mode::Ask, true);
+        let on = rows(&[], "", Mode::Ask, true, false);
         assert!(on.iter().all(|r| !matches!(r, Row::Quick(l, _) if *l == NEEDS_FILES)), "{on:?}");
         assert_eq!(on.len(), 3, "Shorten, Fix grammar and spelling, Make it plainer");
+        // With a folder allowed it shows, last of the quick asks and before the ask row.
+        let with = rows(&[], "tighten it", Mode::Ask, true, true);
+        let labels: Vec<&str> = with.iter().filter_map(|r| if let Row::Quick(l, _) = r { Some(*l) } else { None }).collect();
+        assert_eq!(labels, ["Shorten", "Fix grammar and spelling", "Make it plainer", NEEDS_FILES]);
+        assert!(matches!(with.last(), Some(Row::Ask(_))));
+        // Never while the assistant itself is off.
+        assert!(rows(&[], "", Mode::Ask, false, true).is_empty());
     }
 
     #[test]

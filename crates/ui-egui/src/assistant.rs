@@ -32,6 +32,13 @@ pub struct AssistantPrefs {
     pub models: BTreeMap<String, String>,
     /// The base URL per provider id, for those where it can be changed (On this Mac, Other).
     pub base_urls: BTreeMap<String, String>,
+    /// S5: "Add and reply to comments". Off: the built-in assistant's comment edits are dropped
+    /// and assistants outside Margin are refused `review.newComment` / `review.reply`.
+    pub comments: bool,
+    /// S5: "Read files in these folders (read-only)": the only places an assistant may read files
+    /// from (the built-in one for "Check facts against a file…", the outside ones for any
+    /// command that reads a path). Absolute, links followed. Empty: no file access.
+    pub folders: Vec<String>,
     // API keys are not here: they live in the system keychain (`crate::assistant_link`).
 }
 
@@ -44,8 +51,32 @@ impl Default for AssistantPrefs {
             provider: ProviderId::Mistral.id().into(),
             models: BTreeMap::new(),
             base_urls: BTreeMap::new(),
+            comments: true,
+            folders: Vec::new(),
         }
     }
+}
+
+/// Most folders the list holds.
+pub const MAX_FOLDERS: usize = 20;
+/// Longest folder path accepted.
+pub const MAX_FOLDER_CHARS: usize = 1024;
+
+/// A folder as the list stores it: it must exist and be a folder, not the top of the file
+/// system; absolute, links followed.
+pub fn check_folder(raw: &str) -> Result<String, String> {
+    let raw = raw.trim();
+    if raw.is_empty() || raw.chars().count() > MAX_FOLDER_CHARS || raw.chars().any(char::is_control) {
+        return Err("`addFolder` isn't a folder path".into());
+    }
+    let path = std::fs::canonicalize(raw).map_err(|e| format!("can't use {raw}: {e}"))?;
+    if !path.is_dir() {
+        return Err(format!("{raw} is not a folder"));
+    }
+    if path.parent().is_none() {
+        return Err("the top of the file system can't be shared: pick a folder inside it".into());
+    }
+    Ok(path.to_string_lossy().into_owned())
 }
 
 /// An author name as the engine stores it: trimmed, no control characters, capped.
@@ -59,6 +90,21 @@ impl AssistantPrefs {
     pub fn name(&self) -> String {
         let n = clean_name(&self.author_name);
         if n.is_empty() { DEFAULT_NAME.into() } else { n }
+    }
+
+    /// The folders in force: the list without anything a hand-edited `ui.json` could have put there
+    /// that the Permissions list would not take (the top of the file system, control characters,
+    /// more than [`MAX_FOLDERS`]).
+    pub fn allowed_folders(&self) -> Vec<String> {
+        self.folders
+            .iter()
+            .filter(|f| {
+                let p = std::path::Path::new(f.as_str());
+                p.is_absolute() && p.parent().is_some() && f.chars().count() <= MAX_FOLDER_CHARS && !f.chars().any(char::is_control)
+            })
+            .take(MAX_FOLDERS)
+            .cloned()
+            .collect()
     }
 
     /// The chosen provider (Mistral when the setting names none we know).
@@ -89,6 +135,8 @@ impl AssistantPrefs {
             "allowOutside": self.allow_outside,
             "connected": outside::connected(),
             "trackedChanges": "always",
+            "comments": self.comments,
+            "folders": self.folders,
             "enabled": self.enabled,
             "provider": p.id(),
             "model": self.model(p),

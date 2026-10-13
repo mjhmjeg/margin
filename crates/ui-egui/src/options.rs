@@ -441,8 +441,8 @@ fn agents(ui: &mut Ui) {
 
 /// Options › Assistant (Margin, HANDOFF §9): the master switch (S1), provider and model (S2), the
 /// API key (S3), the name assistants write under (S4), the rule that their edits are always
-/// suggestions (S5) and whether assistants outside Margin may connect (S6). Folder permissions
-/// (rest of S5) come with the in-app assistant.
+/// suggestions, comments and the folders they may read (S5), and whether assistants outside
+/// Margin may connect (S6).
 fn assistant(app: &mut WordApp, ui: &mut Ui) {
     use crate::mac_controls as mc;
     // The connected count changes on other threads: look again soon.
@@ -475,6 +475,14 @@ fn assistant(app: &mut WordApp, ui: &mut Ui) {
             mc::checkbox(ui, "Always suggest as tracked changes", true);
         });
         mc::hint(ui, "An assistant's edits never change your text until you accept them in Review.");
+        ui.add_space(6.0);
+        if mc::checkbox(ui, "Add and reply to comments", app.ui.assistant.comments) {
+            let on = !app.ui.assistant.comments;
+            let _ = app.run("ui.assistant", json!({"comments": on}));
+        }
+        mc::hint(ui, "Off: Margin's assistant adds no comments, and assistants outside Margin are refused new comments and replies.");
+        ui.add_space(6.0);
+        assistant_folders(app, ui);
     });
     mc::section(ui, "Outside Margin", |ui| {
         if mc::switch(ui, "Allow assistants outside Margin to connect", app.ui.assistant.allow_outside) {
@@ -498,6 +506,85 @@ fn assistant(app: &mut WordApp, ui: &mut Ui) {
         );
         mc::hint(ui, "`wordcraft-cli mcp` without the app edits files directly. This setting doesn't cover it.");
     });
+}
+
+/// S5: "Read files in these folders (read-only)": the folder list with + and −. The same list
+/// confines the files assistants outside Margin can read (`control::handle_outside`).
+fn assistant_folders(app: &mut WordApp, ui: &mut Ui) {
+    use crate::mac_controls as mc;
+    let t = Tokens::get(ui.ctx());
+    ui.label(RichText::new(tl!("Read files in these folders (read-only)")).font(mc::font()).color(t.text));
+    let mut remove: Option<String> = None;
+    let folders = app.ui.assistant.folders.clone();
+    egui::Frame::NONE
+        .fill(t.input)
+        .stroke(egui::Stroke::new(1.0, t.input_border))
+        .corner_radius(6.0)
+        .inner_margin(egui::Margin::symmetric(10, 4))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            if folders.is_empty() {
+                ui.label(RichText::new(tl!("No folders: assistants can't read any file.")).font(mc::font()).color(t.text_dim));
+            }
+            let list_w = ui.available_width();
+            for f in &folders {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    let (r, resp) = ui.allocate_exact_size(vec2(list_w - 32.0, mc::ROW_H), egui::Sense::hover());
+                    // The folder's name, then where it is (dim, cut at the end).
+                    let path = std::path::Path::new(f);
+                    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| f.clone());
+                    let parent = path.parent().map(|p| tidy_home(&p.to_string_lossy())).unwrap_or_default();
+                    let clip = ui.painter().with_clip_rect(r);
+                    let used = clip.text(egui::pos2(r.min.x, r.center().y), egui::Align2::LEFT_CENTER, &name, mc::font(), t.text).width();
+                    clip.text(egui::pos2(r.min.x + used + 10.0, r.center().y), egui::Align2::LEFT_CENTER, parent, mc::font(), t.text_dim);
+                    resp.on_hover_text(f.as_str());
+                    if small_button(ui, "−", &crate::i18n::fmt(tl!("Remove {folder}"), &[("folder", f)])) {
+                        remove = Some(f.clone());
+                    }
+                });
+            }
+        });
+    if let Some(f) = remove {
+        let _ = app.run("ui.assistant", json!({"removeFolder": f}));
+    }
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        let full = app.ui.assistant.folders.len() >= crate::assistant::MAX_FOLDERS;
+        ui.add_enabled_ui(!full, |ui| {
+            if small_button(ui, "+", tl!("Add a folder…")) {
+                let _ = app.run("ui.assistant", json!({"pickFolder": true}));
+            }
+        });
+        ui.label(RichText::new(tl!("Add a folder…")).font(mc::font()).color(t.text_dim));
+    });
+    mc::hint(
+        ui,
+        "Margin's assistant can check facts against files in these folders, and assistants outside Margin can read files only from them. Nothing is ever written, and links that lead out of a folder are not followed. No folders: no file access.",
+    );
+}
+
+/// `path` with the home folder written as `~`.
+fn tidy_home(path: &str) -> String {
+    match std::env::var("HOME").ok().filter(|h| h.len() > 1) {
+        Some(h) => match path.strip_prefix(h.as_str()) {
+            Some(rest) if rest.is_empty() || rest.starts_with('/') => format!("~{rest}"),
+            _ => path.to_string(),
+        },
+        None => path.to_string(),
+    }
+}
+
+/// A 24 × 24 square button with a glyph (+ or −); true when clicked.
+fn small_button(ui: &mut Ui, glyph: &str, tip: &str) -> bool {
+    use crate::mac_controls as mc;
+    let t = Tokens::get(ui.ctx());
+    let (r, resp) = ui.allocate_exact_size(vec2(24.0, 24.0), egui::Sense::click());
+    let fill = if resp.hovered() { t.hover } else { egui::Color32::TRANSPARENT };
+    ui.painter().rect(r, 6.0, fill, egui::Stroke::new(1.0, t.input_border), egui::StrokeKind::Inside);
+    ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, glyph, mc::font(), t.text);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), tip));
+    resp.on_hover_text(tip).clicked()
 }
 
 /// S2: provider radios, the model popup (filled live from the provider) and, for On this Mac and

@@ -131,3 +131,11 @@ and upstream's Backstage tests run in Classic). Recent thumbnails: one render pe
 - **Stop:** sets a flag the stream checks between lines and drops the receiver; nothing from that answer is applied.
 - Toolbar toggle is labelled with the configured author name (owner decision), shown only while `assistant_enabled()`.
 - "Check facts against a file…" stays hidden until folder access (A4).
+
+## 2026-10-13 — Assistant A4: folder access (read-only) and fact-check against a file
+
+- **One allow-list, two users.** Settings › Assistant › "Read files in these folders" is the MCP sandbox's read root with the person's list as the roots (`file_access::AutomationRoots::for_app`: several read roots, writes left alone). `control::handle_outside` runs every outside request inside it, so any command that reads a path (`file.open`, `insert.picture`, `insert.textFromFile`, …) is held to the list; empty list = no file reads for outside assistants (a change from before, when a connected app was unconfined for reads). The built-in assistant uses the same check for its source file. Headless `wordcraft-cli mcp` keeps its own `--automation-read-root` / `--automation-write-root` flags, unchanged; Settings does not touch it.
+- **Comments switch.** `Session::assistant_comments` (set from Settings) makes `denied` refuse `review.newComment`, `review.reply` and `review.editComment` to assistants; the built-in assistant's comment edits are dropped with a log line. Removing its own comments stays allowed.
+- **Fact check (K4).** The file's text goes as a second nonce-fenced untrusted block (`BEGIN SOURCE <nonce>`), capped at 40,000 characters (cut at a paragraph end, with a log line), files at most 20 MB. Only `comment` edits are applied; replace/insert from the model are skipped with a log line. Formats: txt, md, docx, docm, odt, rtf, html (no PDF: there is no text extraction in the repo). The picker is an in-app list of the files in the allowed folders (depth 3, no links, no hidden files), not the native dialog, which cannot be limited to folders.
+- **Rejected:** a per-assistant allow-list (one list is simpler to reason about); adding a PDF text-extraction dependency for this step; reading the file on a background thread (parsing a file of at most 20 MB on the UI thread is accepted for now).
+

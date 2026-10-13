@@ -25,6 +25,8 @@ pub enum FileDialogRequest {
     Open { purpose: String },
     /// Pick a path to save to, given a suggested file name.
     Save { name: String },
+    /// Pick a folder (Settings › Assistant › Read files in these folders).
+    Folder,
 }
 
 /// The host's answer to a [`FileDialogRequest`]: the picked path, `Ok(None)` when the user
@@ -65,6 +67,8 @@ pub(crate) enum AfterPick {
     /// Hand the picked path to the open dialog (`WordApp::dialog_pick`): Templates and Add-ins,
     /// Organizer (#377).
     ForDialog,
+    /// Add the picked folder to the folders assistants may read from (S5).
+    AssistantFolder,
     /// Put the picked document into the Compare dialog (original or revised, #412).
     ComparePath { revised: bool },
 }
@@ -133,6 +137,7 @@ impl WordApp {
         let picked = match &req {
             FileDialogRequest::Open { purpose } => self.services.pick_open.as_ref().and_then(|f| f(purpose)),
             FileDialogRequest::Save { name } => self.services.pick_save.as_ref().and_then(|f| f(name)),
+            FileDialogRequest::Folder => None,
         };
         Asked::Done(self.finish_pick(after, picked))
     }
@@ -168,6 +173,11 @@ impl WordApp {
     /// finishes the job later. `None` while it is open.
     #[cfg(not(target_arch = "wasm32"))]
     fn dialog_unavailable(&mut self, req: FileDialogRequest, after: AfterPick) -> Option<Result<Value, String>> {
+        // The built-in browser picks files; it has no folder mode.
+        if req == FileDialogRequest::Folder {
+            self.status(tl!("No folder chooser is available on this system."));
+            return Some(self.finish_pick(after, None));
+        }
         self.show_file_browser(req, after, true);
         None
     }
@@ -197,6 +207,10 @@ impl WordApp {
             AfterPick::Font => {
                 let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
                 self.run("font.add", json!({"path": path}))
+            }
+            AfterPick::AssistantFolder => {
+                let Some(path) = picked else { return Ok(json!({"cancelled": true})) };
+                crate::assistant_link::settings_command(self, &json!({"addFolder": path})).inspect_err(|e| self.status(e.clone()))
             }
             AfterPick::ForDialog => {
                 let picked = picked.filter(|p| !p.is_empty());

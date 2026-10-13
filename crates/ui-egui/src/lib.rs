@@ -865,6 +865,7 @@ impl WordApp {
 
     fn after_command(&mut self, id: &str) {
         options::sync(self);
+        assistant_link::sync_policy(self);
         self.canvas.caret_visible_since = now_ms();
         if id == "view.outline" {
             self.ui.nav_tab = "headings".into();
@@ -1151,7 +1152,12 @@ impl WordApp {
             // (`wordcraft_engine::assistant::denied`). The key is write-only.
             "ui.assistant" => return Some(assistant_link::settings_command(self, p)),
             "ui.assistant.test" | "ui.assistant.models" => return assistant_link::command(self, id, p),
-            "ui.assistant.ask" | "ui.assistant.stop" | "ui.assistant.panel" | "ui.assistant.log" | "ui.assistant.suggestion" => {
+            "ui.assistant.ask"
+            | "ui.assistant.facts"
+            | "ui.assistant.stop"
+            | "ui.assistant.panel"
+            | "ui.assistant.log"
+            | "ui.assistant.suggestion" => {
                 return assistant_panel::command(self, id, p);
             }
             "ui.startScreen" => {
@@ -1586,6 +1592,7 @@ impl WordApp {
         dialogs::show(self, &ctx);
         #[cfg(not(target_arch = "wasm32"))]
         file_browser::show(self, &ctx);
+        assistant_panel::show_file_picker(self, &ctx);
         colors::show(self, &ctx);
         zotero::show_alert(self, &ctx);
         read_aloud::show(self, &ctx);

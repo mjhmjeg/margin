@@ -35,8 +35,14 @@ pub enum Access {
 /// The folders automation may read and write; a root left out grants no access of its kind.
 #[derive(Debug)]
 pub struct AutomationRoots {
-    read: Option<Root>,
+    /// The folders reads may come from. Empty: no folder was allowed, so nothing may be read.
+    read: Vec<Root>,
     write: Option<Root>,
+    /// Whether writes are confined at all. `false` with no write root: writes are refused
+    /// (`--automation-read-root` alone). `true` here means the app's mode: writes aren't checked.
+    write_free: bool,
+    /// Said after a refused read when the person allows folders somewhere (the desktop app).
+    read_hint: &'static str,
 }
 
 #[derive(Debug)]
@@ -68,14 +74,45 @@ impl AutomationRoots {
         if read.is_none() && write.is_none() {
             return Ok(None);
         }
-        let read = read.map(|p| Root::open(p, Access::Read)).transpose()?;
+        let read = read.map(|p| Root::open(p, Access::Read)).transpose()?.into_iter().collect();
         let write = write.map(|p| Root::open(p, Access::Write)).transpose()?;
-        Ok(Some(Arc::new(Self { read, write })))
+        Ok(Some(Arc::new(Self { read, write, write_free: false, read_hint: "" })))
     }
 
-    /// The read root, absolute with its links followed.
+    /// The desktop app's roots for assistants outside it (Settings › Assistant › "Read files in
+    /// these folders"): reads are confined to `folders` (none: nothing may be read), writes are
+    /// left as they are. A folder that can't be opened (gone, not a folder) is skipped and named
+    /// in the second part of the result.
+    pub fn for_app(folders: &[String]) -> (Arc<Self>, Vec<String>) {
+        let mut read = Vec::new();
+        let mut skipped = Vec::new();
+        for f in folders {
+            match Root::open(Path::new(f), Access::Read) {
+                Ok(r) => {
+                    if !read.iter().any(|x: &Root| x.resolved == r.resolved) {
+                        read.push(r);
+                    }
+                }
+                Err(_) => skipped.push(f.clone()),
+            }
+        }
+        let roots = Self {
+            read,
+            write: None,
+            write_free: true,
+            read_hint: " (the person allows folders in Settings › Assistant › Read files in these folders)",
+        };
+        (Arc::new(roots), skipped)
+    }
+
+    /// The read root (the first one), absolute with its links followed.
     pub fn read_root(&self) -> Option<&Path> {
-        self.read.as_ref().map(|r| r.shown.as_path())
+        self.read.first().map(|r| r.shown.as_path())
+    }
+
+    /// All read roots, absolute with their links followed.
+    pub fn read_roots(&self) -> Vec<&Path> {
+        self.read.iter().map(|r| r.shown.as_path()).collect()
     }
 
     /// The write root, absolute with its links followed.
@@ -85,23 +122,82 @@ impl AutomationRoots {
 
     /// May the file or folder at `path` be read (or written)? `Err` says why not.
     pub fn check(&self, path: &str, access: Access) -> Result<(), String> {
-        let root = match access {
-            Access::Read => self.read.as_ref(),
-            Access::Write => self.write.as_ref(),
-        };
-        let Some(Root { resolved: folder, shown }) = root else {
-            return match access {
-                Access::Read => Err(format!("automation filesystem access is not granted: read authority is absent: {path}")),
-                Access::Write => Err(format!("automation filesystem access is not granted: write authority is absent: {path}")),
-            };
-        };
-        if inside(&resolve(path)?, folder) {
-            return Ok(());
-        }
-        let root = shown.display();
+        self.resolve_for(path, access).map(|_| ())
+    }
+
+    /// [`check`](Self::check), giving the path as the file system reads it: absolute, links
+    /// followed. Reading that path instead of the one given closes the gap between a check of a
+    /// link and a read of where it leads now.
+    pub fn resolve_read(&self, path: &str) -> Result<PathBuf, String> {
+        self.resolve_for(path, Access::Read)
+    }
+
+    fn resolve_for(&self, path: &str, access: Access) -> Result<PathBuf, String> {
         match access {
-            Access::Read => Err(format!("automation path rejected: outside the read root {root}: {path}")),
-            Access::Write => Err(format!("automation path rejected: outside the write root {root}: {path}")),
+            Access::Read => {
+                if self.read.is_empty() {
+                    return Err(format!("automation filesystem access is not granted: read authority is absent: {path}{}", self.read_hint));
+                }
+                let found = resolve(path)?;
+                if self.read.iter().any(|r| inside(&found, &r.resolved)) {
+                    return Ok(found);
+                }
+                let roots: Vec<String> = self.read.iter().map(|r| r.shown.display().to_string()).collect();
+                let which = if roots.len() == 1 { "the read root" } else { "the read roots" };
+                Err(format!("automation path rejected: outside {which} {}: {path}", roots.join(", ")))
+            }
+            Access::Write => {
+                if self.write_free {
+                    return resolve(path);
+                }
+                let Some(Root { resolved: folder, shown }) = self.write.as_ref() else {
+                    return Err(format!("automation filesystem access is not granted: write authority is absent: {path}"));
+                };
+                let found = resolve(path)?;
+                if inside(&found, folder) {
+                    return Ok(found);
+                }
+                Err(format!("automation path rejected: outside the write root {}: {path}", shown.display()))
+            }
+        }
+    }
+
+    /// Files inside the read roots a person may pick from, as paths: regular files whose
+    /// extension is in `exts` (lower case), at most `max_depth` folders below a root, hidden
+    /// names and links skipped, at most `max` of them, sorted. Reads folder listings only.
+    pub fn list_files(&self, exts: &[&str], max_depth: usize, max: usize) -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        for root in &self.read {
+            walk(&root.resolved, exts, max_depth, max, &mut out);
+        }
+        out.sort();
+        out.dedup();
+        out.truncate(max);
+        out
+    }
+}
+
+/// [`AutomationRoots::list_files`] below `dir`.
+fn walk(dir: &Path, exts: &[&str], depth: usize, max: usize, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        if out.len() >= max {
+            return;
+        }
+        let name = entry.file_name();
+        if name.to_string_lossy().starts_with('.') {
+            continue;
+        }
+        // `file_type` of a directory entry doesn't follow links: a link is neither file nor folder.
+        let Ok(kind) = entry.file_type() else { continue };
+        let path = entry.path();
+        if kind.is_file() {
+            let ext = path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).unwrap_or_default();
+            if exts.contains(&ext.as_str()) {
+                out.push(path);
+            }
+        } else if kind.is_dir() && depth > 0 {
+            walk(&path, exts, depth - 1, max, out);
         }
     }
 }
@@ -297,6 +393,35 @@ mod tests {
         let e = roots.check(&s(base.join("in/a.docx")), Access::Write).unwrap_err();
         assert!(e.contains("outside the write root"), "{e}");
         assert!(roots.check(&s(base.join("out/x.png")), Access::Read).unwrap_err().contains("outside the read root"));
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn the_apps_roots_confine_reads_to_the_list_and_leave_writes_alone() {
+        let (base, _) = folders("app");
+        let list = vec![s(base.join("in")), s(base.join("in2")), s(base.join("gone")), s(base.join("in"))];
+        let (roots, skipped) = AutomationRoots::for_app(&list);
+        assert_eq!(skipped, vec![s(base.join("gone"))], "a folder that is gone is skipped");
+        assert_eq!(roots.read_roots().len(), 2, "and a repeated one counts once");
+        assert_eq!(roots.check(&s(base.join("in/a.docx")), Access::Read), Ok(()));
+        assert_eq!(roots.check(&s(base.join("in2/b.docx")), Access::Read), Ok(()), "any folder of the list");
+        let e = roots.check(&s(base.join("outside/secret.docx")), Access::Read).unwrap_err();
+        assert!(e.contains("outside the read roots"), "{e}");
+        // Writes are not this setting's business.
+        assert_eq!(roots.check(&s(base.join("outside/new.docx")), Access::Write), Ok(()));
+        // No folders: nothing is read, and the refusal says where to allow some.
+        let (none, _) = AutomationRoots::for_app(&[]);
+        let e = none.check(&s(base.join("in/a.docx")), Access::Read).unwrap_err();
+        assert!(e.contains("read authority is absent") && e.contains("Settings › Assistant"), "{e}");
+        // The listing: files of the right type, not hidden.
+        std::fs::write(base.join("in/.hidden.txt"), "x").unwrap();
+        std::fs::write(base.join("in/b.txt"), "x").unwrap();
+        let names: Vec<String> =
+            roots.list_files(&["docx", "txt"], 2, 10).iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
+        assert_eq!(names, ["a.docx", "b.txt"]);
+        // Headless roots are as they were: one read root, writes only into the write root.
+        let headless = AutomationRoots::new(Some(&base.join("in")), None).unwrap().unwrap();
+        assert!(headless.check(&s(base.join("outside/new.docx")), Access::Write).unwrap_err().contains("write authority is absent"));
         let _ = std::fs::remove_dir_all(base);
     }
 

@@ -150,6 +150,8 @@ impl FileBrowser {
             FileDialogRequest::Open { purpose } => {
                 (String::new(), open_filters(purpose).iter().map(|(l, e)| ((*l).to_string(), e.iter().map(|x| (*x).to_string()).collect())).collect())
             }
+            // Folders are not picked in this browser (`dialog_unavailable` never opens it for them).
+            FileDialogRequest::Folder => (String::new(), vec![("All files".into(), vec!["*".into()])]),
             FileDialogRequest::Save { name } => {
                 let ext = Path::new(name).extension().and_then(|e| e.to_str()).filter(|e| !e.is_empty());
                 let mut f: Vec<(String, Vec<String>)> = ext.map(|e| (format!("*.{e}"), vec![e.to_string()])).into_iter().collect();
@@ -209,7 +211,7 @@ impl FileBrowser {
             return Step::Stay;
         }
         match self.req {
-            FileDialogRequest::Open { .. } => {
+            FileDialogRequest::Open { .. } | FileDialogRequest::Folder => {
                 if path.is_file() {
                     return Step::Pick(path);
                 }
@@ -242,14 +244,14 @@ impl FileBrowser {
 
     fn title(&self) -> &'static str {
         match self.req {
-            FileDialogRequest::Open { .. } => "Open",
+            FileDialogRequest::Open { .. } | FileDialogRequest::Folder => "Open",
             FileDialogRequest::Save { .. } => "Save As",
         }
     }
 
     fn ok_label(&self) -> &'static str {
         match self.req {
-            FileDialogRequest::Open { .. } => "Open",
+            FileDialogRequest::Open { .. } | FileDialogRequest::Folder => "Open",
             FileDialogRequest::Save { .. } => "Save",
         }
     }
