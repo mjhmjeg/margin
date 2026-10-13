@@ -57,7 +57,9 @@ pub fn specs() -> Vec<CommandSpec> {
             s.redo();
             sel_result(s)
         })
-        .key("Mod+Shift+Z")
+        // Margin: on macOS ⌘Y opens the command field, so Redo is only ⇧⌘Z (the Mac standard);
+        // Windows/Linux keep Ctrl+Y.
+        .key(if cfg!(target_os = "macos") { "Mod+Shift+Z" } else { "Mod+Y / Mod+Shift+Z" })
         .pure(),
         CommandSpec::new("edit.cut", "Cut", "Home › Clipboard", cut).key("Mod+X").when(has_sel),
         CommandSpec::new("edit.copy", "Copy", "Home › Clipboard", copy).key("Mod+C").pure(),
