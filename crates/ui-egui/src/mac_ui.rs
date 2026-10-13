@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 
 use crate::WordApp;
 use crate::chrome::{MAC_CONTENT_LEFT, MAC_TITLE_BAR};
+use crate::mac_controls as mc;
 use crate::theme::{Tokens, regular};
 use crate::widgets::run_from_ribbon;
 
@@ -69,7 +70,7 @@ pub fn pageless(app: &WordApp) -> bool {
 
 const CM: f32 = 72.0 / 2.54;
 const PAD: f32 = 16.0;
-const ROW_H: f32 = 26.0;
+const ROW_H: f32 = mc::ROW_H;
 const INSPECTOR_W: f32 = 272.0;
 
 fn font() -> egui::FontId {
@@ -147,51 +148,27 @@ pub fn toolbar(app: &mut WordApp, ui: &mut Ui) {
         });
 }
 
-/// An icon button in the toolbar; `on` draws it pressed.
-fn tool(ui: &mut Ui, app: &WordApp, icon: &str, tip: &str, on: bool) -> Response {
-    let t = Tokens::get(ui.ctx());
-    let (r, resp) = ui.allocate_exact_size(vec2(30.0, 24.0), Sense::click());
-    let fill = if on {
-        t.pressed
-    } else if resp.hovered() {
-        t.hover
-    } else {
-        Color32::TRANSPARENT
-    };
-    ui.painter().rect_filled(r, 6.0, fill);
-    let _ = app;
-    crate::icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(17.0, 17.0)), icon, t.icon, t.accent);
-    resp.on_hover_text(tl!(tip))
+/// An icon button in the toolbar; `on` draws it toggled.
+fn tool(ui: &mut Ui, _app: &WordApp, icon: &str, tip: &str, on: bool) -> Response {
+    mc::toolbar_button(ui, icon, tip, on)
 }
 
 /// A text button in the toolbar (Format, zoom).
 fn text_tool(ui: &mut Ui, label: &str, on: bool) -> Response {
-    let t = Tokens::get(ui.ctx());
-    let galley = ui.painter().layout_no_wrap(tl!(label).to_string(), font(), t.text);
-    let (r, resp) = ui.allocate_exact_size(vec2(galley.size().x + 20.0, 24.0), Sense::click());
-    let fill = if on {
-        t.pressed
-    } else if resp.hovered() {
-        t.hover
-    } else {
-        Color32::TRANSPARENT
-    };
-    ui.painter().rect_filled(r, 6.0, fill);
-    ui.painter().galley(pos2(r.center().x - galley.size().x / 2.0, r.center().y - galley.size().y / 2.0), galley, t.text);
-    resp
+    mc::toolbar_text_button(ui, tl!(label), on)
 }
 
 fn table_menu(ui: &mut Ui, app: &mut WordApp) {
     let resp = tool(ui, app, "table", "Table", false);
-    egui::Popup::menu(&resp).show(|ui| {
+    egui::Popup::menu(&resp).width(200.0).show(|ui| {
         ui.set_min_width(160.0);
         for (r, c) in [(2, 2), (3, 3), (4, 4), (5, 3)] {
-            if ui.button(egui::RichText::new(format!("{r} × {c}")).font(font())).clicked() {
+            if mc::menu_row(ui, &format!("{r} × {c}"), false).clicked() {
                 run_from_ribbon(app, "insert.table", json!({"rows": r, "cols": c}));
             }
         }
         ui.separator();
-        if ui.button(egui::RichText::new(tl!("More…")).font(font())).clicked() {
+        if mc::menu_row(ui, tl!("More…"), false).clicked() {
             run_from_ribbon(app, "insert.table", json!({}));
         }
     });
@@ -199,12 +176,12 @@ fn table_menu(ui: &mut Ui, app: &mut WordApp) {
 
 fn shape_menu(ui: &mut Ui, app: &mut WordApp) {
     let resp = tool(ui, app, "shapes", "Shape", false);
-    egui::Popup::menu(&resp).show(|ui| {
+    egui::Popup::menu(&resp).width(200.0).show(|ui| {
         ui.set_min_width(160.0);
         for (label, kind) in
             [("Rectangle", "rectangle"), ("Rounded rectangle", "roundedRectangle"), ("Oval", "ellipse"), ("Line", "line"), ("Arrow", "arrow")]
         {
-            if ui.button(egui::RichText::new(tl!(label)).font(font())).clicked() {
+            if mc::menu_row(ui, tl!(label), false).clicked() {
                 run_from_ribbon(app, "insert.shape", json!({"kind": kind}));
             }
         }
@@ -214,15 +191,15 @@ fn shape_menu(ui: &mut Ui, app: &mut WordApp) {
 fn zoom_menu(ui: &mut Ui, app: &mut WordApp) {
     let pct = (app.session.view.zoom * 100.0).round();
     let resp = text_tool(ui, &format!("{pct:.0}%"), false);
-    egui::Popup::menu(&resp).show(|ui| {
+    egui::Popup::menu(&resp).width(200.0).show(|ui| {
         ui.set_min_width(120.0);
         for z in [75, 100, 125, 150, 200] {
-            if ui.button(egui::RichText::new(format!("{z}%")).font(font())).clicked() {
+            if mc::menu_row(ui, &format!("{z}%"), (pct - z as f32).abs() < 0.5).clicked() {
                 run_from_ribbon(app, "view.zoom", json!({"value": z}));
             }
         }
         ui.separator();
-        if ui.button(egui::RichText::new(tl!("Fit width")).font(font())).clicked() {
+        if mc::menu_row(ui, tl!("Fit width"), false).clicked() {
             run_from_ribbon(app, "view.zoom", json!({"value": "pageWidth"}));
         }
     });
@@ -231,15 +208,15 @@ fn zoom_menu(ui: &mut Ui, app: &mut WordApp) {
 /// "⋯": things that move to the menu bar in phase 4.
 fn more_menu(ui: &mut Ui, app: &mut WordApp) {
     let resp = tool(ui, app, "more", "More", false);
-    egui::Popup::menu(&resp).show(|ui| {
+    egui::Popup::menu(&resp).width(200.0).show(|ui| {
         ui.set_min_width(200.0);
-        if ui.button(egui::RichText::new(tl!("Classic ribbon  ⌃⌘R")).font(font())).clicked() {
+        if mc::menu_row(ui, tl!("Classic ribbon  ⌃⌘R"), false).clicked() {
             app.ui.margin.classic_ribbon = true;
         }
-        if ui.button(egui::RichText::new(tl!("File…")).font(font())).clicked() {
+        if mc::menu_row(ui, tl!("File…"), false).clicked() {
             app.ui.backstage = true;
         }
-        if ui.button(egui::RichText::new(tl!("Search commands")).font(font())).clicked() {
+        if mc::menu_row(ui, tl!("Search commands"), false).clicked() {
             let _ = app.run("ui.dialog", json!({"name": "commands"}));
         }
     });
@@ -296,7 +273,7 @@ fn text_tab(app: &mut WordApp, ui: &mut Ui) {
         let font_name = st.get("font").and_then(Value::as_str).unwrap_or("").to_string();
         let shown = app.previews.font_shown(&font_name);
         let fams = app.previews.families();
-        if let Some(f) = crate::widgets::font_combo(ui, "margin_font", w, &shown, &fams, None) {
+        if let Some(f) = mc::popup_button(ui, "margin_font", w, &shown, &fams, true) {
             if f == crate::widgets::ADD_FONT {
                 run_from_ribbon(app, "font.add", json!({}));
             } else {
@@ -431,7 +408,7 @@ fn document_tab(app: &mut WordApp, ui: &mut Ui) {
         let (w, h) = (sect.page_w, sect.page_h);
         let name = page_name(w.min(h), w.max(h));
         let names = ["A4", "A5", "Letter", "Legal"].map(String::from);
-        if let Some(n) = crate::widgets::combo(ui, "margin_page", ui.available_width(), name, &names, None) {
+        if let Some(n) = mc::popup_button(ui, "margin_page", ui.available_width(), name, &names, false) {
             run_from_ribbon(app, "layout.size", json!({"name": n}));
         }
         let landscape = w > h;
@@ -535,7 +512,7 @@ fn style_popup(ui: &mut Ui, app: &mut WordApp, st: &Value, width: f32) {
     let current = st.get("styleName").and_then(Value::as_str).unwrap_or("Normal").to_string();
     let styles: Vec<(String, String)> = app.session.doc.styles.gallery().iter().map(|s| (s.id.clone(), crate::i18n::style_name(s))).collect();
     let names: Vec<String> = styles.iter().map(|(_, n)| n.clone()).collect();
-    if let Some(n) = crate::widgets::combo(ui, "margin_style", width, &current, &names, None)
+    if let Some(n) = mc::popup_button(ui, "margin_style", width, &current, &names, false)
         && let Some((id, _)) = styles.iter().find(|(_, name)| *name == n)
     {
         run_from_ribbon(app, "para.style", json!({"style": id}));
@@ -546,103 +523,48 @@ fn pad(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
     egui::Frame::NONE.inner_margin(egui::Margin::symmetric(PAD as i8, 0)).show(ui, add);
 }
 
-/// A titled inspector section: hairline above, faint 13 pt title, then the controls.
+// Thin wrappers over the shared controls (`mac_controls`), so the tabs above read the same.
+
 fn section(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui)) {
-    let t = Tokens::get(ui.ctx());
-    let r = ui.available_rect_before_wrap();
-    ui.painter().hline(r.x_range(), r.min.y, Stroke::new(1.0, t.border));
-    egui::Frame::NONE.inner_margin(egui::Margin { left: PAD as i8, right: PAD as i8, top: 14, bottom: 14 }).show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        ui.label(egui::RichText::new(tl!(title)).font(font()).color(crate::skin::MarginTokens::get(ui.ctx()).section_title));
-        add(ui);
-    });
+    mc::section(ui, title, add);
 }
 
-fn label(ui: &mut Ui, text: &str, width: f32) {
+/// A row label in the 80 pt label column (the control after it fills the rest).
+fn label(ui: &mut Ui, text: &str, _width: f32) {
     let t = Tokens::get(ui.ctx());
-    let (r, _) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::hover());
+    let (r, _) = ui.allocate_exact_size(vec2(mc::LABEL_W, ROW_H), Sense::hover());
     ui.painter().text(pos2(r.min.x, r.center().y), Align2::LEFT_CENTER, tl!(text), font(), t.text_dim);
 }
 
 fn hint(ui: &mut Ui, text: &str) {
-    ui.label(egui::RichText::new(tl!(text)).font(font()).color(crate::skin::MarginTokens::get(ui.ctx()).hint));
+    mc::hint(ui, text);
 }
 
-/// A number field with a unit; returns the new value once the edit is committed.
 fn number(ui: &mut Ui, id: &str, value: f32, step: f32, range: std::ops::RangeInclusive<f32>, unit: &str) -> Option<f32> {
-    let mut v = (value * 100.0).round() / 100.0;
-    let before = v;
-    let r = ui.add_sized(
-        vec2(ui.available_width(), ROW_H),
-        egui::DragValue::new(&mut v).speed(step).range(range).suffix(format!(" {unit}")).max_decimals(2),
-    );
-    let _ = id;
-    ((r.drag_stopped() || r.lost_focus()) && (v - before).abs() > f32::EPSILON).then_some(v)
+    mc::number_field(ui, id, value, step, range, unit)
 }
 
 fn check(ui: &mut Ui, text: &str, on: bool) -> bool {
-    let mut v = on;
-    ui.add(egui::Checkbox::new(&mut v, egui::RichText::new(tl!(text)).font(font()))).changed()
+    mc::checkbox(ui, text, on)
 }
 
 fn button(ui: &mut Ui, text: &str) -> bool {
-    ui.add_sized(vec2(ui.available_width(), ROW_H), egui::Button::new(egui::RichText::new(tl!(text)).font(font()))).clicked()
+    ui.allocate_ui_with_layout(vec2(ui.available_width(), ROW_H), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+        mc::button(ui, text, false, true)
+    })
+    .inner
+    .clicked()
 }
 
-/// A segmented control (Text | Layout | Document); returns the clicked index.
 fn segmented(ui: &mut Ui, labels: &[&str], selected: Option<usize>) -> Option<usize> {
-    let t = Tokens::get(ui.ctx());
-    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::hover());
-    ui.painter().rect(r, 6.0, t.input, Stroke::new(1.0, t.input_border), egui::StrokeKind::Inside);
-    let n = labels.len().max(1) as f32;
-    let w = r.width() / n;
-    let mut clicked = None;
-    for (i, l) in labels.iter().enumerate() {
-        let cell = Rect::from_min_size(pos2(r.min.x + w * i as f32, r.min.y), vec2(w, r.height()));
-        let resp = ui.interact(cell, ui.id().with(("seg", l, i)), Sense::click());
-        let on = selected == Some(i);
-        if on {
-            ui.painter().rect_filled(cell.shrink(2.0), 4.0, t.accent);
-        } else if resp.hovered() {
-            ui.painter().rect_filled(cell.shrink(2.0), 4.0, t.hover);
-        }
-        if i > 0 && !on && selected != Some(i - 1) {
-            ui.painter().vline(cell.min.x, cell.y_range().shrink(5.0), Stroke::new(1.0, t.border));
-        }
-        ui.painter().text(cell.center(), Align2::CENTER_CENTER, tl!(*l), font(), if on { t.on_accent } else { t.text });
-        if resp.clicked() {
-            clicked = Some(i);
-        }
-        resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::RadioButton, true, on, tl!(*l)));
-    }
-    clicked
+    let items: Vec<mc::Seg> = labels.iter().map(|l| mc::Seg::Text(l)).collect();
+    mc::segmented_one(ui, &labels.join("|"), &items, selected)
 }
 
-/// Independent toggles in one strip (B I U S); returns the clicked index.
 fn toggles(ui: &mut Ui, items: &[(&str, bool)]) -> Option<usize> {
-    let t = Tokens::get(ui.ctx());
-    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::hover());
-    ui.painter().rect(r, 6.0, t.input, Stroke::new(1.0, t.input_border), egui::StrokeKind::Inside);
-    let w = r.width() / items.len().max(1) as f32;
-    let mut clicked = None;
-    for (i, (l, on)) in items.iter().enumerate() {
-        let cell = Rect::from_min_size(pos2(r.min.x + w * i as f32, r.min.y), vec2(w, r.height()));
-        let resp = ui.interact(cell, ui.id().with(("tog", l, i)), Sense::click());
-        if *on {
-            ui.painter().rect_filled(cell.shrink(2.0), 4.0, t.accent);
-        } else if resp.hovered() {
-            ui.painter().rect_filled(cell.shrink(2.0), 4.0, t.hover);
-        }
-        if i > 0 {
-            ui.painter().vline(cell.min.x, cell.y_range().shrink(5.0), Stroke::new(1.0, t.border));
-        }
-        ui.painter().text(cell.center(), Align2::CENTER_CENTER, *l, font(), if *on { t.on_accent } else { t.text });
-        if resp.clicked() {
-            clicked = Some(i);
-        }
-        resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, *on, *l));
-    }
-    clicked
+    let segs: Vec<mc::Seg> = items.iter().map(|(l, _)| mc::Seg::Text(l)).collect();
+    let on: Vec<bool> = items.iter().map(|(_, o)| *o).collect();
+    mc::segmented(ui, "marks", &segs, &on)
 }
 
 #[cfg(test)]

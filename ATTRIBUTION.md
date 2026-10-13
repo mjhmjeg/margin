@@ -109,6 +109,14 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `docs/design-handoff/phase-1/after/layout-light.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Design phase 1 before/after |
 | `docs/design-handoff/phase-1/after/text-dark.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Design phase 1 before/after |
 | `docs/design-handoff/phase-1/after/text-light.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Design phase 1 before/after |
+| `docs/design-handoff/phase-2/document-dark.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Design phase 2 after |
+| `docs/design-handoff/phase-2/document-light.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Design phase 2 after |
+| `docs/design-handoff/phase-2/font-popup-light.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Design phase 2 after |
+| `docs/design-handoff/phase-2/layout-dark.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Design phase 2 after |
+| `docs/design-handoff/phase-2/layout-light.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Design phase 2 after |
+| `docs/design-handoff/phase-2/text-dark.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Design phase 2 after |
+| `docs/design-handoff/phase-2/text-light.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Design phase 2 after |
+| `docs/design-handoff/phase-2/zoom-menu-light.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Design phase 2 after |
 | `assets/app-icon/margin.svg` | Margin fork contributors | original artwork drawn in SVG (`assets/app-icon/margin.svg`), rendered by `packaging/macos/margin-icon.sh` | MIT OR Apache-2.0 | Margin app icon (macOS fork) |
 | `assets/app-icon/margin-1024.png` | Margin fork contributors | original artwork drawn in SVG (`assets/app-icon/margin.svg`), rendered by `packaging/macos/margin-icon.sh` | MIT OR Apache-2.0 | Margin app icon (macOS fork) |
 | `assets/app-icon/margin-macos-512.png` | Margin fork contributors | original artwork drawn in SVG (`assets/app-icon/margin.svg`), rendered by `packaging/macos/margin-icon.sh` | MIT OR Apache-2.0 | Margin app icon (macOS fork) |
