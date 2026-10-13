@@ -39,10 +39,12 @@ const DOC: [(&str, &str, &str); 3] = [("saveAs", "Save As…", "saveAs"), ("prin
 #[derive(Clone, Default)]
 struct Pick(Option<String>);
 
-/// "A document is open": it has a file or unsaved edits. Home over an untouched blank window
-/// (launch) has nothing to save, print or cancel back to.
-fn document_open(app: &WordApp) -> bool {
-    app.session.path.is_some() || app.session.dirty
+/// "Came from a document": Home was opened while the editor showed a document (File › Home, the
+/// menu, a shortcut), whether or not it has a file or edits. Only Home at launch
+/// ([`WordApp::start_screen`]) has no document to go back to, save, print or export.
+fn came_from_document(app: &mut WordApp) -> bool {
+    let launch = app.launch_home;
+    *app.home_back.get_or_insert(!launch)
 }
 
 /// The Home screen in place of upstream's Backstage.
@@ -75,12 +77,46 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
 
 fn close(app: &mut WordApp) {
     app.ui.backstage = false;
+    app.home_back = None;
+    app.launch_home = false;
     app.canvas.want_focus = true;
+}
+
+/// "‹ Back to <document>": the top row of the sidebar when Home came from a document.
+fn back_row(app: &mut WordApp, ui: &mut Ui, t: &Tokens) {
+    let full = crate::i18n::fmt(tl!("Back to {name}"), &[("name", &app.title_stem())]);
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
+    // A long name is shortened with "…" to fit the row.
+    let room = r.width() - (12.0 + 16.0 + 10.0) - 6.0;
+    let stem = app.title_stem();
+    let mut label = full.clone();
+    for n in (1..=stem.chars().count()).rev() {
+        if ui.painter().layout_no_wrap(label.clone(), font(), t.accent).size().x <= room {
+            break;
+        }
+        label = crate::i18n::fmt(tl!("Back to {name}"), &[("name", &crate::review_panel::clip(&stem, n.saturating_sub(1)))]);
+    }
+    if resp.hovered() {
+        ui.painter().rect_filled(r, 6.0, t.hover);
+    }
+    crate::icons::paint(
+        ui.painter(),
+        Rect::from_center_size(pos2(r.min.x + 20.0, r.center().y), vec2(16.0, 16.0)),
+        "chevronLeft",
+        t.accent,
+        t.accent,
+    );
+    let clip = ui.painter().with_clip_rect(r.shrink2(vec2(4.0, 0.0)));
+    clip.text(pos2(r.min.x + 12.0 + 16.0 + 10.0, r.center().y), Align2::LEFT_CENTER, &label, font(), t.accent);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &full));
+    if resp.clicked() {
+        close(app);
+    }
 }
 
 fn sidebar(app: &mut WordApp, ui: &mut Ui, t: &Tokens) {
     let mac = app.integrated_titlebar;
-    let doc = document_open(app);
+    let doc = came_from_document(app);
     egui::Panel::left("margin_home_nav")
         .exact_size(SIDEBAR_W)
         .resizable(false)
@@ -97,6 +133,10 @@ fn sidebar(app: &mut WordApp, ui: &mut Ui, t: &Tokens) {
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
             }
             ui.spacing_mut().item_spacing.y = 2.0;
+            if doc {
+                back_row(app, ui, t);
+                divider(ui, t);
+            }
             for (id, label, icon) in MAIN {
                 nav_item(app, ui, t, id, label, icon, true);
             }
@@ -169,7 +209,7 @@ fn chooser(app: &mut WordApp, ui: &mut Ui, t: &Tokens, recent: bool) {
     let mut sort = ui.data(|d| d.get_temp::<bool>(sort_id)).map_or(Sort::Date, |n| if n { Sort::Name } else { Sort::Date });
     let mut list = recent && ui.data(|d| d.get_temp::<bool>(list_id)).unwrap_or(false);
     let mut open: Option<String> = None;
-    let doc = document_open(app);
+    let doc = came_from_document(app);
 
     egui::Panel::top("margin_home_top")
         .exact_size(HEADER_H)
@@ -218,8 +258,12 @@ fn chooser(app: &mut WordApp, ui: &mut Ui, t: &Tokens, recent: bool) {
                     if mc::button(ui, if recent { "Open" } else { "Create" }, true, pick.is_some()).clicked() {
                         open = pick.clone();
                     }
-                    if !recent && doc && mc::button(ui, "Cancel", false, true).clicked() {
-                        close(app);
+                    // H7/H10: Cancel (secondary) left of the primary button, with its key.
+                    if doc {
+                        if mc::button(ui, "Cancel", false, true).clicked() {
+                            close(app);
+                        }
+                        ui.label(egui::RichText::new("esc").font(font()).color(t.text_dim));
                     }
                 });
             });
@@ -546,6 +590,87 @@ mod tests {
         assert_eq!(short_date(0), "1 Jan");
         assert_eq!(short_date(1_791_849_600), "13 Oct"); // 2026-10-13
         assert_eq!(folder_and_date("/nowhere/Folder/x.docx"), "Folder");
+    }
+
+    fn harness(app: WordApp) -> egui_kittest::Harness<'static, WordApp> {
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app,
+        );
+        h.run_steps(4);
+        h
+    }
+
+    /// The sample document, unsaved and clean, in the Margin layout, with File › Home opened.
+    fn sample_then_home(page: &str) -> egui_kittest::Harness<'static, WordApp> {
+        let mut a = WordApp::new(crate::Session::new(wordcraft_engine::sample::sample_document()), crate::Services::default());
+        a.integrated_titlebar = true;
+        assert!(a.session.path.is_none() && !a.session.dirty);
+        let mut h = harness(a);
+        let act = crate::mac_menu::find("File/New…").expect("File › New… (Home)");
+        crate::mac_menu::perform(h.state_mut(), &act);
+        h.state_mut().ui.backstage_page = page.into();
+        h.run_steps(4);
+        assert!(h.state().ui.backstage);
+        h
+    }
+
+    fn back_label() -> String {
+        crate::i18n::fmt(tl!("Back to {name}"), &[("name", "The Open Studio Handbook")])
+    }
+
+    #[test]
+    fn home_from_a_document_has_a_back_row_that_returns_unchanged() {
+        use egui_kittest::kittest::Queryable;
+        let mut h = sample_then_home("new");
+        let before = h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body);
+        h.get_by_role_and_label(egui::accesskit::Role::Button, &back_label()).click();
+        h.run_steps(3);
+        assert!(!h.state().ui.backstage, "back in the document");
+        assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body), before, "unchanged");
+    }
+
+    #[test]
+    fn cancel_returns_on_new_and_on_recent_and_esc_too() {
+        use egui_kittest::kittest::Queryable;
+        for page in ["new", "recent"] {
+            let mut h = sample_then_home(page);
+            h.get_by_role_and_label(egui::accesskit::Role::Button, tl!("Cancel")).click();
+            h.run_steps(3);
+            assert!(!h.state().ui.backstage, "Cancel on {page}");
+        }
+        let mut h = sample_then_home("recent");
+        h.key_press(egui::Key::Escape);
+        h.run_steps(3);
+        assert!(!h.state().ui.backstage, "Esc");
+        // Opened again later: still from the document.
+        let act = crate::mac_menu::find("File/New…").expect("File › New… (Home)");
+        crate::mac_menu::perform(h.state_mut(), &act);
+        h.run_steps(3);
+        assert!(h.query_by_label(&back_label()).is_some());
+    }
+
+    #[test]
+    fn the_document_group_follows_came_from_document_and_launch_has_no_way_back() {
+        use egui_kittest::kittest::{NodeT, Queryable};
+        let h = sample_then_home("new");
+        for label in ["Save As…", "Print…", "Export…"] {
+            let n = h.get_by_role_and_label(egui::accesskit::Role::Button, tl!(label));
+            assert!(!n.accesskit_node().is_disabled(), "{label} is enabled for an unsaved, clean document");
+        }
+        // First launch: nothing to go back to.
+        let mut a = WordApp::new(crate::Session::new(wordcraft_doc::Document::new()), crate::Services::default());
+        a.integrated_titlebar = true;
+        assert!(a.start_screen());
+        let h = harness(a);
+        assert!(h.state().ui.backstage);
+        assert!(h.query_by_label(&crate::i18n::fmt(tl!("Back to {name}"), &[("name", tl!("Document1"))])).is_none());
+        assert!(h.query_by_role_and_label(egui::accesskit::Role::Button, tl!("Cancel")).is_none());
+        assert!(h.get_by_role_and_label(egui::accesskit::Role::Button, tl!("Print…")).accesskit_node().is_disabled());
     }
 
     /// Launch lands on the template chooser; Create opens the picked template and closes Home.

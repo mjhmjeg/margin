@@ -368,6 +368,11 @@ pub struct WordApp {
     pub dialog: Option<dialogs::Dialog>,
     /// The toolbar's command field (HANDOFF §6): query, popover and highlighted row.
     pub command_field: command_field::CommandField,
+    /// Home (File › Home) is showing and was opened from a document: Some(true) offers the way
+    /// back (Back row, Cancel, Esc). Taken when Home first shows; cleared while the editor shows.
+    pub home_back: Option<bool>,
+    /// Home was opened by [`WordApp::start_screen`] (launch): no document to go back to.
+    pub launch_home: bool,
     /// The Colors dialog (More Colors…), shown above any other dialog (#606).
     pub colors: Option<colors::ColorsDialog>,
     /// The Restrict Editing pane (#412).
@@ -543,6 +548,8 @@ impl WordApp {
             file_browser: file_browser::State::default(),
             info_editing: None,
             command_field: Default::default(),
+            home_back: None,
+            launch_home: false,
         }
     }
 
@@ -561,6 +568,8 @@ impl WordApp {
         if self.ui.start_screen {
             self.ui.backstage = true;
             self.ui.backstage_page = "home".into();
+            self.launch_home = true;
+            self.home_back = None;
         }
         self.ui.start_screen
     }
@@ -1568,6 +1577,9 @@ impl WordApp {
         if self.ui.backstage {
             backstage::show(self, ui);
         } else {
+            // The editor shows: the next Home comes from a document.
+            self.home_back = None;
+            self.launch_home = false;
             let mac = mac_ui::active(self);
             if mac {
                 mac_ui::toolbar(self, ui);
