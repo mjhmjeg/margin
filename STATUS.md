@@ -1,6 +1,6 @@
 # STATUS — WordCraft for Mac (fork of storytold/wordcraft)
 
-Last updated: 2026-10-13 (afternoon)
+Last updated: 2026-10-14
 
 Repo: https://github.com/mjhmjeg/margin (fork of storytold/wordcraft; remote `upstream`).
 
@@ -12,14 +12,16 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - Phase 5: packaging works (Margin.app, ai.spert.margin, icon, README; package.sh takes APP_NAME/BUNDLE_ID/APP_ICNS/FILE_PREFIX/NOTARY_PROFILE). Waiting on Martijn: Developer ID identity name + notarytool keychain profile → signed universal build → draft GitHub release ✋
 
 ## Next
-- Martijn: try the assistant with a real key on branch assistant/folders (scripts/margin-run.sh); check ⌘Y on the Swiss keyboard ✋
-- A5 authorship view (V1–V4): pending changes first, then persistence in .docx — waits for Martijn's OK (Fable, xhigh)
-- Then: merge the chain to main, upstream PRs per phase (Opus, high)
+- Martijn: try branch assistant/integrate in the running app (Mistral key, ⌘Y on a selection, Show Authorship, Home › Back); clear the Author name field to get "AI · <model>" ✋
+- Run scripts/authorship-spike/run.sh on a Mac with Word (Word not installed here) ✋
+- Merge assistant/integrate to main, then upstream PRs per phase (Opus, high)
+- Translations for the new assistant/Home strings (18 catalogs) (Sonnet, low)
 
 ## Later
 - Weekly upstream merge (scheduled, Sonnet)
 
 ## Done
+- 2026-10-14 A5 authorship view + .docx persistence (hidden bookmarks + custom XML part; WordCraft round trip ok); assistant fixes: cut-off/JSON answers, ⌘Y uses selection / This section, word-level suggestions, "AI · <model>" author, Home Back; branch assistant/integrate pushed, xtask ci green
 - 2026-10-13 A2 providers + Keychain key (S1–S3), A3 Assistant panel + Ask from ⌘Y (A1–A5, K3–K4), A4 read-only folders + fact-check against a file (S5, K4); all pushed, xtask ci green; mock provider only, no live key tested
 - 2026-10-13 Icons (§11, classic ribbon keeps old ones), Review panel (phase 7), command field ⌘Y/⌥Q (phase 6), A1 outside assistants as tracked suggestions + Settings › Assistant; branch assistant/outside pushed, xtask ci green
 - 2026-10-13 Assistant interview + plan (docs/decisions.md)
@@ -36,7 +38,11 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - Product name: "Margin" chosen 2026-10-12. Near-clash: an early Mac markdown notes app "Margin" (peerlist) and iPad tracker "The Margin". No formal trademark search done.
 
 ## Known bugs
+- 2026-10-13 Incident: whole-document ask with Mistral failed ("no JSON object"): 4096-token cap cut the answer; Mistral reasoning chunks dropped. Fixed with tests (salvage, JSON mode, budget 8–16k). ⌘Y ask ignored the selection (⇥ moved focus) — fixed with key-event tests.
+- 2026-10-13 Incident: disk full twice from two parallel debug builds (~50 GB). Rule now: one build at a time.
+- Review groups word-level pieces only for the session; after restart they show as separate rows.
 - Assistant work log is per session only (not saved with the document).
+- Authorship: Word round trip unmeasured (Word not installed).
 - Fact-check reads txt/md/docx/odt/rtf/html; no PDF (no text extraction in the repo).
 - Outside assistants can no longer read any file unless a folder is allowed in Settings (A4 behaviour change).
 - Upstream floating format bar can overlap a heading over a selection (handoff dropped it).
