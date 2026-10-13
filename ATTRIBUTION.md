@@ -29,6 +29,7 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `docs/mac/phase5/home.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Margin design record (before/after, phase screenshots) |
 | `docs/mac/phase5/pageless-outline.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Margin design record (before/after, phase screenshots) |
 | `docs/mac/phase5/recent.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Margin design record (before/after, phase screenshots) |
+| `docs/mac/phase4-home/*.png` | Margin fork contributors | before/after screenshots of this app's own Home screen, rendered by `ui_shot` | MIT OR Apache-2.0 | Margin design record (phase 4) |
 | `docs/design-handoff/00-overview.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Claude Design handoff (2026-10-13) |
 | `docs/design-handoff/screens/01-home-templates-dark.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Claude Design handoff (2026-10-13) |
 | `docs/design-handoff/screens/01-home-templates-light.png` | Margin fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Claude Design handoff (2026-10-13) |
