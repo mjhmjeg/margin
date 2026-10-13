@@ -1,6 +1,6 @@
 # STATUS — WordCraft for Mac (fork of storytold/wordcraft)
 
-Last updated: 2026-10-12
+Last updated: 2026-10-13
 
 Repo: https://github.com/mjhmjeg/margin (fork of storytold/wordcraft; remote `upstream`).
 
@@ -8,14 +8,17 @@ Goal: a Mac-native-feeling UI (slim toolbar, right format inspector, real menu b
 WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs/decisions.md.
 
 ## Now
+- Design fine-tuning in Claude Design (Martijn) — handoff in docs/design-handoff/ (BRIEF.md + 22 screens), zip in dist/ ✋
 - Phase 5: packaging works (Margin.app, ai.spert.margin, icon, README; package.sh takes APP_NAME/BUNDLE_ID/APP_ICNS/FILE_PREFIX/NOTARY_PROFILE). Waiting on Martijn: Developer ID identity name + notarytool keychain profile → signed universal build → draft GitHub release ✋
 
 ## Next
+- Apply Claude Design results: tokens → skin.rs, layout → mac_ui.rs / mac_home.rs (Sonnet, medium)
 
 ## Later
 - Weekly upstream merge (scheduled, Sonnet)
 
 ## Done
+- 2026-10-13 Pages-style Home (templates, Recent thumbnails, File › New); card polish; design handoff
 - 2026-10-12 Phase 4: native menu bar (9 menus, 67 items); fix Export as PDF (save dialog)
 - 2026-10-12 Phase 3: Mac layout (toolbar, Format inspector, outline, Pageless, Classic ribbon)
 - 2026-10-12 Phase 2: Margin skin (Mac palette, Apple blue, 13 pt), follows macOS light/dark
