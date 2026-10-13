@@ -106,3 +106,25 @@ page thumbnails; shown at launch and on File › New (⌘N). Built in `ui-egui/s
 document pages are upstream's, reused. Only in the Mac layout (Classic ribbon keeps the Backstage,
 and upstream's Backstage tests run in Classic). Recent thumbnails: one render per frame, files over
 20 MB show an icon.
+
+## 2026-10-13 — Design phases 3–7, icons, command field, assistant plan
+
+- Phases 3–5 merged and pushed as `design/phases-3-5`; the later steps stack on it in one linear
+  chain (icons → review panel → command field → assistant/outside), pushed, not merged to main.
+- Classic ribbon keeps the upstream icon drawings (HANDOFF §0) via an `icons::Legacy` guard; the
+  Margin layout uses the handoff set. Keeps the upstream PR free of ribbon changes.
+- Right-hand panels (Format, Review, Assistant) are all 320 wide; the left outline stays 220.
+  Rejected: all 320 (cramps the page on a 13" MacBook).
+- Command field shortcut: ⌘Y, plus ⌥Q (Word's "Tell me"). Every ⌘+letter was taken; ⌘/ and ⌘. need
+  Shift on QWERTZ/AZERTY; ⌘K (palette standard) is Link; ⌘J is Justify. Redo keeps ⇧⌘Z on macOS and
+  Ctrl+Y elsewhere. macOS shortcuts match the typed letter, so QWERTZ ⌘Y is the key labelled Y.
+- Assistant (interview 2026-10-13): Margin is for everyone who downloads it; bring your own key
+  (Keychain); ships OFF. Providers: Anthropic, OpenAI, Google Gemini, Mistral (pre-selected),
+  OpenRouter for the rest, plus On this Mac (local) and Other (OpenAI-compatible, covers eurouter).
+  Built as two connectors (Anthropic Messages + OpenAI-compatible). Outside route first (A1), then
+  built-in. All of §6–§10 in scope; authorship persistence last. Offered back upstream as an
+  optional module (off in wasm).
+- A1 rule: everything an outside assistant changes over the control channel is a tracked change
+  under the configured author. Denied for assistants: accept/reject, tracking off, author/assistant
+  settings, undo/redo/repeat, macros, restrict editing, other people's comments, raw input
+  (click/key/menu) and quit. Headless `wordcraft-cli mcp` is not covered yet (opt-in flag, ~10 lines).
