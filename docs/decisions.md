@@ -139,3 +139,40 @@ and upstream's Backstage tests run in Classic). Recent thumbnails: one render pe
 - **Fact check (K4).** The file's text goes as a second nonce-fenced untrusted block (`BEGIN SOURCE <nonce>`), capped at 40,000 characters (cut at a paragraph end, with a log line), files at most 20 MB. Only `comment` edits are applied; replace/insert from the model are skipped with a log line. Formats: txt, md, docx, docm, odt, rtf, html (no PDF: there is no text extraction in the repo). The picker is an in-app list of the files in the allowed folders (depth 3, no links, no hidden files), not the native dialog, which cannot be limited to folders.
 - **Rejected:** a per-assistant allow-list (one list is simpler to reason about); adding a PDF text-extraction dependency for this step; reading the file on a background thread (parsing a file of at most 20 MB on the UI thread is accepted for now).
 
+
+## 2026-10-13 — A5 spike: how authorship survives Word and WordCraft
+
+**Context.** HANDOFF §10 keeps AI authorship after a suggestion is accepted (V2–V4). It must be
+stored in the `.docx` so Word and upstream WordCraft give the file back intact (losing marks is
+tolerable, a refused or repaired file is not), invisible to a person editing in Word. Spike
+report: `docs/authorship-storage.md`; harness: `scripts/authorship-spike/run.sh`.
+
+**Decision.** **A: hidden bookmarks `_MarginAI_<id>` around the AI runs + one custom XML data
+part** (`customXml/itemN.xml`, namespace `urn:margin:authorship`) with one entry per span:
+author, model, acceptedAt, the accepted text (hash only above ~10k chars). Both pieces already
+round-trip through the model (`InlineObject::BookmarkStart/End`, `Document::passthrough`), so
+no docx-crate change here or upstream. On load Margin reconciles part and bookmarks (table in
+the report §6); the part is rewritten from the model on save. Margin's editor inserts text typed
+at a span's end *after* the bookmark end, matching Word's documented bookmark rule.
+
+**Measured.** Margin and upstream WordCraft (`storytold/wordcraft` main `159b84f`), open+save and
+save after edits inside / at the edges of the spans: A kept and tracking edits; B (offsets in the
+part only) broken by the first insertion; C (`mc:Ignorable` attributes on runs) dropped on the
+first save even without edits; D (hidden content controls) kept and tracking edits; E (hidden
+character style) kept but leaks onto text typed after a span. All outputs valid (parts, content
+types, relationships, bookmark ids).
+
+**Not measured.** Word: not installed on this Mac (no bundle, no `com.microsoft.Word` in Launch
+Services). The AppleScript round trip is written and wired in; run it before building A5's
+persistence. If Word drops bookmarks in a flow that matters, D is the fallback.
+
+**Alternatives rejected.** B: no anchor, cannot be repaired. C: dies in WordCraft today and
+would need reader/writer work here and upstream, and Word is unlikely to keep it. D: Word's
+right-click *Remove Content Control* and Developer tab expose it, and typing at the end of a
+control stays inside it (a person's continuation becomes "AI"). E: no per-span identity, style
+inheritance over-attributes. Comments (visible), unaccepted tracked changes (pending, not
+accepted), permission ranges (Restrict Editing semantics), `docProps/custom.xml` (flat, shown
+to the user, no anchor).
+
+**Open.** Whether to store the accepted text in the part (precise repair after edits, file grows
+by the AI share) or hash only: report recommends text with a cap; decide when A5 is built.
