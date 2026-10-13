@@ -328,9 +328,16 @@ pub fn shortcuts(app: &mut WordApp, ctx: &egui::Context) {
     if hit {
         app.ui.margin.classic_ribbon = !app.ui.margin.classic_ribbon;
     }
-    // ⌥⌘J focuses the command field (the Help menu's accelerator does the same when AppKit sees it first).
-    let find = ctx.input_mut(|i| i.consume_key(egui::Modifiers { alt: true, mac_cmd: true, command: true, ..Default::default() }, egui::Key::J));
-    if find {
+    // ⌘Y focuses the command field (the Help menu's accelerator does the same when AppKit sees it
+    // first); so does ⌥Q in the Margin layout (Classic keeps Alt+Q for the old dialog). The letter
+    // is matched as typed, so on QWERTZ keyboards this is the key labelled Y.
+    let cmd_y = ctx.input_mut(|i| i.consume_key(egui::Modifiers { mac_cmd: true, command: true, ..Default::default() }, egui::Key::Y));
+    let alt_q = active(app) && ctx.input_mut(|i| i.consume_key(egui::Modifiers { alt: true, ..Default::default() }, egui::Key::Q));
+    if alt_q {
+        // Option+Q types "œ" on a US Mac keyboard: drop that text.
+        ctx.input_mut(|i| i.events.retain(|e| !matches!(e, egui::Event::Text(t) if t == "œ" || t == "Œ")));
+    }
+    if cmd_y || alt_q {
         crate::command_field::open(app, "");
     }
 }

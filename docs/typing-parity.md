@@ -31,7 +31,7 @@ overall picture is in [`target-app-parity.md`](target-app-parity.md).
 | Keys | Word's result | Test |
 |---|---|---|
 | type, select some of it, type over it | two undo steps: the first ⌘Z brings the selected text back (still selected), the second removes the typing. Uninterrupted typing stays one step | `typing_then_selecting_then_typing_are_two_undo_steps` |
-| ⌘B with nothing selected, ⌘Z, type | the text isn't bold (Undo takes the waiting caret formatting back too); ⌘Y brings it back | `undoing_bold_at_the_caret_turns_bold_typing_off_again` |
+| ⌘B with nothing selected, ⌘Z, type | the text isn't bold (Undo takes the waiting caret formatting back too); ⇧⌘Z brings it back | `undoing_bold_at_the_caret_turns_bold_typing_off_again` |
 
 ## Track Changes
 

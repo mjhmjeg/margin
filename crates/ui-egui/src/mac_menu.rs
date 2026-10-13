@@ -198,7 +198,7 @@ const VIEW: &[Entry] = &[
 const WINDOW: &[Entry] =
     &[it("Minimize", Std(self::Std::Minimize)), it("Zoom", Std(self::Std::Zoom)), Sep, it("Bring All to Front", Std(self::Std::BringAllToFront))];
 
-const HELP: &[Entry] = &[key("Search Commands…", Margin(MarginAct::CommandField), "CmdOrCtrl+Alt+J")];
+const HELP: &[Entry] = &[key("Search Commands…", Margin(MarginAct::CommandField), "CmdOrCtrl+Y")];
 
 /// The menu bar, left to right. The first menu is the application menu.
 pub const MENUS: &[(&str, &[Entry])] = &[

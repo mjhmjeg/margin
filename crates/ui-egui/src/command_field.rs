@@ -26,9 +26,11 @@ const VISIBLE_ROWS: f32 = 8.0;
 /// How many recent commands are remembered, and how many distinct commands keep a count.
 const MAX_RECENT: usize = 12;
 const MAX_COUNTED: usize = 300;
-/// The key that focuses the field. ⌘J is Justify (Word's shortcut, `para.justify`), so the field
-/// takes ⌥⌘J; this one constant and the Help menu's accelerator are all that name it.
-pub const SHORTCUT_LABEL: &str = "⌥⌘J";
+/// The key that focuses the field: ⌘Y (⌥Q does too, in the Margin layout). ⌘J is Justify (Word's
+/// shortcut), and Redo is only ⇧⌘Z. macOS shortcuts match the typed letter, so on a QWERTZ keyboard
+/// ⌘Y is the key labelled Y (not Undo's position, which is Z there). This constant, the Help
+/// menu's accelerator and `mac_ui::shortcuts` are all that name it.
+pub const SHORTCUT_LABEL: &str = "⌘Y";
 
 /// The ask the quick-ask rows send; the label is what the row shows.
 pub const QUICK_ASKS: [(&str, &str); 4] = [
@@ -702,6 +704,38 @@ mod tests {
         assert!(!h.state().command_field.open && h.state().command_field.query.is_empty());
         assert_eq!(h.state().ui.margin.command_counts.get("view.ruler"), Some(&1));
         assert_eq!(h.state().ui.margin.command_recent, ["view.ruler"]);
+    }
+
+    /// ⌘Y and ⌥Q focus the field; Redo is only ⇧⌘Z (⌘Y no longer redoes). Shortcuts match the
+    /// typed letter, so on QWERTZ keyboards ⌘Y is the key labelled Y.
+    #[test]
+    fn cmd_y_and_alt_q_focus_the_field_and_redo_is_shift_cmd_z() {
+        let cmd = egui::Modifiers { mac_cmd: true, command: true, ..Default::default() };
+        let cmd_shift = egui::Modifiers { shift: true, ..cmd };
+        let alt = egui::Modifiers { alt: true, ..Default::default() };
+        let mut h = harness();
+        let text = |h: &egui_kittest::Harness<'_, WordApp>| h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body);
+        h.state_mut().run("text.insert", json!({"text": "Kilns"})).unwrap();
+        h.state_mut().run("edit.undo", json!({})).unwrap();
+        assert_eq!(text(&h), "");
+        h.key_press_modifiers(cmd, egui::Key::Y);
+        h.run_steps(3);
+        assert!(h.state().command_field.open && h.state().dialog.is_none(), "⌘Y opens the field");
+        assert!(h.ctx.memory(|m| m.has_focus(egui::Id::new("command_field_edit"))));
+        assert_eq!(text(&h), "", "⌘Y does not redo");
+        h.key_press(egui::Key::Escape);
+        h.run_steps(3);
+        assert!(!h.state().command_field.open);
+        h.key_press_modifiers(alt, egui::Key::Q);
+        h.run_steps(3);
+        assert!(h.state().command_field.open && h.state().dialog.is_none(), "⌥Q opens the field in the Margin layout");
+        assert!(h.state().command_field.query.is_empty(), "no stray character");
+        h.key_press(egui::Key::Escape);
+        h.run_steps(3);
+        h.key_press_modifiers(cmd_shift, egui::Key::Z);
+        h.run_steps(3);
+        assert_eq!(text(&h), "Kilns", "⇧⌘Z redoes");
+        assert_eq!(SHORTCUT_LABEL, "⌘Y");
     }
 
     #[test]
