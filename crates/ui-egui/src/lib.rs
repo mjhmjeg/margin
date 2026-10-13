@@ -56,6 +56,7 @@ pub mod icons;
 pub mod ink;
 pub mod keys;
 pub mod keytips;
+pub mod mac_controls;
 pub mod mac_home;
 pub mod mac_menu;
 pub mod mac_ui;
