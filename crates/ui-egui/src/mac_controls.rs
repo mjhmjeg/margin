@@ -214,6 +214,33 @@ pub fn popup_button(ui: &mut Ui, id: &str, width: f32, current: &str, items: &[S
     chosen
 }
 
+/// [`popup_button`] with caller-drawn contents: the same 28 high field, but the popup holds
+/// whatever `add_contents` puts in it (rows that close the popup on click). For dialogs whose
+/// choices are `selectable_value` rows over their own state.
+pub fn popup_button_with<R>(ui: &mut Ui, id: egui::Id, width: f32, current: &str, add_contents: impl FnOnce(&mut Ui) -> R) -> Response {
+    let (t, m) = tokens(ui);
+    let (r, resp) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::click());
+    ui.painter().rect(r, RADIUS, m.field_bg, Stroke::new(1.0, t.input_border), egui::StrokeKind::Inside);
+    let label_w = (r.width() - 34.0).max(0.0);
+    let mut job = egui::text::LayoutJob::simple_singleline(current.to_string(), font(), t.text);
+    job.wrap = egui::text::TextWrapping::truncate_at_width(label_w);
+    let galley = ui.painter().layout_job(job);
+    ui.painter().galley(pos2(r.min.x + 10.0, r.center().y - galley.size().y / 2.0), galley, t.text);
+    crate::icons::paint(
+        ui.painter(),
+        Rect::from_center_size(pos2(r.max.x - 14.0, r.center().y), vec2(14.0, 14.0)),
+        "dropdown",
+        t.text_dim,
+        t.text_dim,
+    );
+    focus_ring(ui, &resp, r, RADIUS);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, current));
+    egui::Popup::menu(&resp).id(id).width(width.max(180.0)).show(|ui| {
+        egui::ScrollArea::vertical().max_height(320.0).show(ui, add_contents);
+    });
+    resp
+}
+
 /// Number field: 28 high, value right-aligned in `text`, unit after it in `text_dim` ("28 pt").
 /// Drag or type; returns the new value once the edit is done.
 pub fn number_field(ui: &mut Ui, id: &str, value: f32, step: f32, range: std::ops::RangeInclusive<f32>, unit: &str) -> Option<f32> {
@@ -279,6 +306,83 @@ pub fn number_field(ui: &mut Ui, id: &str, value: f32, step: f32, range: std::op
     out
 }
 
+/// [`number_field`] with the caller in charge of text: `display` writes the value shown ("No limit",
+/// a decimal comma), `edit` writes the text the field starts typing from, `parse` reads what was
+/// typed (and may reject it). The result is always clamped to `range`; a non-finite parse is ignored.
+#[allow(clippy::too_many_arguments)]
+pub fn number_field_with(
+    ui: &mut Ui,
+    id: &str,
+    value: f32,
+    step: f32,
+    range: std::ops::RangeInclusive<f32>,
+    unit: &str,
+    display: &dyn Fn(f32) -> String,
+    edit: &dyn Fn(f32) -> String,
+    parse: &dyn Fn(&str) -> Option<f32>,
+) -> Option<f32> {
+    let (t, m) = tokens(ui);
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::hover());
+    ui.painter().rect(r, RADIUS, m.field_bg, Stroke::new(1.0, t.input_border), egui::StrokeKind::Inside);
+    let unit_w = if unit.is_empty() { 0.0 } else { ui.painter().layout_no_wrap(unit.to_string(), font(), t.text_dim).size().x + 6.0 };
+    if !unit.is_empty() {
+        ui.painter().text(pos2(r.max.x - 10.0, r.center().y), Align2::RIGHT_CENTER, unit, font(), t.text_dim);
+    }
+    let field = Rect::from_min_max(pos2(r.min.x + 8.0, r.min.y + 2.0), pos2(r.max.x - 10.0 - unit_w, r.max.y - 2.0));
+    let edit_id = ui.id().with((id, "edit"));
+    let mut editing = ui.data(|d| d.get_temp::<String>(edit_id));
+    let mut out = None;
+    if let Some(text) = editing.as_mut() {
+        // Typing: a frameless, right-aligned text field; Enter or leaving it commits.
+        let te = ui.put(
+            field,
+            egui::TextEdit::singleline(text).frame(egui::Frame::NONE).font(font()).horizontal_align(egui::Align::RIGHT).text_color(t.text),
+        );
+        if !te.has_focus() && !te.lost_focus() {
+            te.request_focus();
+        }
+        focus_ring(ui, &te, r, RADIUS);
+        if te.lost_focus() {
+            if let Some(n) = parse(text.trim()).filter(|n| n.is_finite()) {
+                let n = n.clamp(*range.start(), *range.end());
+                if (n - value).abs() > f32::EPSILON {
+                    out = Some(n);
+                }
+            }
+            ui.data_mut(|d| d.remove::<String>(edit_id));
+        } else {
+            let t2 = text.clone();
+            ui.data_mut(|d| d.insert_temp(edit_id, t2));
+        }
+        return out;
+    }
+    // Showing: the value right-aligned; drag sideways to change it, click to type.
+    let resp = ui.interact(field, edit_id.with("drag"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+    let drag_id = edit_id.with("value");
+    let mut v = ui.data(|d| d.get_temp::<f32>(drag_id)).filter(|_| resp.dragged()).unwrap_or(value);
+    if resp.dragged() {
+        v = (v + resp.drag_delta().x * step).clamp(*range.start(), *range.end());
+        ui.data_mut(|d| d.insert_temp(drag_id, v));
+    }
+    ui.painter().text(pos2(field.max.x, field.center().y), Align2::RIGHT_CENTER, display(v), font(), t.text);
+    if resp.clicked() {
+        ui.data_mut(|d| d.insert_temp(edit_id, edit(value)));
+    }
+    if resp.drag_stopped() {
+        ui.data_mut(|d| d.remove::<f32>(drag_id));
+        if (v - value).abs() > f32::EPSILON {
+            out = Some((v * 100.0).round() / 100.0);
+        }
+    }
+    focus_ring(ui, &resp, r, RADIUS);
+    resp.widget_info(|| egui::WidgetInfo {
+        current_text_value: Some(format!("{} {unit}", display(value)).trim().to_string()),
+        value: Some(f64::from(value)),
+        ..egui::WidgetInfo::new(egui::WidgetType::DragValue)
+    });
+    out
+}
+
 /// A labelled row: label column 80 (`text_dim`), 8 gap, the control fills the rest.
 pub fn labelled_row<R>(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
     let (t, _) = tokens(ui);
@@ -316,15 +420,25 @@ pub fn hint(ui: &mut Ui, text: &str) {
 
 /// Checkbox (14, radius 4) with its label; returns true when clicked.
 pub fn checkbox(ui: &mut Ui, label: &str, on: bool) -> bool {
+    toggle_mark(ui, label, on, false).clicked()
+}
+
+/// [`checkbox`] for callers that need the response (dialogs: `changed()`).
+pub fn checkbox_response(ui: &mut Ui, label: &str, on: bool) -> Response {
     toggle_mark(ui, label, on, false)
 }
 
 /// Radio (14, round) with its label; returns true when clicked.
 pub fn radio(ui: &mut Ui, label: &str, on: bool) -> bool {
+    toggle_mark(ui, label, on, true).clicked()
+}
+
+/// [`radio`] for callers that need the response.
+pub fn radio_response(ui: &mut Ui, label: &str, on: bool) -> Response {
     toggle_mark(ui, label, on, true)
 }
 
-fn toggle_mark(ui: &mut Ui, label: &str, on: bool, round: bool) -> bool {
+fn toggle_mark(ui: &mut Ui, label: &str, on: bool, round: bool) -> Response {
     let (t, m) = tokens(ui);
     let text_w = ui.painter().layout_no_wrap(tl!(label).to_string(), font(), t.text).size().x;
     let (r, resp) = ui.allocate_exact_size(vec2(14.0 + 8.0 + text_w, ROW_H), Sense::click());
@@ -346,7 +460,7 @@ fn toggle_mark(ui: &mut Ui, label: &str, on: bool, round: bool) -> bool {
     focus_ring(ui, &resp, b, radius);
     let wt = if round { egui::WidgetType::RadioButton } else { egui::WidgetType::Checkbox };
     resp.widget_info(|| egui::WidgetInfo::selected(wt, true, on, tl!(label)));
-    resp.clicked()
+    resp
 }
 
 /// Switch 30 × 18, knob 14: on = `accent`, off = `segment_track` + `input_border` ring.

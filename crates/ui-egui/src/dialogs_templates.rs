@@ -67,14 +67,14 @@ pub fn templates(app: &mut WordApp, ui: &mut Ui, f: &mut TemplatesForm) -> bool 
     if let Some(p) = app.dialog_pick.take() {
         f.path = p;
     }
-    ui.label(egui::RichText::new(tl!("Document template:")).font(semibold(12.5)));
+    crate::dialogs::group_label(ui, tl!("Document template:"));
     ui.horizontal(|ui| {
         ui.add(egui::TextEdit::singleline(&mut f.path).desired_width(300.0));
         if ui.add_enabled(can_pick(app), egui::Button::new(tl!("Attach…"))).clicked() {
             pick(app);
         }
     });
-    ui.checkbox(&mut f.link, tl!("Automatically update document styles"));
+    crate::dialogs::checkbox(ui, &mut f.link, tl!("Automatically update document styles"));
     ui.add_space(6.0);
     let organizer = ui.button(tl!("Organizer…")).clicked();
     if !f.message.is_empty() {
@@ -183,7 +183,7 @@ pub fn organizer(app: &mut WordApp, ui: &mut Ui, f: &mut OrganizerForm) -> bool 
     let left_builtin = mine.iter().find(|x| s(x, "id") == f.left).is_none_or(|x| x.get("builtIn").and_then(Value::as_bool).unwrap_or(true));
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
-            ui.label(egui::RichText::new(tl!("Document")).font(semibold(12.5)));
+            crate::dialogs::group_label(ui, tl!("Document"));
             list_frame(ui, "organizer_mine", &mut |ui| {
                 for st in &mine {
                     let id = s(st, "id");
@@ -233,7 +233,7 @@ pub fn organizer(app: &mut WordApp, ui: &mut Ui, f: &mut OrganizerForm) -> bool 
     if let Some(new) = f.rename.as_mut() {
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            ui.label(tl!("Name:"));
+            crate::dialogs::form_label(ui, tl!("Name:"));
             let r = ui.add(egui::TextEdit::singleline(new).desired_width(220.0));
             renamed = ui.button(tl!("OK")).clicked() || (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
         });
