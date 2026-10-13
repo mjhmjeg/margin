@@ -1171,6 +1171,33 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.line(&[(7.0, 17.0), (12.0, 17.0)]);
             pen.fill(&[(17.5, 8.0), (13.5, 4.5), (13.5, 11.5)], a);
         }
+        // Home screen (Margin handoff): a new page, a clock, sliders, grid and list views.
+        "newDocument" => {
+            pen.page(4.5, 2.5, 15.5, 17.5);
+            pen.line(&[(10.0, 10.0), (10.0, 14.0)]);
+            pen.line(&[(8.0, 12.0), (12.0, 12.0)]);
+        }
+        "recent" => {
+            pen.circle(10.0, 10.0, 7.1, c);
+            pen.line(&[(10.0, 6.2), (10.0, 10.0), (12.5, 11.7)]);
+        }
+        "settings" => {
+            pen.lines(3.3, 10.8, &[5.8]);
+            pen.lines(14.2, 16.7, &[5.8]);
+            pen.lines(3.3, 5.8, &[14.2]);
+            pen.lines(9.2, 16.7, &[14.2]);
+            pen.circle(12.5, 5.8, 1.7, c);
+            pen.circle(7.5, 14.2, 1.7, c);
+        }
+        "viewGrid" => {
+            for (x, y) in [(3.5, 3.5), (11.5, 3.5), (3.5, 11.5), (11.5, 11.5)] {
+                pen.rect(x, y, x + 5.0, y + 5.0, c);
+            }
+        }
+        "viewList" => {
+            pen.lines(7.0, 16.5, &[5.0, 10.0, 15.0]);
+            pen.lines(3.5, 4.0, &[5.0, 10.0, 15.0]);
+        }
         "search" => {
             pen.circle(8.5, 8.5, 5.0, c);
             pen.line(&[(12.0, 12.0), (16.5, 16.5)]);
