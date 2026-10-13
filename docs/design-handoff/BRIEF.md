@@ -39,6 +39,8 @@ All screenshots are 1440 × 900 pt windows at 2× (2880 × 1800 px). Light and d
 | `14-dialog-paragraph-light` | A dialog (Format › Paragraph…) | **Upstream dialog, not yet restyled** — representative of ~50 dialog types. |
 | `15-classic-ribbon-light` | View › Classic Ribbon (⌃⌘R) | The original WordCraft ribbon, kept as an option. Out of scope for redesign. |
 
+Review, comments and AI: see [`REVIEW-AND-AI.md`](REVIEW-AND-AI.md) and `review/`.
+
 Earlier design references: `docs/mac/mockup.html` (editor, approved) and `docs/mac/home-mockup.html`
 (home). Before/after of the original WordCraft UI: `docs/mac/before/`.
 

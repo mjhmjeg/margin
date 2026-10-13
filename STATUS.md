@@ -15,6 +15,7 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - Apply Claude Design results: tokens → skin.rs, layout → mac_ui.rs / mac_home.rs (Sonnet, medium)
 
 ## Later
+- AI co-worker (see IDEAS.md): interview + plan first; design exploration now in Claude Design (docs/design-handoff/REVIEW-AND-AI.md)
 - Weekly upstream merge (scheduled, Sonnet)
 
 ## Done
