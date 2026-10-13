@@ -98,3 +98,11 @@ Switch Modes keeps Word's meaning (page only), like Pages' separate dark-documen
 - App name "Margin" in window title, menus, eframe app name; bundle id ai.spert.margin.
 - README.md is Margin's; upstream's kept as README-WordCraft.md.
 - Version follows upstream (0.6.0) for now.
+
+## 2026-10-13 — Pages-style Home screen
+
+Martijn: sidebar New, Recent, Open…, Save As, Print, Export, More… (Info, Save, Options); Recent as
+page thumbnails; shown at launch and on File › New (⌘N). Built in `ui-egui/src/mac_home.rs`; the
+document pages are upstream's, reused. Only in the Mac layout (Classic ribbon keeps the Backstage,
+and upstream's Backstage tests run in Classic). Recent thumbnails: one render per frame, files over
+20 MB show an icon.

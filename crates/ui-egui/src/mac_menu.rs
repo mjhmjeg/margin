@@ -31,6 +31,8 @@ pub enum Act {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum MarginAct {
+    /// File › New: the template chooser (Pages-style), not a blank document straight away.
+    Home,
     Outline,
     Inspector,
     Pageless,
@@ -84,7 +86,7 @@ const APP: &[Entry] = &[
 ];
 
 const FILE: &[Entry] = &[
-    key("New", Keys("Mod+N"), "CmdOrCtrl+N"),
+    key("New…", Margin(MarginAct::Home), "CmdOrCtrl+N"),
     key("Open…", Keys("Mod+O"), "CmdOrCtrl+O"),
     Sep,
     key("Close", Keys("Mod+W"), "CmdOrCtrl+W"),
@@ -246,6 +248,10 @@ pub fn perform(app: &mut WordApp, act: &Act) {
             Some(t) if !t.is_empty() => app.synthetic.push(egui::Event::Paste(t)),
             _ => perform(app, &Keys("Mod+V")),
         },
+        Margin(MarginAct::Home) => {
+            app.ui.backstage = true;
+            app.ui.backstage_page = "new".into();
+        }
         Margin(MarginAct::Outline) => crate::widgets::run_from_ribbon(app, "view.navigationPane", json!({})),
         Margin(MarginAct::Inspector) => {
             app.ui.margin.classic_ribbon = false;

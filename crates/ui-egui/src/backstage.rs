@@ -19,6 +19,10 @@ const PAGES: [(&str, &str); 9] = [
 ];
 
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
+    // Margin: the Pages-style Home screen replaces the Backstage (Classic ribbon keeps it).
+    if crate::mac_ui::active(app) {
+        return crate::mac_home::show(app, ui);
+    }
     let t = Tokens::get(ui.ctx());
     let mac = app.integrated_titlebar;
     // Margin: a light Mac sidebar (like Finder or Pages) instead of Word's full-colour band.
@@ -201,7 +205,7 @@ const HOME_TEMPLATES: usize = 4;
 
 /// The templates whose English or translated label, or id, contains `query` (case-insensitive;
 /// the id lets "resume" find "Résumé"); all of them for an empty query.
-fn matching_templates(query: &str) -> Vec<(&'static str, &'static str)> {
+pub(crate) fn matching_templates(query: &str) -> Vec<(&'static str, &'static str)> {
     let q = query.trim().to_lowercase();
     TEMPLATES
         .into_iter()
@@ -307,14 +311,14 @@ fn open_page(app: &mut WordApp, ui: &mut Ui) {
 
 /// Save As: Browse… asks where to save. It has no recent-documents list: clicking one of those
 /// opens it, which is not what Save As is for.
-fn save_as_page(app: &mut WordApp, ui: &mut Ui) {
+pub(crate) fn save_as_page(app: &mut WordApp, ui: &mut Ui) {
     heading(ui, "Save As");
     if ui.button(egui::RichText::new(tl!("Browse…")).font(medium(14.0))).clicked() {
         app.save_as_dialog();
     }
 }
 
-fn info_page(app: &mut WordApp, ui: &mut Ui) {
+pub(crate) fn info_page(app: &mut WordApp, ui: &mut Ui) {
     heading(ui, "Info");
     let info = app.session.run("file.info", &json!({})).unwrap_or_default();
     ui.columns(2, |cols| {
@@ -378,7 +382,7 @@ fn info_page(app: &mut WordApp, ui: &mut Ui) {
     });
 }
 
-fn export_page(app: &mut WordApp, ui: &mut Ui) {
+pub(crate) fn export_page(app: &mut WordApp, ui: &mut Ui) {
     if app.ui.backstage_page == "print" {
         heading(ui, "Print");
         // Print Markup (a print setting, as in Word): the comments beside each page.
@@ -425,6 +429,7 @@ mod tests {
     #[test]
     fn home_and_new_show_different_sections() {
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.ui.margin.classic_ribbon = true; // upstream Backstage (Margin has its own Home)
         a.run("ui.backstage", json!({"value": true, "page": "home"})).unwrap();
         let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
             |ui, app: &mut WordApp| {
@@ -462,6 +467,7 @@ mod tests {
             ..Default::default()
         };
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::from_text("XYZ")), services);
+        a.ui.margin.classic_ribbon = true; // upstream Backstage (Margin has its own Home)
         a.session.author = "GAMMA".into();
         a.run("ui.backstage", json!({"value": true, "page": "info"})).unwrap();
         let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
@@ -510,6 +516,7 @@ mod tests {
     #[test]
     fn save_as_page_shows_browse_and_no_open_list() {
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.ui.margin.classic_ribbon = true; // upstream Backstage (Margin has its own Home)
         a.run("ui.backstage", json!({"value": true, "page": "saveAs"})).unwrap();
         let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
             |ui, app: &mut WordApp| {
@@ -527,6 +534,7 @@ mod tests {
     #[test]
     fn backstage_save_navigates_to_save_as_when_unnamed() {
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.ui.margin.classic_ribbon = true; // upstream Backstage (Margin has its own Home)
         a.run("ui.backstage", json!({"value": true, "page": "home"})).unwrap();
         let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
             |ui, app: &mut WordApp| {
@@ -556,6 +564,7 @@ mod tests {
             ..Default::default()
         };
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), services);
+        a.ui.margin.classic_ribbon = true; // upstream Backstage (Margin has its own Home)
         a.run("ui.backstage", json!({"value": true, "page": "home"})).unwrap();
         let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
             |ui, app: &mut WordApp| {
@@ -585,6 +594,7 @@ mod tests {
             ..Default::default()
         };
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), services);
+        a.ui.margin.classic_ribbon = true; // upstream Backstage (Margin has its own Home)
         a.run("ui.backstage", json!({"value": true, "page": "home"})).unwrap();
         let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
             |ui, app: &mut WordApp| {
@@ -603,6 +613,7 @@ mod tests {
     #[test]
     fn backstage_save_as_sidebar_opens_save_as_page() {
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+        a.ui.margin.classic_ribbon = true; // upstream Backstage (Margin has its own Home)
         a.run("ui.backstage", json!({"value": true, "page": "home"})).unwrap();
         let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
             |ui, app: &mut WordApp| {

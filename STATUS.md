@@ -27,7 +27,6 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - Product name: "Margin" chosen 2026-10-12. Near-clash: an early Mac markdown notes app "Margin" (peerlist) and iPad tracker "The Margin". No formal trademark search done.
 
 ## Known bugs
-- Start screen: light Mac sidebar now; the page content (greeting, template row, Recent) is still WordCraft's layout.
 - Margin shares the settings folder (~/Library/Application Support/WordCraft) with an installed WordCraft.
 - Upstream warning: contributors/people.toml TOML parse error at line 71 (theirs).
 - Toolbar sits in the 28 pt traffic-light band (AppKit fixes the lights; moving them needs unsafe code, forbidden upstream) — slimmer than the 52 pt mockup.
