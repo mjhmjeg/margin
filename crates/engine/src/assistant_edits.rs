@@ -49,8 +49,9 @@ pub const ALLOWED: [&str; 4] = ["select.range", "text.delete", "text.insert", "r
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ScopeKind {
     Selection,
-    Section,
+    /// The default when nothing is selected: the part where the caret is.
     #[default]
+    Section,
     Document,
 }
 

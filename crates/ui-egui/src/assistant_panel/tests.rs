@@ -210,7 +210,7 @@ fn edits_outside_the_scope_and_ambiguous_quotes_are_dropped_and_logged() {
     wait(&mut a);
     let l = log(&mut a);
     let e = &l["entries"][0];
-    assert_eq!(e["scope"], "Selection");
+    assert_eq!(e["scope"], "Selection · 8 words");
     let lines = e["lines"].to_string();
     assert!(lines.contains("outside the chosen scope"), "{lines}");
     assert!(lines.contains("occurs 3 times"), "{lines}");
@@ -267,7 +267,7 @@ fn nothing_is_sent_while_the_switch_is_off_or_no_model_is_chosen() {
     a.run("ui.assistant", json!({"provider": "other", "baseUrl": m.base, "model": "mock-1"})).unwrap();
     let e = a.run("ui.assistant.ask", json!({"instruction": "Shorten this."})).unwrap_err();
     assert!(e.contains("Let an assistant work in Margin"), "{e}");
-    assert!(crate::command_field::submit_ask(&mut a, "Shorten this.", &crate::command_field::Scope { words: 0 }).is_err());
+    assert!(crate::command_field::submit_ask(&mut a, "Shorten this.", &crate::command_field::Scope::default()).is_err());
     a.run("ui.assistant", json!({"enabled": true, "model": ""})).unwrap();
     let e = a.run("ui.assistant.ask", json!({"instruction": "Shorten this."})).unwrap_err();
     assert!(e.contains("Choose a model"), "{e}");
@@ -345,7 +345,7 @@ fn the_command_field_ask_opens_the_panel_scoped_to_the_selection() {
     let mut a = app_with(&DOC);
     connect(&mut a, &m);
     a.session.run("select.text", &json!({"text": "the very big mat"})).unwrap();
-    crate::command_field::submit_ask(&mut a, "Shorten this.", &crate::command_field::Scope { words: 4 }).unwrap();
+    crate::command_field::submit_ask(&mut a, "Shorten this.", &crate::command_field::Scope { words: 4, ..Default::default() }).unwrap();
     assert!(visible(&a));
     wait(&mut a);
     let user = m.body()["messages"][1]["content"].as_str().unwrap().to_string();
@@ -856,4 +856,133 @@ fn each_failure_says_which_case_happened_and_keeps_the_answer() {
         assert_eq!(e["answer"].is_string(), kept, "{l}");
         assert!(changes(&mut a).is_empty());
     }
+}
+// ---------------------------------------------------------------------------------------------
+// Incident 2026-10-13 (2): ⌘Y with a selection asked about the whole document.
+
+const STUDIO: [&str; 5] = [
+    "Studio notes",
+    "Why share a studio?",
+    "Rent is the obvious reason, but it is not the best one. A shared room puts your work next to work you would never have seen otherwise.",
+    "Membership",
+    "Membership is pay what you can, reviewed every season.",
+];
+
+/// The app with headings, in a window, pointed at `m`.
+fn studio_harness(m: &Mock) -> egui_kittest::Harness<'static, WordApp> {
+    let mut a = app_with(&STUDIO);
+    for i in [1usize, 3] {
+        a.session.run("select.range", &json!({"anchor": {"block": i, "off": 0}, "focus": {"block": i, "off": 0}})).unwrap();
+        a.session.run("para.style", &json!({"style": "Heading1"})).unwrap();
+    }
+    a.integrated_titlebar = true;
+    connect(&mut a, m);
+    let mut h = egui_kittest::Harness::builder().with_size(vec2(1440.0, 900.0)).build_ui_state(
+        |ui, app: &mut WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        a,
+    );
+    h.run_steps(6);
+    h
+}
+
+fn cmd_y(h: &mut egui_kittest::Harness<'static, WordApp>) {
+    h.key_press_modifiers(egui::Modifiers { mac_cmd: true, command: true, ..Default::default() }, egui::Key::Y);
+    h.run_steps(3);
+}
+
+fn type_text(h: &mut egui_kittest::Harness<'static, WordApp>, s: &str) {
+    h.event(egui::Event::Text(s.into()));
+    h.run_steps(3);
+}
+
+fn wait_h(h: &mut egui_kittest::Harness<'static, WordApp>) {
+    let end = std::time::Instant::now() + Duration::from_secs(20);
+    h.run_steps(2);
+    while h.state().assistant_panel.working() && std::time::Instant::now() < end {
+        poll(h.state_mut());
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    h.run_steps(2);
+}
+
+fn sent(m: &Mock) -> String {
+    m.body()["messages"][1]["content"].as_str().unwrap_or("").to_string()
+}
+
+#[test]
+fn cmd_y_with_a_selection_asks_about_the_selection() {
+    let m = mock_script(vec![stream_of(&answer(json!([])), 1, "stop")]);
+    let mut h = studio_harness(&m);
+    h.state_mut().session.run("select.text", &json!({"text": "A shared room puts your work"})).unwrap();
+    h.run_steps(2);
+    cmd_y(&mut h);
+    assert!(h.state().command_field.open);
+    type_text(&mut h, "Rework this section, make it more punchy");
+    h.key_press(egui::Key::Enter);
+    wait_h(&mut h);
+    let user = sent(&m);
+    assert!(user.contains("Scope: Selection") && user.contains("\nA shared room puts your work\nEND DOCUMENT"), "{user}");
+    let l = log(h.state_mut());
+    assert_eq!(l["entries"][0]["scope"], "Selection · 6 words", "{l}");
+}
+
+#[test]
+fn cmd_y_tab_ask_with_a_selection_sends_the_typed_ask_about_the_selection() {
+    let m = mock_script(vec![stream_of(&answer(json!([])), 1, "stop")]);
+    let mut h = studio_harness(&m);
+    h.state_mut().session.run("select.text", &json!({"text": "reviewed every season"})).unwrap();
+    h.run_steps(2);
+    cmd_y(&mut h);
+    h.key_press(egui::Key::Tab);
+    h.run_steps(2);
+    assert_eq!(h.state().command_field.mode, crate::command_field::Mode::Ask);
+    assert!(h.ctx.memory(|m| m.has_focus(egui::Id::new("command_field_edit"))), "⇥ keeps the focus in the field");
+    type_text(&mut h, "Make it more punchy");
+    assert_eq!(h.state().command_field.query, "Make it more punchy");
+    h.key_press(egui::Key::Enter);
+    wait_h(&mut h);
+    let user = sent(&m);
+    assert!(user.starts_with("Request: Make it more punchy\n"), "the typed ask, not a quick ask: {user}");
+    assert!(user.contains("Scope: Selection") && user.contains("\nreviewed every season\nEND DOCUMENT"), "{user}");
+}
+
+#[test]
+fn cmd_y_without_a_selection_asks_about_the_section_at_the_caret() {
+    let m = mock_script(vec![stream_of(&answer(json!([])), 1, "stop")]);
+    let mut h = studio_harness(&m);
+    h.state_mut().session.run("select.range", &json!({"anchor": {"block": 2, "off": 5}, "focus": {"block": 2, "off": 5}})).unwrap();
+    h.run_steps(2);
+    cmd_y(&mut h);
+    type_text(&mut h, "Rework this section, make it more punchy");
+    h.key_press(egui::Key::Enter);
+    wait_h(&mut h);
+    let user = sent(&m);
+    assert!(user.contains("Scope: This section (“Why share a studio?”)"), "{user}");
+    assert!(!user.contains("Membership is pay"), "not the whole document: {user}");
+    let l = log(h.state_mut());
+    assert_eq!(l["entries"][0]["scope"], "This section “Why share a studio?”", "{l}");
+}
+
+#[test]
+fn the_panel_and_quick_asks_default_to_selection_else_this_section() {
+    let m = mock_script(vec![stream_of(&answer(json!([])), 1, "stop")]);
+    let mut a = app_with(&STUDIO);
+    connect(&mut a, &m);
+    // Caret only: the composer's default is This section, never Whole document.
+    set_open(&mut a, true);
+    assert_eq!(a.assistant_panel.scope, ScopeKind::Section);
+    set_open(&mut a, false);
+    a.assistant_panel.scope = ScopeKind::Document;
+    set_open(&mut a, true);
+    assert_eq!(a.assistant_panel.scope, ScopeKind::Document, "a scope picked in the popup stays");
+    // The command channel's ask without a scope: the section at the caret.
+    let mut b = app_with(&STUDIO);
+    connect(&mut b, &m);
+    b.run("ui.assistant.ask", json!({"instruction": "Punchier."})).unwrap();
+    assert_eq!(log(&mut b)["entries"][0]["scope"].as_str().map(|s| s.starts_with("This section")), Some(true), "{}", log(&mut b));
+    wait(&mut b);
 }

@@ -47,10 +47,22 @@ pub enum Mode {
     Ask,
 }
 
-/// What an ask is about: the selection when there is one, else the whole document.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// What an ask is about: the selection captured when the field opened (with its word count),
+/// else the section where the caret is ("This section"). Never the whole document by default.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Scope {
     pub words: usize,
+    /// The person's selection at the moment the field opened. The ask uses it even when focus
+    /// moving to the field (or a key that reached the page) changed the live selection since.
+    pub sel: Option<wordcraft_engine::Selection>,
+}
+
+impl Scope {
+    /// The scope of `app`'s current selection, if it has text.
+    pub fn capture(app: &WordApp) -> Option<Scope> {
+        let text = app.session.selected_text();
+        (!text.trim().is_empty()).then(|| Scope { words: text.split_whitespace().count(), sel: Some(app.session.sel.clone()) })
+    }
 }
 
 /// The field's transient state (the counts live in [`crate::mac_ui::MarginPrefs`]).
@@ -65,6 +77,8 @@ pub struct CommandField {
     pub sel: usize,
     /// The selection the ask is scoped to, captured when the field opened.
     pub scope: Option<Scope>,
+    /// "This section “…”", captured when the field opened without a selection.
+    pub section: String,
     /// Set by the toolbar each frame: whether the field fits (a narrow window drops it).
     pub field_visible: bool,
     scroll_y: f32,
@@ -180,7 +194,8 @@ pub fn rows(hits: &[&CommandSpec], query: &str, mode: Mode, assistant: bool, fil
     let q = query.trim();
     let ask = (!q.is_empty()).then(|| Row::Ask(q.to_string()));
     match mode {
-        Mode::Ask => QUICK_ASKS.iter().filter(|(l, _)| files || *l != NEEDS_FILES).map(|(l, i)| Row::Quick(l, i)).chain(ask).collect(),
+        // What the person typed comes first: ↩ sends it, not a quick ask.
+        Mode::Ask => ask.into_iter().chain(QUICK_ASKS.iter().filter(|(l, _)| files || *l != NEEDS_FILES).map(|(l, i)| Row::Quick(l, i))).collect(),
         Mode::Commands => {
             let first = ask.is_some() && (hits.is_empty() || sentence_like(q));
             let mut out: Vec<Row> = Vec::new();
@@ -202,12 +217,34 @@ pub const NEEDS_FILES: &str = "Check facts against a file…";
 /// Send an ask to the assistant: the Assistant panel opens and shows it working. Scoped to the
 /// selection when the field was opened on one, else the whole document.
 pub fn submit_ask(app: &mut WordApp, instruction: &str, scope: &Scope) -> Result<(), String> {
-    let kind = if scope.words > 0 && !app.session.sel.is_collapsed() {
-        wordcraft_engine::assistant_edits::ScopeKind::Selection
-    } else {
-        wordcraft_engine::assistant_edits::ScopeKind::Document
-    };
+    let kind = scope_kind(app, scope);
     crate::assistant_panel::ask(app, instruction, kind).map(|_| ())
+}
+
+/// Selection when one was captured (put back as the live selection first), else This section.
+fn scope_kind(app: &mut WordApp, scope: &Scope) -> wordcraft_engine::assistant_edits::ScopeKind {
+    use wordcraft_engine::assistant_edits::ScopeKind;
+    match &scope.sel {
+        Some(sel) if scope.words > 0 => {
+            let (a, b) = (app.session.doc.clamp(&sel.anchor), app.session.doc.clamp(&sel.focus));
+            if a != b {
+                app.session.sel = wordcraft_engine::Selection { anchor: a, focus: b };
+                return ScopeKind::Selection;
+            }
+            ScopeKind::Section
+        }
+        None if scope.words > 0 && !app.session.sel.is_collapsed() => ScopeKind::Selection,
+        _ => ScopeKind::Section,
+    }
+}
+
+/// The scope line's text for "This section" at the caret: with the section's heading.
+fn section_label(app: &WordApp) -> String {
+    use wordcraft_engine::assistant_edits::{self as edits, ScopeKind};
+    match edits::scope(&app.session, ScopeKind::Section).ok().and_then(|s| s.title) {
+        Some(t) => format!("{} “{}”", tl!("This section"), crate::review_panel::clip(&t, 40)),
+        None => tl!("This section").to_string(),
+    }
 }
 
 /// Focus the field (Help › Search Commands…, the shortcut, Alt+Q). In the Classic ribbon layout
@@ -224,13 +261,13 @@ pub fn open(app: &mut WordApp, query: &str) {
     f.mode = Mode::Commands;
     f.sel = 0;
     f.scroll_y = 0.0;
-    f.scope = None;
-    if crate::review_panel::assistant_enabled() {
-        let text = app.session.selected_text();
-        if !text.trim().is_empty() {
-            app.command_field.scope = Some(Scope { words: text.split_whitespace().count() });
-        }
-    }
+    capture_scope(app);
+}
+
+/// Take the selection (or the section's name) as the ask's scope, at the moment the field opens.
+fn capture_scope(app: &mut WordApp) {
+    app.command_field.scope = Scope::capture(app);
+    app.command_field.section = if app.command_field.scope.is_none() { section_label(app) } else { String::new() };
 }
 
 /// The context menu's "Ask Claude…": the field, pre-scoped to the selection, in Ask mode.
@@ -259,11 +296,8 @@ fn run_row(app: &mut WordApp, ctx: &egui::Context, row: &Row) {
         Row::Ask(text) => ask(app, text),
         Row::Quick(label, _) if *label == NEEDS_FILES => {
             // Opens the list of allowed files; the ask is sent when one is picked.
-            let kind = if app.command_field.scope.is_some() && !app.session.sel.is_collapsed() {
-                wordcraft_engine::assistant_edits::ScopeKind::Selection
-            } else {
-                wordcraft_engine::assistant_edits::ScopeKind::Document
-            };
+            let scope = app.command_field.scope.clone().unwrap_or_default();
+            let kind = scope_kind(app, &scope);
             if let Err(e) = crate::assistant_panel::open_file_picker(app, kind) {
                 app.status(e);
             }
@@ -274,7 +308,7 @@ fn run_row(app: &mut WordApp, ctx: &egui::Context, row: &Row) {
 }
 
 fn ask(app: &mut WordApp, instruction: &str) {
-    let scope = app.command_field.scope.clone().unwrap_or(Scope { words: 0 });
+    let scope = app.command_field.scope.clone().unwrap_or_default();
     if let Err(e) = submit_ask(app, instruction, &scope) {
         app.status(e);
     }
@@ -344,10 +378,12 @@ pub fn show(app: &mut WordApp, ui: &mut Ui, rect: Rect) {
     }
 
     let has_focus = paint_field(app, ui, rect, &t, &m, true, edit_id);
-    let f = &mut app.command_field;
-    if has_focus && !f.open {
-        f.open = true;
+    if has_focus && !app.command_field.open {
+        // Opened by a click into the field: the scope is taken now, like ⌘Y does.
+        app.command_field.open = true;
+        capture_scope(app);
     }
+    let f = &mut app.command_field;
 
     // Popover.
     if f.open {
@@ -449,6 +485,9 @@ fn paint_field(app: &mut WordApp, ui: &mut Ui, rect: Rect, t: &Tokens, m: &Margi
             .font(mc::font())
             .text_color(t.text)
             .hint_text(egui::RichText::new(&placeholder).color(t.text_dim).font(mc::font()))
+            // ⇥ switches Commands / Ask; it must not move the focus to the page (typing would
+            // then go into the document, over the selection).
+            .lock_focus(true)
             .desired_width(edit_rect.width()),
     );
     if f.focus && live {
@@ -477,7 +516,7 @@ fn list_ui(app: &mut WordApp, ui: &mut Ui, list: &[Row], t: &Tokens, assistant: 
     if assistant {
         let scope = match &app.command_field.scope {
             Some(s) => format!("{} · {}", tl!("Selection"), crate::i18n::fmt(tl!("{n} words"), &[("n", &s.words.to_string())])),
-            None => tl!("Whole document").to_string(),
+            None => app.command_field.section.clone(),
         };
         let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
         ui.painter().text(pos2(r.min.x + 10.0, r.center().y), Align2::LEFT_CENTER, scope, mc::font(), t.text_dim);
@@ -674,15 +713,15 @@ mod tests {
         let none = rows(&[], "zzz", Mode::Commands, true, false);
         assert_eq!(none, [Row::Ask("zzz".into())], "nothing matches: only the ask row");
         let ask_mode = rows(&bold, "tighten it", Mode::Ask, true, false);
-        assert!(matches!(ask_mode.first(), Some(Row::Quick("Shorten", _))));
-        assert!(matches!(ask_mode.last(), Some(Row::Ask(_))));
+        assert!(matches!(ask_mode.first(), Some(Row::Ask(_))), "what was typed comes first: ↩ sends it");
+        assert!(matches!(ask_mode.get(1), Some(Row::Quick("Shorten", _))));
         assert_eq!(ask_mode.iter().filter(|r| matches!(r, Row::Command { .. })).count(), 0);
     }
 
     #[test]
     fn asking_without_an_assistant_is_an_error_not_a_panic() {
         let mut app = WordApp::new(session(), crate::Services::default());
-        let r = submit_ask(&mut app, "Shorten this.", &Scope { words: 3 });
+        let r = submit_ask(&mut app, "Shorten this.", &Scope { words: 3, ..Default::default() });
         assert!(r.as_ref().is_err_and(|e| e.contains("Let an assistant work in Margin")), "{r:?}");
         ask(&mut app, "Shorten this.");
         assert!(app.status_msg.as_ref().is_some_and(|(m, _)| m.contains("Let an assistant work in Margin")));
@@ -694,11 +733,11 @@ mod tests {
         let on = rows(&[], "", Mode::Ask, true, false);
         assert!(on.iter().all(|r| !matches!(r, Row::Quick(l, _) if *l == NEEDS_FILES)), "{on:?}");
         assert_eq!(on.len(), 3, "Shorten, Fix grammar and spelling, Make it plainer");
-        // With a folder allowed it shows, last of the quick asks and before the ask row.
+        // With a folder allowed it shows, last of the quick asks (after the typed ask).
         let with = rows(&[], "tighten it", Mode::Ask, true, true);
         let labels: Vec<&str> = with.iter().filter_map(|r| if let Row::Quick(l, _) = r { Some(*l) } else { None }).collect();
         assert_eq!(labels, ["Shorten", "Fix grammar and spelling", "Make it plainer", NEEDS_FILES]);
-        assert!(matches!(with.last(), Some(Row::Ask(_))));
+        assert!(matches!(with.first(), Some(Row::Ask(_))));
         // Never while the assistant itself is off.
         assert!(rows(&[], "", Mode::Ask, false, true).is_empty());
     }

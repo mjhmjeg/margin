@@ -167,7 +167,8 @@ pub fn set_open(app: &mut WordApp, on: bool) {
         if !app.session.sel.is_collapsed() {
             app.assistant_panel.scope = ScopeKind::Selection;
         } else if app.assistant_panel.scope == ScopeKind::Selection {
-            app.assistant_panel.scope = ScopeKind::Document;
+            // Nothing selected: the part where the caret is (Whole document only when picked).
+            app.assistant_panel.scope = ScopeKind::Section;
         }
     }
 }
@@ -312,9 +313,14 @@ fn capitalise(s: &str) -> String {
     }
 }
 
+/// The scope as the work log names it: "Selection · 12 words", "This section “Why share a
+/// studio?”", "Whole document".
 fn scope_label(s: &ScopeText) -> String {
-    match &s.title {
-        Some(t) if s.kind == ScopeKind::Section => format!("{} “{}”", tl!(s.kind.label()), crate::review_panel::clip(t, 40)),
+    match (&s.title, s.kind) {
+        (Some(t), ScopeKind::Section) => format!("{} “{}”", tl!(s.kind.label()), crate::review_panel::clip(t, 40)),
+        (_, ScopeKind::Selection) => {
+            format!("{} · {}", tl!(s.kind.label()), crate::i18n::fmt(tl!("{n} words"), &[("n", &s.words().to_string())]))
+        }
         _ => tl!(s.kind.label()).to_string(),
     }
 }
@@ -632,7 +638,7 @@ pub fn command(app: &mut WordApp, id: &str, p: &Value) -> Option<Result<Value, S
             let kind = match p.get("scope") {
                 None | Some(Value::Null) => {
                     if app.session.sel.is_collapsed() {
-                        ScopeKind::Document
+                        ScopeKind::Section
                     } else {
                         ScopeKind::Selection
                     }
@@ -653,7 +659,7 @@ pub fn command(app: &mut WordApp, id: &str, p: &Value) -> Option<Result<Value, S
         }
         "ui.assistant.facts" => {
             // The quick ask: list the files in the allowed folders.
-            let kind = if app.session.sel.is_collapsed() { ScopeKind::Document } else { ScopeKind::Selection };
+            let kind = if app.session.sel.is_collapsed() { ScopeKind::Section } else { ScopeKind::Selection };
             open_file_picker(app, kind).map(|n| json!({"files": n}))
         }
         "ui.assistant.stop" => Ok(json!({"stopped": stop(app)})),
@@ -1031,7 +1037,7 @@ fn composer(app: &mut WordApp, ui: &mut Ui, name: &str, t: &Tokens, m: &MarginTo
     ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
     let has_sel = !app.session.sel.is_collapsed();
     if app.assistant_panel.scope == ScopeKind::Selection && !has_sel && !app.assistant_panel.working() {
-        app.assistant_panel.scope = ScopeKind::Document;
+        app.assistant_panel.scope = ScopeKind::Section;
     }
     mc::labelled_row(ui, "Scope", |ui| {
         let w = ui.available_width();
