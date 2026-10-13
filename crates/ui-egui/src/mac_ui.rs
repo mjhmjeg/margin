@@ -112,7 +112,7 @@ pub fn toolbar(app: &mut WordApp, ui: &mut Ui) {
             let stem = app.title_stem();
             ui.label(egui::RichText::new(stem).font(font()).color(t.text));
             if app.session.dirty {
-                ui.label(egui::RichText::new(format!("— {}", tl!("Edited"))).font(font()).color(t.group_label));
+                ui.label(egui::RichText::new(format!("— {}", tl!("Edited"))).font(font()).color(t.text_dim));
             }
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -414,7 +414,7 @@ fn document_tab(app: &mut WordApp, ui: &mut Ui) {
             set_pageless(app, i == 1);
         }
         if pageless {
-            ui.label(egui::RichText::new(tl!("Text width")).font(font()).color(Tokens::get(ui.ctx()).group_label));
+            ui.label(egui::RichText::new(tl!("Text width")).font(font()).color(Tokens::get(ui.ctx()).text_dim));
             let opts = [(TextWidth::Narrow, "Narrow"), (TextWidth::Medium, "Medium"), (TextWidth::Full, "Full")];
             let cur = app.ui.margin.text_width;
             if let Some(i) = segmented(ui, &opts.map(|(_, l)| l), opts.iter().position(|(w, _)| *w == cur)) {
@@ -553,7 +553,7 @@ fn section(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui)) {
     ui.painter().hline(r.x_range(), r.min.y, Stroke::new(1.0, t.border));
     egui::Frame::NONE.inner_margin(egui::Margin { left: PAD as i8, right: PAD as i8, top: 14, bottom: 14 }).show(ui, |ui| {
         ui.set_width(ui.available_width());
-        ui.label(egui::RichText::new(tl!(title)).font(font()).color(t.group_label));
+        ui.label(egui::RichText::new(tl!(title)).font(font()).color(crate::skin::MarginTokens::get(ui.ctx()).section_title));
         add(ui);
     });
 }
@@ -565,8 +565,7 @@ fn label(ui: &mut Ui, text: &str, width: f32) {
 }
 
 fn hint(ui: &mut Ui, text: &str) {
-    let t = Tokens::get(ui.ctx());
-    ui.label(egui::RichText::new(tl!(text)).font(font()).color(t.group_label));
+    ui.label(egui::RichText::new(tl!(text)).font(font()).color(crate::skin::MarginTokens::get(ui.ctx()).hint));
 }
 
 /// A number field with a unit; returns the new value once the edit is committed.
