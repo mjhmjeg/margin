@@ -258,6 +258,16 @@ fn main() -> eframe::Result {
     // arguments, so `--version` leaves no file behind. Records logged until now are written to it
     // first. Runs without preferences (agents' test runs) log to standard error only, so they
     // don't rotate away the user's own logs.
+    // Margin's own settings folder (incident 2026-10-14): carry the old shared one over once.
+    if prefs_enabled()
+        && let (Some(old), Some(new)) = (wordcraft_control_key::legacy_settings_dir(), wordcraft_control_key::settings_dir())
+    {
+        match wordcraft_control_key::migrate(&old, &new) {
+            Ok(0) => {}
+            Ok(n) => log::info!("settings: copied {n} file(s) from {} to {}", old.display(), new.display()),
+            Err(e) => log::warn!("settings: could not copy from {}: {e}", old.display()),
+        }
+    }
     if let Some(logger) = logger {
         match log_dir().filter(|_| prefs_enabled()) {
             Some(dir) => match logger.attach_dir(&dir) {
