@@ -1485,8 +1485,10 @@ fn comment_tags(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: 
     }
     let people = crate::review_panel::authors(&app.session.doc);
     let clip = ui.clip_rect();
-    // (page, y, id) of each top-level comment, top first.
+    // (page, y, id) of each top-level comment, top first. The co-writer's open notes are not
+    // tagged one by one: W3 shows a quiet marker per paragraph in the desk beside the page.
     let mut tags: Vec<(usize, f32, u32)> = Vec::new();
+    let mut notes: Vec<Note> = Vec::new();
     for (id, pos) in wordcraft_engine::cmd::review::comment_list(&app.session).into_iter().take(500) {
         let Some(pos) = pos else { continue };
         let Some(c) = app.session.doc.comments.get(&id) else { continue };
@@ -1494,8 +1496,21 @@ fn comment_tags(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: 
             continue;
         }
         let Some(cp) = layout.caret_on(&pos, app.session.page_hint) else { continue };
+        if crate::review_panel::is_assistant(&c.author) {
+            if c.resolved {
+                continue;
+            }
+            match notes.iter_mut().find(|n| n.page == cp.page && n.para == pos.path && n.story == pos.story) {
+                Some(n) => n.count += 1,
+                None => {
+                    notes.push(Note { page: cp.page, y: cp.top + cp.height / 2.0, story: pos.story, para: pos.path.clone(), count: 1, first: id })
+                }
+            }
+            continue;
+        }
         tags.push((cp.page, cp.top + cp.height / 2.0, id));
     }
+    quiet_markers(app, ui, painter, rects, layout, scale, &mut notes);
     tags.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
     let mut last: Option<(usize, f32)> = None;
     let mut clicked: Option<u32> = None;
@@ -1538,6 +1553,57 @@ fn comment_tags(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: 
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("{}: {}", tl!("Comment"), c.author)));
         if resp.on_hover_text(crate::review_panel::tag_tip(c)).clicked() {
             clicked = Some(id);
+        }
+    }
+    if let Some(id) = clicked {
+        crate::review_panel::open_on_comment(app, id);
+    }
+}
+
+/// The co-writer's open notes on one paragraph (W3).
+struct Note {
+    page: usize,
+    y: f32,
+    story: wordcraft_doc::StoryRef,
+    para: wordcraft_doc::Path,
+    count: usize,
+    first: u32,
+}
+
+/// W3: beside each paragraph with co-writer notes, in the desk right of the page: a 14 pt dotted
+/// line in the assistant colour + "2 notes" in `text_dim`. Nothing else while you type; a click
+/// opens them.
+fn quiet_markers(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[Rect], layout: &DocLayout, scale: f32, notes: &mut [Note]) {
+    let t = Tokens::get(ui.ctx());
+    let m = crate::skin::MarginTokens::get(ui.ctx());
+    let clip = ui.clip_rect();
+    notes.sort_by(|a, b| a.page.cmp(&b.page).then(a.y.total_cmp(&b.y)));
+    let mut last: Option<(usize, f32)> = None;
+    let mut clicked: Option<u32> = None;
+    for n in notes.iter() {
+        let (Some(pr), Some(page)) = (rects.get(n.page), layout.pages.get(n.page)) else { continue };
+        let ps = page_screen_scale(*pr, page, scale);
+        let mut cy = pr.min.y + n.y * ps;
+        if let Some((lp, ly)) = last
+            && lp == n.page
+            && cy < ly + 20.0
+        {
+            cy = ly + 20.0;
+        }
+        last = Some((n.page, cy));
+        let x = pr.max.x + 20.0;
+        let label = if n.count == 1 { tl!("1 note").to_string() } else { crate::i18n::fmt(tl!("{n} notes"), &[("n", &n.count.to_string())]) };
+        let g = painter.layout_no_wrap(label.clone(), regular(crate::skin::UI_SIZE), t.text_dim);
+        let r = Rect::from_min_size(pos2(x, cy - 9.0), vec2(8.0 + g.size().x, 18.0));
+        if !r.intersects(clip) {
+            continue;
+        }
+        crate::review_panel::mark_line(painter, pos2(x + 1.0, cy - 7.0), pos2(x + 1.0, cy + 7.0), m.assistant, true);
+        painter.galley(pos2(x + 8.0, cy - g.size().y / 2.0), g, t.text_dim);
+        let resp = ui.interact(r, ui.id().with(("quiet_marker", n.first)), Sense::click());
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label.clone()));
+        if resp.clicked() {
+            clicked = Some(n.first);
         }
     }
     if let Some(id) = clicked {
@@ -3021,6 +3087,7 @@ mod tests {
     fn setting_a_paragraph_rtl_mirrors_the_ruler_numbers() {
         let ctx = egui::Context::default();
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        a.run("view.ruler", json!({"value": true})).unwrap(); // off by default in Optimo
         a.run("text.insert", json!({"text": "Hello"})).unwrap();
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1440.0, 900.0));
         let mut t = 0.0;

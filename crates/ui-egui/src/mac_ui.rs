@@ -17,6 +17,8 @@ use crate::widgets::run_from_ribbon;
 #[serde(default, rename_all = "camelCase")]
 pub struct MarginPrefs {
     pub classic_ribbon: bool,
+    /// Not saved: every window starts on the bare page (W2).
+    #[serde(skip)]
     pub inspector: bool,
     pub tab: InspectorTab,
     pub text_width: TextWidth,
@@ -30,7 +32,7 @@ impl Default for MarginPrefs {
     fn default() -> Self {
         MarginPrefs {
             classic_ribbon: false,
-            inspector: true,
+            inspector: false,
             tab: InspectorTab::Text,
             text_width: TextWidth::Medium,
             command_recent: Vec::new(),
@@ -89,147 +91,114 @@ fn font() -> egui::FontId {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Toolbar
+// Top bar (Optimo W1–W2)
 
-/// The toolbar: shares the 28 pt band with the traffic lights (AppKit fixes them there), plus a
-/// little air below so the controls don't touch the document.
+/// Optimo's top bar height (W1).
+pub const TOP_BAR_H: f32 = 36.0;
+/// The bottom line's height (W4).
+pub const BOTTOM_LINE_H: f32 = 32.0;
+/// The "Anything ⌘Y" pill (W2).
+const PILL_H: f32 = 28.0;
+
+/// W1–W2: the top bar, the desk's colour with no border: the traffic lights, the title centred
+/// ("Edited" in `text_dim` while unsaved) and on the right only "Anything ⌘Y" and Co-writer.
+/// Everything else is in ⌘Y, the menu bar and the shortcuts.
 pub fn toolbar(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
-    let mac = app.integrated_titlebar;
-    let left = if mac { MAC_CONTENT_LEFT } else { 10.0 };
-    egui::Panel::top("margin_toolbar")
-        .exact_size(MAC_TITLE_BAR + 8.0)
-        .frame(egui::Frame::NONE.fill(t.title_bar).stroke(Stroke::new(1.0, t.border)))
-        .show(ui, |ui| {
-            let full = ui.max_rect();
-            let drag = ui.interact(full, ui.id().with("toolbar_drag"), Sense::click_and_drag());
-            if drag.drag_started() {
-                ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
-            }
-            if drag.double_clicked() {
-                let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
-                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(!max));
-            }
-            // Controls centre on the traffic lights' band.
-            let band = Rect::from_min_max(pos2(full.min.x + left, full.min.y + 3.0), pos2(full.max.x - 10.0, full.min.y + MAC_TITLE_BAR + 3.0));
-            let mut ui = ui.new_child(egui::UiBuilder::new().max_rect(band).layout(egui::Layout::left_to_right(egui::Align::Center)));
-            let ui = &mut ui;
-            ui.spacing_mut().item_spacing = vec2(4.0, 0.0);
+    egui::Panel::top("margin_toolbar").exact_size(TOP_BAR_H).frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |ui| {
+        let full = ui.max_rect();
+        let drag = ui.interact(full, ui.id().with("toolbar_drag"), Sense::click_and_drag());
+        if drag.drag_started() {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+        }
+        if drag.double_clicked() {
+            let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(!max));
+        }
+        // Controls centre on the traffic lights' band (AppKit keeps them in the top 28 pt).
+        let cy = full.min.y + MAC_TITLE_BAR / 2.0 + 3.0;
 
-            let nav = app.session.view.nav_pane;
-            if tool(ui, app, "sidebarLeft", "Show outline", nav).clicked() {
-                run_from_ribbon(app, "view.navigationPane", json!({}));
+        // Right to left: Co-writer, then the pill.
+        let mut x = full.max.x - 12.0;
+        let open = crate::assistant_panel::visible(app);
+        let toggle = cowriter_toggle(ui, pos2(x, cy), open);
+        if toggle.clicked() {
+            if crate::review_panel::assistant_enabled() {
+                crate::assistant_panel::set_open(app, !open);
+            } else {
+                // No co-writer set up yet: Settings › Co-writer.
+                let _ = app.run("ui.dialog", json!({"name": "options", "pane": "agents"}));
             }
-            ui.add_space(8.0);
-            let stem = app.title_stem();
-            ui.label(egui::RichText::new(stem).font(font()).color(t.text));
-            if app.session.dirty {
-                ui.label(egui::RichText::new(format!("— {}", tl!("Edited"))).font(font()).color(t.text_dim));
+        }
+        x = toggle.rect.min.x - 8.0;
+        if app.command_field.open {
+            // ⌘Y open: the command field takes the pill's place (O2 moves it over the page).
+            app.command_field.field_visible = true;
+            let rect = Rect::from_min_max(pos2(x - crate::command_field::FIELD_W, cy - PILL_H / 2.0), pos2(x, cy + PILL_H / 2.0));
+            crate::command_field::show(app, ui, rect);
+            x = rect.min.x;
+        } else {
+            app.command_field.field_visible = true;
+            let pill = anything_pill(ui, pos2(x, cy));
+            if pill.clicked() {
+                crate::command_field::open(app, "");
             }
+            x = pill.rect.min.x;
+        }
 
-            let title_end = ui.min_rect().max.x;
-            let mut right_start = band.max.x;
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
-                // R1 / E5: panel toggles, one panel open at a time. Right to left: Assistant (only
-                // while an assistant is on; labelled with its author name), Review, Format.
-                if crate::review_panel::assistant_enabled() {
-                    let open = crate::assistant_panel::visible(app);
-                    let name = crate::review_panel::shown_assistant_name();
-                    let tip = crate::i18n::fmt(tl!("Ask {name} for suggestions"), &[("name", &name)]);
-                    if panel_toggle(ui, "assistant", &name, open, 0).on_hover_text(tip).clicked() {
-                        crate::assistant_panel::set_open(app, !open);
-                    }
-                }
-                let review_open = app.session.view.comments_pane;
-                let n = review_count(app, ui.ctx());
-                if panel_toggle(ui, "review", tl!("Review"), review_open, n).on_hover_text(tl!("Comments and changes")).clicked() {
-                    let open = !review_open;
-                    app.session.view.comments_pane = open;
-                    if open {
-                        app.ui.margin.inspector = false;
-                        app.assistant_panel.open = false;
-                    }
-                }
-                let format_open = app.ui.margin.inspector && !app.session.view.comments_pane && !crate::assistant_panel::visible(app);
-                if panel_toggle(ui, "inspector", tl!("Format"), format_open, 0).on_hover_text(tl!("Show or hide the Format inspector")).clicked() {
-                    app.ui.margin.inspector = !format_open;
-                    if !format_open {
-                        app.session.view.comments_pane = false;
-                        app.assistant_panel.open = false;
-                    }
-                }
-                mc::toolbar_divider(ui);
-                zoom_menu(ui, app);
-                mc::toolbar_divider(ui);
-                // E3: comment, track changes, more.
-                more_menu(ui, app);
-                let tracking = app.session.doc.settings.track_changes;
-                if tool(ui, app, "trackChanges", "Track changes", tracking).clicked() {
-                    run_from_ribbon(app, "review.trackChanges", json!({}));
-                }
-                if tool(ui, app, "newComment", "Comment", false).clicked() {
-                    run_from_ribbon(app, "review.newComment", json!({}));
-                }
-                mc::toolbar_divider(ui);
-                // E2: insert group (right to left: link, shape, image, table).
-                if tool(ui, app, "link", "Link", false).clicked() {
-                    run_from_ribbon(app, "insert.link", json!({}));
-                }
-                shape_menu(ui, app);
-                if tool(ui, app, "picture", "Image", false).clicked() {
-                    run_from_ribbon(app, "insert.picture", json!({}));
-                }
-                table_menu(ui, app);
-                right_start = ui.min_rect().min.x;
-            });
-            // K1: the command field, 300 wide in the centre of the window, or as near it as the
-            // title and the controls leave room for.
-            let (lo, hi) = (title_end + 16.0, right_start - 16.0);
-            let w = FIELD_MIN_W.max(crate::command_field::FIELD_W.min(hi - lo));
-            let visible = hi - lo >= FIELD_MIN_W;
-            app.command_field.field_visible = visible;
-            if visible {
-                let cx = full.center().x.clamp(lo + w / 2.0, hi - w / 2.0);
-                let rect = Rect::from_center_size(pos2(cx, band.center().y), vec2(w, crate::command_field::FIELD_H));
-                crate::command_field::show(app, ui, rect);
-            }
-        });
+        // The title, centred on the window (moved left only when the controls need the room).
+        let stem = app.title_stem();
+        let title = ui.painter().layout_no_wrap(stem, font(), t.text);
+        let edited = app.session.dirty.then(|| ui.painter().layout_no_wrap(tl!("Edited").to_string(), font(), t.text_dim));
+        let gap = 6.0;
+        let w = title.size().x + edited.as_ref().map_or(0.0, |g| gap + g.size().x);
+        let left = if app.integrated_titlebar { MAC_CONTENT_LEFT } else { 12.0 };
+        let x0 = (full.center().x - w / 2.0).min(x - 16.0 - w).max(full.min.x + left);
+        let ty = cy - title.size().y / 2.0;
+        let tw = title.size().x;
+        ui.painter().with_clip_rect(Rect::from_min_max(pos2(full.min.x + left, full.min.y), pos2(x - 8.0, full.max.y))).galley(
+            pos2(x0, ty),
+            title,
+            t.text,
+        );
+        if let Some(g) = edited {
+            ui.painter().galley(pos2(x0 + tw + gap, ty), g, t.text_dim);
+        }
+    });
 }
 
-/// Narrowest the command field gets before it gives way to the controls (the shortcut then opens
-/// the old dialog).
-const FIELD_MIN_W: f32 = 140.0;
-
-/// Pending changes plus open comments (the Review button's badge), recounted when the document changes.
-fn review_count(app: &mut WordApp, ctx: &egui::Context) -> usize {
-    let rev = app.session.rev();
-    let id = egui::Id::new("margin_review_count");
-    if let Some((r, n)) = ctx.data(|d| d.get_temp::<(u64, usize)>(id))
-        && r == rev
-    {
-        return n;
-    }
-    let changes = app.session.run("review.changes", &json!({})).ok().and_then(|v| v.as_array().map(Vec::len)).unwrap_or(0);
-    let comments = app.session.doc.comments.values().filter(|c| !c.resolved && c.parent.is_none()).count();
-    let n = changes + comments;
-    ctx.data_mut(|d| d.insert_temp(id, (rev, n)));
-    n
-}
-
-/// An icon button in the toolbar; `on` draws it toggled.
-fn tool(ui: &mut Ui, _app: &WordApp, icon: &str, tip: &str, on: bool) -> Response {
-    mc::toolbar_button(ui, icon, tip, on)
-}
-
-/// A panel toggle at the toolbar's right end: icon + label (+ count badge); the open one is `checked`.
-fn panel_toggle(ui: &mut Ui, icon: &str, label: &str, on: bool, badge: usize) -> Response {
+/// W2: "Anything ⌘Y", right edge at `right`: 28 high, radius 14, `field_bg`, 1 pt `border_strong`,
+/// a search icon, the label in `text_dim` and a `⌘Y` key cap (`checked`, radius 9).
+fn anything_pill(ui: &mut Ui, right: egui::Pos2) -> Response {
     let t = Tokens::get(ui.ctx());
+    let m = crate::skin::MarginTokens::get(ui.ctx());
+    let label = ui.painter().layout_no_wrap(tl!("Anything").to_string(), font(), t.text_dim);
+    let cap = ui.painter().layout_no_wrap("⌘Y".to_string(), font(), t.text_dim);
+    let cap_w = cap.size().x + 12.0;
+    let w = 10.0 + 15.0 + 6.0 + label.size().x + 8.0 + cap_w + 5.0;
+    let r = Rect::from_min_max(pos2(right.x - w, right.y - PILL_H / 2.0), pos2(right.x, right.y + PILL_H / 2.0));
+    let resp = ui.interact(r, ui.id().with("anything_pill"), Sense::click());
+    let fill = if resp.hovered() { t.hover } else { m.field_bg };
+    ui.painter().rect(r, PILL_H / 2.0, fill, Stroke::new(1.0, t.border_strong), egui::StrokeKind::Inside);
+    crate::icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 17.5, r.center().y), vec2(15.0, 15.0)), "search", t.text_dim, t.text_dim);
+    ui.painter().galley(pos2(r.min.x + 31.0, r.center().y - label.size().y / 2.0), label, t.text_dim);
+    let c = Rect::from_min_max(pos2(r.max.x - 5.0 - cap_w, r.min.y + 5.0), pos2(r.max.x - 5.0, r.max.y - 5.0));
+    ui.painter().rect_filled(c, 9.0, t.checked);
+    ui.painter().galley(c.center() - cap.size() / 2.0, cap, t.text_dim);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Anything ⌘Y"));
+    resp.on_hover_text(tl!("Do, find, format, go to — or ask your co-writer"))
+}
+
+/// W2: the `assistant` icon in the assistant colour + "Co-writer", right edge at `right`;
+/// `checked` while a co-writer view is open.
+fn cowriter_toggle(ui: &mut Ui, right: egui::Pos2, on: bool) -> Response {
+    let t = Tokens::get(ui.ctx());
+    let m = crate::skin::MarginTokens::get(ui.ctx());
+    let label = tl!("Co-writer");
     let galley = ui.painter().layout_no_wrap(label.to_string(), font(), t.text);
-    let badge_txt = if badge > 99 { "99+".to_string() } else { badge.to_string() };
-    let bg = ui.painter().layout_no_wrap(badge_txt, font(), t.on_accent);
-    let badge_w = if badge > 0 { (bg.size().x + 10.0).max(20.0) + 6.0 } else { 0.0 };
-    let (r, resp) = ui.allocate_exact_size(vec2(10.0 + 17.0 + 6.0 + galley.size().x + badge_w + 10.0, 28.0), Sense::click());
+    let w = 10.0 + 17.0 + 6.0 + galley.size().x + 10.0;
+    let r = Rect::from_min_max(pos2(right.x - w, right.y - 14.0), pos2(right.x, right.y + 14.0));
+    let resp = ui.interact(r, ui.id().with("cowriter_toggle"), Sense::click());
     let fill = if on {
         t.checked
     } else if resp.hovered() {
@@ -238,95 +207,16 @@ fn panel_toggle(ui: &mut Ui, icon: &str, label: &str, on: bool, badge: usize) ->
         Color32::TRANSPARENT
     };
     ui.painter().rect_filled(r, mc::RADIUS, fill);
-    crate::icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 18.5, r.center().y), vec2(17.0, 17.0)), icon, t.icon, t.accent);
-    let tx = r.min.x + 33.0;
-    ui.painter().galley(pos2(tx, r.center().y - galley.size().y / 2.0), galley.clone(), t.text);
-    if badge > 0 {
-        let w = badge_w - 6.0;
-        let b = Rect::from_min_size(pos2(tx + galley.size().x + 6.0, r.center().y - 9.0), vec2(w, 18.0));
-        ui.painter().rect_filled(b, 9.0, t.accent);
-        ui.painter().galley(b.center() - bg.size() / 2.0, bg, t.on_accent);
-    }
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, label));
-    resp
-}
-
-fn table_menu(ui: &mut Ui, app: &mut WordApp) {
-    let resp = tool(ui, app, "table", "Table", false);
-    // P2: hover grid popover (dialogs::table_popover).
-    egui::Popup::menu(&resp).width(200.0).show(|ui| crate::dialogs::table_popover(ui, app));
-}
-
-fn shape_menu(ui: &mut Ui, app: &mut WordApp) {
-    let resp = tool(ui, app, "shapes", "Shape", false);
-    egui::Popup::menu(&resp).width(200.0).show(|ui| {
-        ui.set_min_width(160.0);
-        for (label, kind) in
-            [("Rectangle", "rectangle"), ("Rounded rectangle", "roundedRectangle"), ("Oval", "ellipse"), ("Line", "line"), ("Arrow", "arrow")]
-        {
-            if mc::menu_row(ui, tl!(label), false).clicked() {
-                run_from_ribbon(app, "insert.shape", json!({"kind": kind}));
-            }
-        }
-    });
-}
-
-/// E4 / P4: the only zoom control, a popover button "100%" + chevron.
-fn zoom_menu(ui: &mut Ui, app: &mut WordApp) {
-    let t = Tokens::get(ui.ctx());
-    let shown = if app.canvas.scale > 0.0 { app.canvas.scale / crate::canvas::PX_PER_PT } else { app.session.view.zoom };
-    let pct = (shown * 100.0).round();
-    let fit = app.session.view.fit.clone();
-    let label = format!("{pct:.0}%");
-    let galley = ui.painter().layout_no_wrap(label.clone(), font(), t.text);
-    let (r, resp) = ui.allocate_exact_size(vec2(10.0 + galley.size().x + 6.0 + 12.0 + 8.0, 28.0), Sense::click());
-    let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&resp));
-    let fill = if open {
-        t.checked
-    } else if resp.hovered() {
-        t.hover
-    } else {
-        Color32::TRANSPARENT
-    };
-    ui.painter().rect_filled(r, mc::RADIUS, fill);
-    ui.painter().galley(pos2(r.min.x + 10.0, r.center().y - galley.size().y / 2.0), galley.clone(), t.text);
     crate::icons::paint(
         ui.painter(),
-        Rect::from_center_size(pos2(r.max.x - 14.0, r.center().y), vec2(14.0, 14.0)),
-        "chevronDown",
-        t.text_dim,
-        t.text_dim,
+        Rect::from_center_size(pos2(r.min.x + 18.5, r.center().y), vec2(17.0, 17.0)),
+        "assistant",
+        m.assistant,
+        m.assistant,
     );
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Zoom {label}")));
-    let resp = resp.on_hover_text(tl!("Zoom"));
-    egui::Popup::menu(&resp).width(200.0).show(|ui| {
-        ui.set_min_width(160.0);
-        for z in [50, 75, 100, 125, 150, 200] {
-            if mc::menu_row(ui, &format!("{z}%"), fit.is_empty() && (pct - z as f32).abs() < 0.5).clicked() {
-                run_from_ribbon(app, "view.zoom", json!({"value": z}));
-            }
-        }
-        ui.separator();
-        for (label, id, key) in [("Fit Width", "view.pageWidth", "pageWidth"), ("Fit Page", "view.onePage", "onePage")] {
-            if mc::menu_row(ui, tl!(label), fit == key).clicked() {
-                run_from_ribbon(app, id, json!({}));
-            }
-        }
-    });
-}
-
-/// "⋯": things that move to the menu bar in phase 4.
-fn more_menu(ui: &mut Ui, app: &mut WordApp) {
-    let resp = tool(ui, app, "more", "More", false);
-    egui::Popup::menu(&resp).width(200.0).show(|ui| {
-        ui.set_min_width(200.0);
-        if mc::menu_row(ui, tl!("Classic ribbon  ⌃⌘R"), false).clicked() {
-            app.ui.margin.classic_ribbon = true;
-        }
-        if mc::menu_row(ui, tl!("File…"), false).clicked() {
-            app.ui.backstage = true;
-        }
-    });
+    ui.painter().galley(pos2(r.min.x + 33.0, r.center().y - galley.size().y / 2.0), galley, t.text);
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, label));
+    resp.on_hover_text(tl!("Your co-writer's notes and questions"))
 }
 
 /// ⌃⌘R switches between the Mac layout and the Classic ribbon, both ways.
@@ -350,53 +240,81 @@ pub fn shortcuts(app: &mut WordApp, ctx: &egui::Context) {
     if cmd_y || alt_q {
         crate::command_field::open(app, "");
     }
+    // W2: the panels left the window; their keys (also in the View menu). ⌥⌘V is Paste Special
+    // and ⌥⌘O the Outline view in the registry, so Review and Outline take ⌃⌘.
+    if !active(app) {
+        return;
+    }
+    let cmd_alt = egui::Modifiers { alt: true, mac_cmd: true, command: true, ..Default::default() };
+    let ctrl_cmd = egui::Modifiers { ctrl: true, mac_cmd: true, command: true, ..Default::default() };
+    if ctx.input_mut(|i| i.consume_key(cmd_alt, egui::Key::I)) {
+        toggle_panel(app, Panel::Format);
+    }
+    if ctx.input_mut(|i| i.consume_key(ctrl_cmd, egui::Key::V)) {
+        toggle_panel(app, Panel::Review);
+    }
+    if ctx.input_mut(|i| i.consume_key(ctrl_cmd, egui::Key::O)) {
+        toggle_panel(app, Panel::Outline);
+    }
+}
+
+/// The panels that open only from ⌘Y, the menu bar or a shortcut (W2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Panel {
+    Format,
+    Review,
+    Outline,
+}
+
+/// Open or close a panel; one right panel at a time. Closing returns to the bare page.
+pub fn toggle_panel(app: &mut WordApp, panel: Panel) {
+    match panel {
+        Panel::Format => {
+            let open = app.ui.margin.inspector && !app.session.view.comments_pane && !crate::assistant_panel::visible(app);
+            app.ui.margin.classic_ribbon = false;
+            app.ui.margin.inspector = !open;
+            if !open {
+                app.session.view.comments_pane = false;
+                app.assistant_panel.open = false;
+            }
+        }
+        Panel::Review => {
+            let open = !app.session.view.comments_pane;
+            app.session.view.comments_pane = open;
+            if open {
+                app.ui.margin.inspector = false;
+                app.assistant_panel.open = false;
+            }
+        }
+        Panel::Outline => run_from_ribbon(app, "view.navigationPane", json!({})),
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
-// Status bar (E14)
+// Bottom line (W4)
 
-/// R9: the review status, "Tracking changes" after a 7 pt `accent` dot.
-fn tracking_status(ui: &mut Ui, t: &Tokens) -> Response {
-    let label = tl!("Tracking changes");
-    let g = ui.painter().layout_no_wrap(label.to_string(), font(), t.text);
-    let (r, resp) = ui.allocate_exact_size(vec2(7.0 + 6.0 + g.size().x, 20.0), Sense::click());
-    ui.painter().circle_filled(pos2(r.min.x + 3.5, r.center().y), 3.5, t.accent);
-    ui.painter().galley(pos2(r.min.x + 13.0, r.center().y - g.size().y / 2.0), g, t.text);
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, true, label));
-    resp.on_hover_text(tl!("Click to stop tracking changes"))
+/// The share of the document's characters people wrote, in whole percent: 100 for an empty
+/// document. Pending assistant suggestions and accepted assistant text count as not theirs.
+pub fn your_words_percent(a: &wordcraft_doc::authorship::Attribution) -> u32 {
+    if a.total_chars == 0 {
+        return 100;
+    }
+    ((a.people_chars() as f64) * 100.0 / (a.total_chars as f64)).round().clamp(0.0, 100.0) as u32
 }
 
-/// The 28 pt status bar: `Page 1 of 2 · 357 words · English (United States)`, then notices; on the
-/// right the Pages / Pageless switch and Focus. No zoom slider (zoom lives in the toolbar).
+/// W4: the 32 pt bottom line, no border, in `text_dim`: "370 words · Your words 97 %" and a
+/// 48 × 4 bar on the left, short notices after it, "Focus" on the right.
 pub fn status_bar(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Panel::bottom("status")
-        .exact_size(28.0)
-        .frame(
-            egui::Frame::NONE
-                .fill(t.status_bar)
-                .inner_margin(egui::Margin { left: 16, right: 12, top: 0, bottom: 0 })
-                .stroke(Stroke::new(1.0, t.border)),
-        )
+        .exact_size(BOTTOM_LINE_H)
+        .frame(egui::Frame::NONE.fill(t.canvas).inner_margin(egui::Margin { left: 16, right: 12, top: 0, bottom: 0 }))
         .show(ui, |ui| {
             ui.horizontal_centered(|ui| {
                 ui.spacing_mut().item_spacing = vec2(8.0, 0.0);
-                let item = |ui: &mut Ui, s: &str| -> Response {
-                    ui.add(egui::Label::new(egui::RichText::new(s).font(font()).color(t.text)).sense(Sense::click()))
+                let dim = |ui: &mut Ui, s: &str| -> Response {
+                    ui.add(egui::Label::new(egui::RichText::new(s).font(font()).color(t.text_dim)).sense(Sense::click()))
                 };
-                let dot = |ui: &mut Ui| {
-                    ui.label(egui::RichText::new("·").font(font()).color(t.text_dim));
-                };
-                let l = app.session.layout();
-                let page = l.caret_on(&app.session.sel.focus, app.session.page_hint).map(|c| c.page + 1).unwrap_or(1);
-                let pages = l.pages.len().to_string();
-                if item(ui, &crate::i18n::fmt(tl!("Page {page} of {pages}"), &[("page", &page.to_string()), ("pages", &pages)]))
-                    .on_hover_text(tl!("Go To (⌘⌥G)"))
-                    .clicked()
-                {
-                    let _ = app.run("ui.dialog", json!({"name": "goto"}));
-                }
-                dot(ui);
                 let words = app.cached_word_count();
                 let wtxt = if app.session.sel.is_collapsed() || crate::objects::selected(app).is_some() {
                     crate::i18n::fmt(tl!("{words} words"), &[("words", &words.to_string())])
@@ -404,93 +322,33 @@ pub fn status_bar(app: &mut WordApp, ui: &mut Ui) {
                     let sw = wordcraft_doc::count_words(&app.session.selected_text());
                     crate::i18n::fmt(tl!("{selected} of {words} words"), &[("selected", &sw.to_string()), ("words", &words.to_string())])
                 };
-                if item(ui, &wtxt).clicked() {
+                if dim(ui, &wtxt).clicked() {
                     let _ = app.run("ui.dialog", json!({"name": "wordCount"}));
                 }
-                dot(ui);
-                let lang = crate::ribbon::caret_language(app);
-                let resp = item(ui, &lang).on_hover_text(tl!("Language"));
-                egui::Popup::menu(&resp).show(|ui| {
-                    ui.set_min_width(200.0);
-                    crate::ribbon::language_menu(ui, app);
-                });
-                if app.session.sel.focus.story != wordcraft_doc::StoryRef::Body && !crate::canvas::in_text_box(app) {
-                    dot(ui);
-                    item(ui, tl!("Editing header/footer"));
+                dim(ui, "·");
+                let pct = your_words_percent(&crate::authorship_view::attribution(app));
+                let label = crate::i18n::fmt(tl!("Your words {pct} %"), &[("pct", &pct.to_string())]);
+                let resp = dim(ui, &label).on_hover_text(tl!("Characters you wrote; co-writer suggestions are not yours until you write them"));
+                if resp.clicked() {
+                    let on = app.session.view.authorship;
+                    let _ = app.run("view.authorship", json!({"value": !on}));
                 }
-                // R9: "Tracking changes" with a 7 pt accent dot; a click toggles.
-                if app.session.doc.settings.track_changes {
-                    dot(ui);
-                    if tracking_status(ui, &t).clicked() {
-                        run_from_ribbon(app, "review.trackChanges", json!({}));
-                    }
-                }
-                // V4: the document's split while View › Show Authorship is on; a click hides it.
-                if let Some(split) = crate::authorship_view::status_text(app) {
-                    dot(ui);
-                    if item(ui, &split)
-                        .on_hover_text(tl!("Characters by origin; pending suggestions are counted apart. Click to hide authorship."))
-                        .clicked()
-                    {
-                        let _ = app.run("view.authorship", json!({"value": false}));
-                    }
-                }
-                if app.session.prefs.overtype {
-                    dot(ui);
-                    if item(ui, tl!("Overtype")).on_hover_text(tl!("Click to switch back to inserting")).clicked() {
-                        let _ = app.run("text.overtype", json!({"value": false}));
-                    }
-                }
+                let (bar, _) = ui.allocate_exact_size(vec2(48.0, 4.0), Sense::hover());
+                ui.painter().rect_filled(bar, 2.0, t.border_strong);
+                ui.painter().rect_filled(Rect::from_min_size(bar.min, vec2(48.0 * pct as f32 / 100.0, 4.0)), 2.0, t.text_dim);
                 if let Some((msg, at)) = &app.status_msg
                     && crate::now_ms() - at < 6000.0
                 {
-                    dot(ui);
+                    dim(ui, "·");
                     ui.label(egui::RichText::new(msg).font(font()).color(t.accent_text));
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.spacing_mut().item_spacing = vec2(8.0, 0.0);
-                    // Focus.
-                    let w = ui.painter().layout_no_wrap(tl!("Focus").to_string(), font(), t.text).size().x;
-                    let (r, resp) = ui.allocate_exact_size(vec2(10.0 + 16.0 + 6.0 + w + 10.0, 22.0), Sense::click());
                     let on = app.session.view.focus_mode;
-                    if on {
-                        ui.painter().rect_filled(r, 5.0, t.checked);
-                    } else if resp.hovered() {
-                        ui.painter().rect_filled(r, 5.0, t.hover);
-                    }
-                    crate::icons::paint(
-                        ui.painter(),
-                        Rect::from_center_size(pos2(r.min.x + 18.0, r.center().y), vec2(16.0, 16.0)),
-                        "focus",
-                        t.icon,
-                        t.accent,
-                    );
-                    ui.painter().text(pos2(r.min.x + 32.0, r.center().y), egui::Align2::LEFT_CENTER, tl!("Focus"), font(), t.text);
+                    let ink = if on { t.text } else { t.text_dim };
+                    let resp = ui.add(egui::Label::new(egui::RichText::new(tl!("Focus")).font(font()).color(ink)).sense(Sense::click()));
                     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, tl!("Focus")));
                     if resp.clicked() {
                         let _ = app.run("view.focus", json!({}));
-                    }
-                    // Pages / Pageless, icon segments 22 high.
-                    let m = crate::skin::MarginTokens::get(ui.ctx());
-                    let (r, _) = ui.allocate_exact_size(vec2(68.0, 22.0), Sense::hover());
-                    ui.painter().rect(r, 6.0, m.segment_track, Stroke::new(1.0, t.input_border), egui::StrokeKind::Inside);
-                    let pageless_now = pageless(app);
-                    for (i, (icon, tip)) in [("viewPages", "Pages"), ("viewPageless", "Pageless")].into_iter().enumerate() {
-                        let cell = Rect::from_min_size(r.min + vec2(2.0 + 32.0 * i as f32, 2.0), vec2(32.0, 18.0));
-                        let resp = ui.interact(cell, ui.id().with(("status_view", i)), Sense::click());
-                        let on = (i == 1) == pageless_now;
-                        if on {
-                            for sh in m.chip_shadow.iter().filter(|s| s.color.a() > 0) {
-                                ui.painter().add(sh.as_shape(cell, 4.0));
-                            }
-                            ui.painter().rect_filled(cell, 4.0, m.segment_chip);
-                        }
-                        let ink = if on { t.text } else { t.text_dim };
-                        crate::icons::paint(ui.painter(), Rect::from_center_size(cell.center(), vec2(16.0, 16.0)), icon, ink, ink);
-                        resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::RadioButton, true, on, tl!(tip)));
-                        if resp.on_hover_text(tl!(tip)).clicked() && !on {
-                            set_pageless(app, i == 1);
-                        }
                     }
                 });
             });
@@ -1089,6 +947,8 @@ mod tests {
     #[test]
     fn inspector_aligns_and_keeps_typing_focus() {
         let mut h = mac_harness();
+        toggle_panel(h.state_mut(), Panel::Format);
+        h.step();
         assert!(active(h.state()));
         assert!(h.query_by_role_and_label(egui::accesskit::Role::Button, "Bold").is_none(), "no ribbon in the Mac layout");
         h.get_by_role_and_label(egui::accesskit::Role::RadioButton, "Center").click();
@@ -1109,7 +969,7 @@ mod tests {
             h.step();
         }
         assert!(pageless(h.state()));
-        // Medium is 720 pt, or what fits: with the 320 pt panel a 1440 pt window leaves 712.
+        // Medium is 720 pt (no panel open).
         let w = h.state().session.view.web_width;
         assert!((700.0..=720.5).contains(&w), "Medium is {w} pt");
         h.state_mut().ui.margin.text_width = TextWidth::Narrow;
@@ -1123,34 +983,50 @@ mod tests {
         assert!(h.query_by_label("Bold").is_some(), "the ribbon is back");
     }
 
-    /// E14 / P4: the status bar's Pages / Pageless switch works, there is one zoom control (the
-    /// toolbar's popover) and it runs `view.zoom`.
+    /// W: a fresh window is the bare page: the two controls, no panel, no ruler, no toolbar
+    /// icons or status row; ⌥⌘I / ⌃⌘V / ⌃⌘O open the panels and close them again.
     #[test]
-    fn status_switch_and_zoom_popover() {
+    fn fresh_window_is_the_bare_page_and_keys_open_panels() {
         use egui::accesskit::Role;
         let mut h = mac_harness();
-        h.get_by_role_and_label(Role::RadioButton, "Pageless").click();
+        assert!(h.query_by_label("Anything ⌘Y").is_some() && h.query_by_label("Co-writer").is_some());
+        for gone in ["Zoom 100%", "Review", "Format", "Pageless", "Track changes", "Show outline", "Image"] {
+            assert!(h.query_by_role_and_label(Role::Button, gone).is_none(), "{gone} left the window");
+        }
+        let app = h.state();
+        assert!(!app.session.view.ruler && !app.ui.margin.inspector && !app.session.view.comments_pane && !app.session.view.nav_pane);
+        assert!(h.query_by_role_and_label(Role::RadioButton, "Center").is_none(), "no inspector");
+        let cmd_alt = egui::Modifiers { alt: true, mac_cmd: true, command: true, ..Default::default() };
+        let ctrl_cmd = egui::Modifiers { ctrl: true, mac_cmd: true, command: true, ..Default::default() };
+        h.key_press_modifiers(cmd_alt, egui::Key::I);
+        h.step();
+        assert!(h.state().ui.margin.inspector);
+        h.key_press_modifiers(ctrl_cmd, egui::Key::V);
+        h.step();
+        assert!(h.state().session.view.comments_pane && !h.state().ui.margin.inspector, "one right panel at a time");
+        h.key_press_modifiers(ctrl_cmd, egui::Key::V);
+        h.key_press_modifiers(ctrl_cmd, egui::Key::O);
+        h.step();
+        assert!(!h.state().session.view.comments_pane && h.state().session.view.nav_pane);
+        // The pill opens the command field.
+        h.get_by_label("Anything ⌘Y").click();
         h.step();
         h.step();
-        assert!(pageless(h.state()));
-        h.get_by_role_and_label(Role::RadioButton, "Pages").click();
-        h.step();
-        h.step();
-        assert!(!pageless(h.state()));
-        assert!(h.query_by_label("Zoom In").is_none(), "no second zoom control in the status bar");
-        h.get_by_label("Zoom 100%").click();
-        h.step();
-        h.step();
-        h.get_by_label("50%").click();
-        h.step();
-        h.step();
-        assert!((h.state().session.view.zoom - 0.5).abs() < 1e-3);
+        assert!(h.state().command_field.open);
+    }
+
+    #[test]
+    fn your_words_share() {
+        use wordcraft_doc::authorship::Attribution;
+        assert_eq!(your_words_percent(&Attribution::default()), 100);
+        let a = Attribution { total_chars: 200, pending_chars: 6, ai_chars: 0, ..Default::default() };
+        assert_eq!(your_words_percent(&a), 97);
     }
 
     #[test]
     fn text_widths() {
         assert_eq!(TextWidth::Narrow.points(), Some(560.0));
         assert_eq!(TextWidth::Full.points(), None);
-        assert!(MarginPrefs::default().inspector);
+        assert!(!MarginPrefs::default().inspector, "every window starts on the bare page");
     }
 }

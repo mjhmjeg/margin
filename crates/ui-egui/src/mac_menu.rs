@@ -35,6 +35,7 @@ pub enum MarginAct {
     Home,
     Outline,
     Inspector,
+    Review,
     Pageless,
     Classic,
     /// Help › Search Commands…: focus the toolbar's command field (the old dialog in Classic).
@@ -177,8 +178,9 @@ const REVIEW: &[Entry] = &[
 ];
 
 const VIEW: &[Entry] = &[
-    key("Show Outline", Margin(MarginAct::Outline), "CmdOrCtrl+Alt+1"),
+    key("Show Outline", Margin(MarginAct::Outline), "Control+Super+O"),
     key("Show Format Inspector", Margin(MarginAct::Inspector), "CmdOrCtrl+Alt+I"),
+    key("Show Review", Margin(MarginAct::Review), "Control+Super+V"),
     it("Show Ruler", Cmd("view.ruler")),
     key("Show Invisibles", Keys("Mod+8"), "CmdOrCtrl+8"),
     it("Show Authorship", Cmd("view.authorship")),
@@ -220,6 +222,7 @@ pub fn checked(app: &WordApp, act: &Act) -> Option<bool> {
     Some(match act {
         Margin(MarginAct::Outline) => v.nav_pane,
         Margin(MarginAct::Inspector) => app.ui.margin.inspector && mac_ui::active(app),
+        Margin(MarginAct::Review) => v.comments_pane,
         Margin(MarginAct::Pageless) => mac_ui::pageless(app),
         Margin(MarginAct::Classic) => app.ui.margin.classic_ribbon,
         Keys("Mod+Shift+E") => app.session.doc.settings.track_changes,
@@ -256,11 +259,9 @@ pub fn perform(app: &mut WordApp, act: &Act) {
             app.ui.backstage = true;
             app.ui.backstage_page = "new".into();
         }
-        Margin(MarginAct::Outline) => crate::widgets::run_from_ribbon(app, "view.navigationPane", json!({})),
-        Margin(MarginAct::Inspector) => {
-            app.ui.margin.classic_ribbon = false;
-            app.ui.margin.inspector = !app.ui.margin.inspector;
-        }
+        Margin(MarginAct::Outline) => mac_ui::toggle_panel(app, mac_ui::Panel::Outline),
+        Margin(MarginAct::Inspector) => mac_ui::toggle_panel(app, mac_ui::Panel::Format),
+        Margin(MarginAct::Review) => mac_ui::toggle_panel(app, mac_ui::Panel::Review),
         Margin(MarginAct::Pageless) => {
             let on = !mac_ui::pageless(app);
             set_pageless(app, on);

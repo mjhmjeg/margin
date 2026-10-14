@@ -484,7 +484,11 @@ impl SaveChoice {
 }
 
 impl WordApp {
-    pub fn new(session: Session, services: Services) -> Self {
+    pub fn new(mut session: Session, services: Services) -> Self {
+        // Optimo (W): the ruler is off until View › Show Ruler.
+        if crate::skin::on() {
+            session.view.ruler = false;
+        }
         // Numeral › System follows the system locale, found here rather than in layout.
         if let Some(tag) = sys_locale::get_locale() {
             wordcraft_engine::set_system_locale(&tag);

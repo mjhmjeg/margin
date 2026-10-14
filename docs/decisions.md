@@ -217,3 +217,30 @@ bookmarks in HTML/Markdown exports (they turn into anchors named `_MarginAI_…`
 
 **Not measured.** Word round trips (`scripts/authorship-spike/run.sh`, Word stage skipped).
 Upstream round trips of the feature's own document: kept.
+
+## 2026-10-15 — Optimo O1: the bare window (OPTIMO.md §2)
+
+**Context.** OPTIMO.md W1–W4: a fresh window shows only the traffic lights, the title, "Anything
+⌘Y", Co-writer, the page and a bottom line. The panels open from ⌘Y, the menu bar or a shortcut
+(Format ⌥⌘I, Review ⌥⌘V, Outline ⌥⌘O, "confirm free keys in the registry").
+
+**Decision.**
+- **Shortcuts:** Format ⌥⌘I (free). Review **⌃⌘V** and Outline **⌃⌘O**: ⌥⌘V is Paste Special
+  (`edit.pasteSpecial`, Word's key) and ⌥⌘O the Outline *view* (`view.outline`). The old Show
+  Outline key ⌥⌘1 clashed with Heading 1 and is gone. View menu gains "Show Review".
+- **Panels are not remembered:** `inspector` is no longer saved in `ui.json`; every window starts
+  bare. Ruler off by default in the Optimo layout (View › Show Ruler).
+- **"Your words"** = people's characters / all characters from `Session::authorship`: pending
+  suggestions *and* accepted AI text (A5's marks) count as not yours, so it is already better
+  than OPTIMO.md's "pending only" first step. Click toggles View › Show Authorship.
+- **W3 markers** replace the per-comment tag for the co-writer's open comments (grouped per
+  paragraph, in the desk 20 pt right of the page); people's comments keep their R8 tag. A click
+  opens Review on the first note until O3 brings margin notes.
+- **⌘Y in O1:** the existing command field takes the pill's place while open; O2 moves it over
+  the page.
+- **Removed from the bottom line:** page count, language, tracking indicator, Pages/Pageless
+  switch (all still in the menus); transient status messages stay.
+
+**Alternatives rejected.** ⌥⌘V/⌥⌘O as specced (would shadow Paste Special and Outline view);
+keeping the inspector preference (an old default of "open" would show the panel on every
+existing install).
