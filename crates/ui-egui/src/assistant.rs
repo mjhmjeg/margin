@@ -1,5 +1,5 @@
 //! Settings › Assistant (HANDOFF §9): what the person decided about assistants, and the
-//! bookkeeping for assistants that connect from outside Margin (Claude Desktop, Claude Code, any
+//! bookkeeping for assistants that connect from outside Optimo (Claude Desktop, Claude Code, any
 //! MCP client through the control channel).
 //!
 //! The rule for outside assistants lives in the engine (`wordcraft_engine::assistant`): their
@@ -163,10 +163,10 @@ pub struct AssistantPrefs {
     /// Names assistants wrote under on this Mac, for suggestions made without the "AI · " prefix
     /// (before it existed): recognised as an assistant's by the legacy rule. Never shown.
     pub past_names: Vec<String>,
-    /// S6: assistants outside Margin may use the control channel (which only exists when the app
+    /// S6: assistants outside Optimo may use the control channel (which only exists when the app
     /// was started with `--control`). On by default, as the channel itself is an opt-in.
     pub allow_outside: bool,
-    /// S1: "Let an assistant work in Margin". Off by default; while off nothing is sent anywhere.
+    /// S1: "Let an assistant work in Optimo". Off by default; while off nothing is sent anywhere.
     pub enabled: bool,
     /// S2: the provider id (`wordcraft_assistant::ProviderId::id`); Mistral until chosen.
     pub provider: String,
@@ -175,7 +175,7 @@ pub struct AssistantPrefs {
     /// The base URL per provider id, for those where it can be changed (On this Mac, Other).
     pub base_urls: BTreeMap<String, String>,
     /// S5: "Add and reply to comments". Off: the built-in assistant's comment edits are dropped
-    /// and assistants outside Margin are refused `review.newComment` / `review.reply`.
+    /// and assistants outside Optimo are refused `review.newComment` / `review.reply`.
     pub comments: bool,
     /// S5: "Read files in these folders (read-only)": the only places an assistant may read files
     /// from (the built-in one for "Check facts against a file…", the outside ones for any
@@ -486,27 +486,27 @@ mod tests {
     fn renaming_the_assistant_changes_the_author_of_the_next_outside_edit() {
         let mut a = app();
         exec(&mut a, "text.insert", json!({"text": "one"}));
-        let r = a.run("ui.assistant", json!({"authorName": "  Margin AI \n"})).unwrap();
-        assert_eq!(r["authorName"], "Margin AI");
-        assert_eq!(r["name"], "AI · Margin AI");
+        let r = a.run("ui.assistant", json!({"authorName": "  Optimo AI \n"})).unwrap();
+        assert_eq!(r["authorName"], "Optimo AI");
+        assert_eq!(r["name"], "AI · Optimo AI");
         exec(&mut a, "text.insert", json!({"text": "two"}));
         let authors = change_authors(&mut a);
-        assert!(authors.contains(&"AI · Mistral".to_string()) && authors.contains(&"AI · Margin AI".to_string()), "{authors:?}");
-        assert_eq!(crate::review_panel::assistant_author_name(), "AI · Margin AI");
+        assert!(authors.contains(&"AI · Mistral".to_string()) && authors.contains(&"AI · Optimo AI".to_string()), "{authors:?}");
+        assert_eq!(crate::review_panel::assistant_author_name(), "AI · Optimo AI");
         // Blank goes back to the model's name; a typed prefix is not doubled.
         assert_eq!(a.run("ui.assistant", json!({"authorName": "  "})).unwrap()["name"], "AI · Mistral");
         assert_eq!(a.run("ui.assistant", json!({"authorName": "AI · Claude"})).unwrap()["name"], "AI · Claude");
-        assert!(a.ui.assistant.legacy_names().contains(&"Margin AI".to_string()), "the old typed name stays recognised");
+        assert!(a.ui.assistant.legacy_names().contains(&"Optimo AI".to_string()), "the old typed name stays recognised");
         assert_eq!(a.session.author, "Martijn");
     }
 
     #[test]
     fn the_settings_survive_ui_json_and_a_bad_value_falls_back() {
         let mut a = app();
-        a.run("ui.assistant", json!({"authorName": "Margin AI", "allowOutside": false})).unwrap();
+        a.run("ui.assistant", json!({"authorName": "Optimo AI", "allowOutside": false})).unwrap();
         let bytes = serde_json::to_vec(&a.ui).unwrap();
         let back = crate::UiState::from_json(&bytes).unwrap();
-        assert_eq!(back.assistant, AssistantPrefs { author_name: "Margin AI".into(), allow_outside: false, ..AssistantPrefs::default() });
+        assert_eq!(back.assistant, AssistantPrefs { author_name: "Optimo AI".into(), allow_outside: false, ..AssistantPrefs::default() });
         let odd = crate::UiState::from_json(br#"{"assistant": {"authorName": 5, "allowOutside": "yes"}}"#).unwrap();
         assert_eq!(odd.assistant, AssistantPrefs::default());
         assert_eq!(crate::UiState::from_json(b"{}").unwrap().assistant, AssistantPrefs::default());

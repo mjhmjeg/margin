@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build, sign and (optionally) notarize the macOS release artifacts:
 #
-#   $DIST/wordcraft-<version>-macos-<arch>.dmg          WordCraft.app on a drag-to-Applications DMG
-#   $DIST/wordcraft-cli-<version>-macos-<arch>.zip      the headless CLI
+#   $DIST/optimo-<version>-macos-<arch>.dmg             Optimo.app on a drag-to-Applications DMG
+#   $DIST/optimo-cli-<version>-macos-<arch>.zip         the headless CLI
 #
 # Usage: packaging/macos/package.sh [--arch universal|aarch64|x86_64] [--skip-build]
 #
@@ -13,9 +13,10 @@
 # Notarization (env; a real identity, plus either):
 #   NOTARY_PROFILE        a `xcrun notarytool store-credentials` keychain profile (no secret in env), or
 #   APPLE_ID, APPLE_PASSWORD (app-specific password), APPLE_TEAM_ID
-# Branding (env, for forks; defaults are WordCraft's):
-#   APP_NAME (WordCraft), BUNDLE_ID (ai.storyteller.wordcraft), APP_ICNS (assets/app-icon/wordcraft.icns),
-#   FILE_PREFIX (wordcraft), COPYRIGHT
+# Branding (env; defaults are this fork's, Optimo — formerly Margin, renamed 2026-10-14):
+#   APP_NAME (Optimo), BUNDLE_ID (ai.spert.optimo), APP_ICNS (assets/app-icon/optimo.icns),
+#   FILE_PREFIX (optimo), COPYRIGHT. Upstream WordCraft's: APP_NAME=WordCraft
+#   BUNDLE_ID=ai.storyteller.wordcraft APP_ICNS=assets/app-icon/wordcraft.icns FILE_PREFIX=wordcraft
 set -euo pipefail
 # shellcheck source=../env.sh
 . "$(dirname "${BASH_SOURCE[0]}")/../env.sh"
@@ -41,10 +42,10 @@ esac
 # Keep in sync with LSMinimumSystemVersion in Info.plist.in.
 export MACOSX_DEPLOYMENT_TARGET=11.0
 IDENTITY="${MACOS_SIGN_IDENTITY:--}"
-APP_NAME="${APP_NAME:-WordCraft}"
-BUNDLE_ID="${BUNDLE_ID:-ai.storyteller.wordcraft}"
-APP_ICNS="${APP_ICNS:-$ROOT/assets/app-icon/wordcraft.icns}"
-FILE_PREFIX="${FILE_PREFIX:-wordcraft}"
+APP_NAME="${APP_NAME:-Optimo}"
+BUNDLE_ID="${BUNDLE_ID:-ai.spert.optimo}"
+APP_ICNS="${APP_ICNS:-$ROOT/assets/app-icon/optimo.icns}"
+FILE_PREFIX="${FILE_PREFIX:-optimo}"
 COPYRIGHT="${COPYRIGHT:-Copyright © the WordCraft authors. MIT OR Apache-2.0.}"
 SHORT_VERSION="${VERSION%%-*}"
 WORK="$CARGO_TARGET_DIR/macos-package"

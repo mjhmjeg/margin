@@ -217,3 +217,67 @@ bookmarks in HTML/Markdown exports (they turn into anchors named `_MarginAI_…`
 
 **Not measured.** Word round trips (`scripts/authorship-spike/run.sh`, Word stage skipped).
 Upstream round trips of the feature's own document: kept.
+
+## 2026-10-14 — Product name: Optimo (was Margin)
+
+**Context.** Martijn renamed the app on 2026-10-14 ("Optimo", Sursilvan for "optimised") and
+approved: rename everywhere, carry his settings and API key over automatically, new icon concept A.
+The GitHub repo and the project folder are renamed separately (by the coordinator, last).
+
+**Decision.**
+- **Name:** `skin::APP_NAME = "Optimo"` (window title, eframe app name), macOS menus ("About / Hide /
+  Quit Optimo", app menu "Optimo"), Settings › Assistant ("Let an assistant work in Optimo", "Allow
+  assistants outside Optimo to connect", "Outside Optimo"), the assistant's system prompt
+  ("inside Optimo, a word processor"), status and error messages, HTTP user agent `Optimo/<version>`,
+  README, CLAUDE.md, docs. The i18n catalogs had no product-name strings (only "Left / Right / Top /
+  Bottom Margin", which are page margins), so no catalog changed.
+- **Bundle id** `ai.spert.optimo`; `packaging/macos/package.sh` now defaults to Optimo's branding
+  (`Optimo.app`, `optimo.icns`, `optimo-<version>-macos-<arch>.dmg`); WordCraft's values are listed
+  in its header for upstream builds.
+- **Settings folder** `~/Library/Application Support/Optimo` (`control_key::APP_DIR`). On start,
+  when `Optimo/ui.json` is missing, `ui.json` and `custom-dictionary.txt` are copied from the newest
+  previous folder that has preferences: `Margin/`, else `WordCraft/` (`PREVIOUS_DIRS`,
+  `migrate_from_previous`). Copied, never moved, never overwriting. Tests: one per hop
+  (`hop_margin_to_optimo_is_preferred_and_keeps_the_old_folder`,
+  `hop_wordcraft_to_optimo_when_there_is_no_margin_folder`) + `migrate_copies_once_and_never_overwrites`.
+- **Persisted layout settings:** the `ui.json` key `margin` became `optimo` (`UiState::optimo`,
+  `OptimoPrefs`); `UiState::from_json` moves an old `margin` object to `optimo` when `optimo` is
+  missing (`margins_layout_settings_survive_the_rename`).
+- **Keychain** service `ai.spert.optimo.assistant` (`keys::SERVICE`). On start, once (marker file
+  `keychain-migrated` in the settings folder), each provider's key is copied from
+  `ai.spert.margin.assistant` (`keys::LEGACY_SERVICE`) where Optimo has none; the old entries stay as
+  a backup; a key removed later in Optimo is not brought back; if the keychain reports an error the
+  marker isn't written and the copy is tried again at the next start. Only provider ids are logged,
+  never keys. Test on memory stores only (`keys_move_from_margins_service_to_optimos_once_and_never_overwrite`).
+  macOS may ask once whether Optimo may read the old "ai.spert.margin.assistant" items (they were
+  created by Margin's binary).
+- **Authorship format:** new marks `_OptimoAI_<8 hex>`, part namespace `urn:optimo:authorship`.
+  Reading accepts Margin's `_MarginAI…` marks and the `urn:margin:authorship` part; on load
+  `authorship::upgrade_legacy` renames marks and spans (`_MarginAI_1a2b3c4d` → `_OptimoAI_1a2b3c4d`),
+  so the next save writes only the new names and a second save is byte-stable
+  (`a_margin_file_keeps_its_spans_and_is_saved_in_optimos_format`, `margins_marks_are_renamed_to_optimos`).
+  Outside assistants can't forge either prefix.
+- **Scripts:** `scripts/optimo-run.sh` (the old `scripts/margin-run.sh` is a two-line wrapper);
+  `packaging/macos/optimo-icon.sh`; the authorship spike harness writes the new names.
+- **Icon, concept A:** `assets/app-icon/optimo.svg` — Margin's blue tile (same shape, size, `#0A64D6`)
+  with a white "O": left half a solid round-capped stroke, right half round dots ("solid you, dotted
+  AI", the app's mark language). `optimo-small.svg` for 32 pt and below: thicker stroke, three bigger
+  dots (checked at 16 and 32 px). Margin's icon files moved to `assets/app-icon/history/`.
+
+**Renamed (code identifiers that mean the product):** `MarginPrefs` → `OptimoPrefs`, `MarginAct` →
+`OptimoAct` (and the menu variant `Margin(..)` → `Optimo(..)`), `MarginTokens` → `OptimoTokens`,
+`ui.margin` → `ui.optimo`, "Margin layout / skin / mode" in comments → "Optimo …". About 220
+occurrences of the word "Margin" as the product name in code, scripts and living docs.
+
+**Kept (page-layout "margin", or stable on purpose):** `egui::Margin` and `Anchor::Margin` (64),
+the "Left / Right / Top / Bottom / Inside / Outside Margin" labels and their translations (77),
+`MarginEdge` (33), "Margins", `margin_left` etc. (page geometry); the egui widget ids `"margin_*"`
+(38; internal, never shown, renaming buys nothing); the Linux app id and
+Windows/web icons (`ai.storyteller.wordcraft`, upstream's); dated decision records, the design
+handoff text (`docs/design-handoff/**`, with a note on top of BRIEF.md and HANDOFF.md), STATUS.md and
+IDEAS.md (owned by main), and the "Margin fork contributors" author name on ATTRIBUTION rows of
+files made before the rename. README-WordCraft.md stays upstream's.
+
+**Alternatives rejected.** Moving (not copying) the settings folder and keychain items: no way back
+if Optimo misbehaves. Keeping the old file-format names: files would carry the old product name
+forever. Serde aliases for `margin`: a JSON-level move keeps one key in the file.

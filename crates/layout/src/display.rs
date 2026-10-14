@@ -197,10 +197,10 @@ pub struct DisplayOptions {
     pub hide_ink: bool,
     /// How tracked changes and comments are marked when `markup` is on (Track Changes Options).
     pub revisions: MarkupOptions,
-    /// Per-author colours and line styles (Margin's review marks). `None`: colours by order of
+    /// Per-author colours and line styles (Optimo's review marks). `None`: colours by order of
     /// appearance, solid lines, thin change bars at the page edge (upstream's look).
     pub author_marks: Option<AuthorMarks>,
-    /// View › Show Authorship (Margin): accepted assistant text keeps its tint and dotted
+    /// View › Show Authorship (Optimo): accepted assistant text keeps its tint and dotted
     /// underline. `None`: nothing of the kind is drawn (upstream's look).
     pub authorship: Option<AuthorshipDisplay>,
 }
@@ -216,7 +216,7 @@ pub struct AuthorshipDisplay {
     pub tint: (Rgb, u8),
 }
 
-/// One author's marks on the page (Margin: people solid in their colour, an assistant dotted).
+/// One author's marks on the page (Optimo: people solid in their colour, an assistant dotted).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AuthorMark {
     pub author: String,

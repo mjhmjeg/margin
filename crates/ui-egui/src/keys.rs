@@ -117,7 +117,7 @@ fn ui_shortcut(key: Key, m: Modifiers) -> Option<(&'static str, Value)> {
 
 /// Find and run the command bound to this key. Returns true if handled.
 fn dispatch(app: &mut WordApp, key: Key, m: Modifiers) -> bool {
-    // In the Margin layout Alt+Q focuses the command field (`mac_ui::shortcuts`).
+    // In the Optimo layout Alt+Q focuses the command field (`mac_ui::shortcuts`).
     if let Some((id, params)) = ui_shortcut(key, m).filter(|_| !crate::mac_ui::active(app)) {
         let _ = app.run(id, params);
         return true;

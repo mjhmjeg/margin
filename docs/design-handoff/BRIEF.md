@@ -1,3 +1,5 @@
+> **Margin is now Optimo (2026-10-14).** This brief is kept as written; read “Margin” as “Optimo”. Current names: `docs/decisions.md` (Product name: Optimo).
+
 # Margin — design brief for fine-tuning
 
 Date: 2026-10-13 · Build: fork of WordCraft 0.6.0 · Repo: github.com/mjhmjeg/margin

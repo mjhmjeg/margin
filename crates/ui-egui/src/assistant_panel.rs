@@ -29,7 +29,7 @@ use wordcraft_engine::doc::Pos;
 use crate::WordApp;
 use crate::mac_controls as mc;
 use crate::review_panel::{Deco, mark_line};
-use crate::skin::MarginTokens;
+use crate::skin::OptimoTokens;
 use crate::theme::Tokens;
 
 /// The composer's instruction box (A4).
@@ -163,7 +163,7 @@ pub fn set_open(app: &mut WordApp, on: bool) {
     app.assistant_panel.open = on;
     if on {
         app.session.view.comments_pane = false;
-        app.ui.margin.inspector = false;
+        app.ui.optimo.inspector = false;
         if !app.session.sel.is_collapsed() {
             app.assistant_panel.scope = ScopeKind::Selection;
         } else if app.assistant_panel.scope == ScopeKind::Selection {
@@ -177,7 +177,7 @@ pub fn set_open(app: &mut WordApp, on: bool) {
 fn refusal(app: &mut WordApp) -> Option<String> {
     if !app.ui.assistant.enabled {
         return Some(
-            tl!("Turn on “Let an assistant work in Margin” in Settings › Assistant first: nothing is sent anywhere while it is off.").into(),
+            tl!("Turn on “Let an assistant work in Optimo” in Settings › Assistant first: nothing is sent anywhere while it is off.").into(),
         );
     }
     if !app.assistant_link.usable(&app.ui.assistant) {
@@ -327,7 +327,7 @@ fn scope_label(s: &ScopeText) -> String {
 
 #[cfg(target_arch = "wasm32")]
 fn spawn(_app: &mut WordApp, _req: wordcraft_assistant::ChatRequest) -> Result<(Receiver<Event>, Arc<AtomicBool>), String> {
-    Err(tl!("The assistant works in the Margin desktop app.").into())
+    Err(tl!("The assistant works in the Optimo desktop app.").into())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -741,7 +741,7 @@ pub fn command(app: &mut WordApp, id: &str, p: &Value) -> Option<Result<Value, S
 pub fn show_file_picker(app: &mut WordApp, ctx: &egui::Context) {
     let Some(p) = app.assistant_panel.picker.take() else { return };
     let t = Tokens::get(ctx);
-    let m = MarginTokens::get(ctx);
+    let m = OptimoTokens::get(ctx);
     let folders = app.ui.assistant.allowed_folders();
     let mut open = true;
     let mut chosen: Option<std::path::PathBuf> = None;
@@ -807,7 +807,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
 
 fn content(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
-    let m = MarginTokens::get(ui.ctx());
+    let m = OptimoTokens::get(ui.ctx());
     let name = crate::review_panel::shown_assistant_name();
     header(app, ui, &name, &t, &m);
     egui::Panel::bottom("margin_assistant_composer")
@@ -845,7 +845,7 @@ fn content(app: &mut WordApp, ui: &mut Ui) {
 }
 
 /// A1: dotted mark + "<name> (co-writer)", what it is doing, and Stop while it works.
-fn header(app: &mut WordApp, ui: &mut Ui, name: &str, t: &Tokens, m: &MarginTokens) {
+fn header(app: &mut WordApp, ui: &mut Ui, name: &str, t: &Tokens, m: &OptimoTokens) {
     let working = app.assistant_panel.working();
     let doing = match &app.assistant_panel.job {
         Some(job) => {
@@ -894,7 +894,7 @@ fn header(app: &mut WordApp, ui: &mut Ui, name: &str, t: &Tokens, m: &MarginToke
 
 /// A2 + A3: "You · time" and the instruction; the reply under a dotted rule with its report and
 /// the suggestions group.
-fn entry_ui(app: &mut WordApp, ui: &mut Ui, doc: u64, i: usize, t: &Tokens, m: &MarginTokens) {
+fn entry_ui(app: &mut WordApp, ui: &mut Ui, doc: u64, i: usize, t: &Tokens, m: &OptimoTokens) {
     let Some(e) = app.assistant_panel.log(doc).get(i).cloned() else { return };
     ui.label(egui::RichText::new(format!("{} · {} · {}", tl!("You"), e.time, e.scope)).font(mc::font()).color(t.text_dim));
     ui.add(egui::Label::new(egui::RichText::new(&e.instruction).font(mc::font()).color(t.text)).wrap());
@@ -958,13 +958,13 @@ fn entry_ui(app: &mut WordApp, ui: &mut Ui, doc: u64, i: usize, t: &Tokens, m: &
     }
     if show_review {
         app.session.view.comments_pane = true;
-        app.ui.margin.inspector = false;
+        app.ui.optimo.inspector = false;
     }
 }
 
 /// A3: a bordered group (radius 8) of 36 pt rows, each with accept / reject. The row index and
 /// the choice clicked.
-fn suggestions_group(ui: &mut Ui, e: &Entry, t: &Tokens, m: &MarginTokens) -> Option<(usize, bool)> {
+fn suggestions_group(ui: &mut Ui, e: &Entry, t: &Tokens, m: &OptimoTokens) -> Option<(usize, bool)> {
     let mut out = None;
     egui::Frame::NONE.stroke(Stroke::new(1.0, t.border)).corner_radius(8).show(ui, |ui| {
         ui.set_width(ui.available_width());
@@ -1076,7 +1076,7 @@ fn single_line_excerpt(ui: &mut Ui, parts: &[(String, Deco)], color: Color32, t:
 }
 
 /// A4: Scope popup, the 76 pt box with the send button, and the lock line.
-fn composer(app: &mut WordApp, ui: &mut Ui, name: &str, t: &Tokens, m: &MarginTokens) {
+fn composer(app: &mut WordApp, ui: &mut Ui, name: &str, t: &Tokens, m: &OptimoTokens) {
     ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
     let has_sel = !app.session.sel.is_collapsed();
     if app.assistant_panel.scope == ScopeKind::Selection && !has_sel && !app.assistant_panel.working() {

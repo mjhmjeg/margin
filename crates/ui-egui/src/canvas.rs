@@ -665,7 +665,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let (hruler, vruler, area) = if show_ruler {
         let h = Rect::from_min_max(pos2(full.min.x + RULER, full.min.y), pos2(full.max.x, full.min.y + RULER));
         if crate::mac_ui::active(app) {
-            // Margin: horizontal ruler only (E13), the desk starts 12 pt below it.
+            // Optimo: horizontal ruler only (E13), the desk starts 12 pt below it.
             let h = Rect::from_min_max(pos2(full.min.x, full.min.y), pos2(full.max.x, full.min.y + RULER));
             (Some(h), None, Rect::from_min_max(pos2(full.min.x, full.min.y + RULER + 12.0), full.max))
         } else {
@@ -913,11 +913,11 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             } else {
                 painter.with_clip_rect(painter.clip_rect().intersect(band))
             };
-            // Shadow and paper (Margin's pageless sheet has no edge to shadow).
+            // Shadow and paper (Optimo's pageless sheet has no edge to shadow).
             if !(crate::mac_ui::active(app) && crate::mac_ui::pageless(app)) {
                 if crate::mac_ui::active(app) {
                     // E13: the design's layered page shadow and a hairline edge.
-                    let m = crate::skin::MarginTokens::get(ui.ctx());
+                    let m = crate::skin::OptimoTokens::get(ui.ctx());
                     for sh in m.page_shadow.iter().filter(|s| s.color.a() > 0) {
                         painter.add(sh.as_shape(visual_sr, 0.0));
                     }
@@ -1964,7 +1964,7 @@ fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Option<Rect>, rects: &[Rec
     let hp = ui.painter_at(h);
     let x0 = pr.min.x;
     let bar = Rect::from_min_max(pos2(x0, h.min.y + 4.0), pos2(x0 + page.w * scale, h.max.y - 3.0));
-    // Margin shades the margins with `hover` (E13).
+    // Optimo shades the margins with `hover` (E13).
     let margin_fill = if crate::mac_ui::active(app) { t.hover } else { t.ruler_margin };
     hp.rect_filled(bar, 0.0, margin_fill);
     let text = Rect::from_min_max(pos2(x0 + page.body.x * scale, bar.min.y), pos2(x0 + page.body.right() * scale, bar.max.y));
@@ -2084,7 +2084,7 @@ fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Option<Rect>, rects: &[Rec
             let _ = app.run("para.indents", json!({"right": (pt / 4.5).round() * 4.5}));
         }
     }
-    // Vertical (not drawn in Margin's layout).
+    // Vertical (not drawn in Optimo's layout).
     let Some(v) = v else { return };
     let vp = ui.painter_at(v);
     let y0 = pr.min.y;

@@ -1,4 +1,4 @@
-//! Margin's Review panel (HANDOFF §7, R2–R9): the right-hand panel that replaces the Comments
+//! Optimo's Review panel (HANDOFF §7, R2–R9): the right-hand panel that replaces the Comments
 //! pane in the Mac layout. A thin view over the review commands: tracking switch and markup
 //! display, people with their change and comment counts, one list of changes and comments in
 //! document order, and a footer that steps through it.
@@ -17,7 +17,7 @@ use wordcraft_layout::display::{AuthorMark, AuthorMarks};
 
 use crate::WordApp;
 use crate::mac_controls as mc;
-use crate::skin::{ASSISTANT_PAGE, AUTHOR_1_PAGE, AUTHOR_ROTATION, MarginTokens};
+use crate::skin::{ASSISTANT_PAGE, AUTHOR_1_PAGE, AUTHOR_ROTATION, OptimoTokens};
 use crate::theme::Tokens;
 
 /// Every right-hand panel (Format, Review, later Assistant) is this wide.
@@ -150,7 +150,7 @@ pub fn page_color(a: &AuthorInfo) -> Color32 {
 
 /// The author's colour on a panel: the dark variants of `author_1` and `assistant`; the rotation
 /// colours are lightened on dark panels to keep 4.5:1.
-pub fn panel_color(a: &AuthorInfo, m: &MarginTokens) -> Color32 {
+pub fn panel_color(a: &AuthorInfo, m: &OptimoTokens) -> Color32 {
     if a.assistant {
         m.assistant
     } else if a.person == 0 {
@@ -488,7 +488,7 @@ pub fn tag_tip(c: &wordcraft_doc::Comment) -> String {
 /// Open the Review panel (closing the Format inspector) with comment `id` selected on the page.
 pub fn open_on_comment(app: &mut WordApp, id: u32) {
     app.session.view.comments_pane = true;
-    app.ui.margin.inspector = false;
+    app.ui.optimo.inspector = false;
     let list = app.session.run("review.comments", &json!({})).ok().and_then(|v| v.as_array().cloned()).unwrap_or_default();
     let Some(start) = list.iter().find(|c| c.get("id").and_then(Value::as_u64) == Some(u64::from(id))).and_then(|c| c.get("anchor")).and_then(pos_of)
     else {
@@ -556,7 +556,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
 
 fn content(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
-    let m = MarginTokens::get(ui.ctx());
+    let m = OptimoTokens::get(ui.ctx());
     ui.spacing_mut().item_spacing = vec2(8.0, mc::ROW_GAP);
     let all = items(app, ui.ctx());
     let people = authors(&app.session.doc);
@@ -696,7 +696,7 @@ fn content(app: &mut WordApp, ui: &mut Ui) {
 }
 
 /// One author: mark, name, counts; under an assistant the by-author accept / reject links (R3).
-fn person_row(app: &mut WordApp, ui: &mut Ui, a: &AuthorInfo, changes: usize, comments: usize, t: &Tokens, m: &MarginTokens) {
+fn person_row(app: &mut WordApp, ui: &mut Ui, a: &AuthorInfo, changes: usize, comments: usize, t: &Tokens, m: &OptimoTokens) {
     let color = panel_color(a, m);
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 36.0), Sense::hover());
     mark_line(ui.painter(), pos2(r.min.x + 1.0, r.min.y + 3.0), pos2(r.min.x + 1.0, r.max.y - 3.0), color, a.assistant);
@@ -762,7 +762,7 @@ fn row_frame(ui: &mut Ui, current: bool, t: &Tokens, add: impl FnOnce(&mut Ui)) 
 }
 
 /// The header line of a row: mark or icon, author, time, then `buttons` at the right.
-fn header(ui: &mut Ui, who: &AuthorInfo, icon: Option<&str>, date: &str, t: &Tokens, m: &MarginTokens, buttons: impl FnOnce(&mut Ui)) {
+fn header(ui: &mut Ui, who: &AuthorInfo, icon: Option<&str>, date: &str, t: &Tokens, m: &OptimoTokens, buttons: impl FnOnce(&mut Ui)) {
     let color = panel_color(who, m);
     ui.horizontal(|ui| {
         ui.set_height(24.0);
@@ -783,7 +783,7 @@ fn header(ui: &mut Ui, who: &AuthorInfo, icon: Option<&str>, date: &str, t: &Tok
     });
 }
 
-fn change_row(app: &mut WordApp, ui: &mut Ui, c: &ChangeRow, cur: bool, people: &[AuthorInfo], t: &Tokens, m: &MarginTokens) -> bool {
+fn change_row(app: &mut WordApp, ui: &mut Ui, c: &ChangeRow, cur: bool, people: &[AuthorInfo], t: &Tokens, m: &OptimoTokens) -> bool {
     let who = info_for(people, &c.author);
     let color = panel_color(&who, m);
     let mut accept = false;
@@ -820,7 +820,7 @@ fn change_row(app: &mut WordApp, ui: &mut Ui, c: &ChangeRow, cur: bool, people: 
     clicked
 }
 
-fn comment_row(app: &mut WordApp, ui: &mut Ui, c: &CommentRow, cur: bool, people: &[AuthorInfo], t: &Tokens, m: &MarginTokens) -> bool {
+fn comment_row(app: &mut WordApp, ui: &mut Ui, c: &CommentRow, cur: bool, people: &[AuthorInfo], t: &Tokens, m: &OptimoTokens) -> bool {
     let who = info_for(people, &c.author);
     let color = panel_color(&who, m);
     let mut resolve = false;

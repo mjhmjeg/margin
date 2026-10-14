@@ -31,7 +31,7 @@ log = { workspace = true }
 winresource = "0.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-# Margin's native menu bar (NSMenu): AppKit interop needs unsafe, which our workspace forbids; muda
+# Optimo's native menu bar (NSMenu): AppKit interop needs unsafe, which our workspace forbids; muda
 # (Tauri's menu crate) wraps it behind a safe API. Pinned exactly: review the diff before bumping.
 # No default features: those are the GTK backends for Linux.
 muda = { version = "=0.21.2", default-features = false }

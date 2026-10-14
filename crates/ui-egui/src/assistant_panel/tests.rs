@@ -266,7 +266,7 @@ fn nothing_is_sent_while_the_switch_is_off_or_no_model_is_chosen() {
     let mut a = app_with(&DOC);
     a.run("ui.assistant", json!({"provider": "other", "baseUrl": m.base, "model": "mock-1"})).unwrap();
     let e = a.run("ui.assistant.ask", json!({"instruction": "Shorten this."})).unwrap_err();
-    assert!(e.contains("Let an assistant work in Margin"), "{e}");
+    assert!(e.contains("Let an assistant work in Optimo"), "{e}");
     assert!(crate::command_field::submit_ask(&mut a, "Shorten this.", &crate::command_field::Scope::default()).is_err());
     a.run("ui.assistant", json!({"enabled": true, "model": ""})).unwrap();
     let e = a.run("ui.assistant.ask", json!({"instruction": "Shorten this."})).unwrap_err();

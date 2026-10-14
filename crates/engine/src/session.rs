@@ -107,7 +107,7 @@ pub struct ViewState {
     #[serde(skip)]
     pub read_line_spacing: Option<f32>,
     pub dark_mode: bool,
-    /// View › Show Authorship (Margin): accepted assistant text marked, chips and the split in
+    /// View › Show Authorship (Optimo): accepted assistant text marked, chips and the split in
     /// the status bar. Never saved.
     #[serde(skip)]
     pub authorship: bool,

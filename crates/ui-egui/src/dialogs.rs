@@ -1395,8 +1395,8 @@ pub fn show(app: &mut WordApp, ctx: &egui::Context) {
     ctx.data_mut(|d| d.insert_temp(mac_key(), mac));
     let mut win = place_dialog(ctx, id, egui::Window::new(tl!(title)).id(id).collapsible(false).resizable(false));
     let shown = if mac {
-        // Margin: no title bar or close box; the title is the first line, Esc cancels.
-        let (t, m) = (Tokens::get(ctx), crate::skin::MarginTokens::get(ctx));
+        // Optimo: no title bar or close box; the title is the first line, Esc cancels.
+        let (t, m) = (Tokens::get(ctx), crate::skin::OptimoTokens::get(ctx));
         let frame = egui::Frame::NONE
             .fill(m.popover_bg)
             .stroke(egui::Stroke::new(1.0, m.popover_border))
@@ -1435,14 +1435,14 @@ fn mac_key() -> egui::Id {
     egui::Id::new("margin_dialog")
 }
 
-/// Is the open dialog drawn in Margin's style (set by [`show`] every frame)?
+/// Is the open dialog drawn in Optimo's style (set by [`show`] every frame)?
 pub(crate) fn mac_mode(ctx: &egui::Context) -> bool {
     ctx.data(|d| d.get_temp::<bool>(mac_key())).unwrap_or(false)
 }
 
-/// Margin's controls for the dialog's native widgets: 28 pt rows, field fills, 6 pt corners, the
+/// Optimo's controls for the dialog's native widgets: 28 pt rows, field fills, 6 pt corners, the
 /// accent for selections.
-fn style_margin_dialog(ui: &mut Ui, t: &Tokens, m: &crate::skin::MarginTokens) {
+fn style_margin_dialog(ui: &mut Ui, t: &Tokens, m: &crate::skin::OptimoTokens) {
     let s = ui.style_mut();
     s.spacing.interact_size.y = crate::mac_controls::ROW_H;
     s.spacing.button_padding = vec2(10.0, 4.0);
@@ -1461,17 +1461,17 @@ fn style_margin_dialog(ui: &mut Ui, t: &Tokens, m: &crate::skin::MarginTokens) {
     v.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, t.input_border);
 }
 
-/// Group label above a block of fields: `section_title` in Margin, upstream's semibold otherwise.
+/// Group label above a block of fields: `section_title` in Optimo, upstream's semibold otherwise.
 pub(crate) fn group_label(ui: &mut Ui, text: &str) {
     if mac_mode(ui.ctx()) {
-        let m = crate::skin::MarginTokens::get(ui.ctx());
+        let m = crate::skin::OptimoTokens::get(ui.ctx());
         ui.label(egui::RichText::new(text).font(crate::mac_controls::font()).color(m.section_title));
     } else {
         ui.label(egui::RichText::new(text).font(semibold(12.5)));
     }
 }
 
-/// Form label (D3): right-aligned in a 112 pt column, `text_dim`, in Margin; a plain label otherwise.
+/// Form label (D3): right-aligned in a 112 pt column, `text_dim`, in Optimo; a plain label otherwise.
 pub(crate) fn form_label(ui: &mut Ui, text: &str) {
     if !mac_mode(ui.ctx()) {
         ui.label(text);
@@ -1483,7 +1483,7 @@ pub(crate) fn form_label(ui: &mut Ui, text: &str) {
     ui.painter().galley(egui::pos2(r.max.x - g.size().x, r.center().y - g.size().y / 2.0), g, m.text_dim);
 }
 
-/// A drop-down for dialogs. In Margin it is the Phase 2 popup button (`mac_controls::popup_button_with`);
+/// A drop-down for dialogs. In Optimo it is the Phase 2 popup button (`mac_controls::popup_button_with`);
 /// outside the skin it is egui's combo box with the upstream chevron. Same builder calls either way.
 pub(crate) struct DialogCombo {
     id: egui::Id,
@@ -1527,7 +1527,7 @@ impl DialogCombo {
 type Formatter<'a> = Box<dyn Fn(f64, std::ops::RangeInclusive<usize>) -> String + 'a>;
 
 /// A number field for dialogs, with the builder calls of `egui::DragValue` (`speed`, `range`,
-/// `suffix`, `measure`, `max_decimals`, `custom_formatter`). In Margin it is the Phase 2
+/// `suffix`, `measure`, `max_decimals`, `custom_formatter`). In Optimo it is the Phase 2
 /// `number_field` (value right-aligned, unit after it); outside the skin it is the upstream
 /// `DragValue`, unchanged. Add it with `ui.add(..)` / `ui.add_enabled(..)`.
 pub(crate) struct DragNum<'a, N: egui::emath::Numeric> {
@@ -1640,7 +1640,7 @@ impl<N: egui::emath::Numeric> egui::Widget for DragNum<'_, N> {
     }
 }
 
-/// Dialog tabs: underline tabs (40 high) in Margin, a row of selectable labels otherwise.
+/// Dialog tabs: underline tabs (40 high) in Optimo, a row of selectable labels otherwise.
 /// Returns the clicked tab.
 pub(crate) fn dialog_tabs(ui: &mut Ui, labels: &[&str], selected: usize) -> Option<usize> {
     if mac_mode(ui.ctx()) {
@@ -1670,7 +1670,7 @@ pub(crate) fn dialog_tabs(ui: &mut Ui, labels: &[&str], selected: usize) -> Opti
     hit
 }
 
-/// `ui.checkbox`, drawn with Margin's checkbox in Margin mode.
+/// `ui.checkbox`, drawn with Optimo's checkbox in Optimo mode.
 pub(crate) fn checkbox(ui: &mut Ui, on: &mut bool, label: impl Into<egui::WidgetText>) -> egui::Response {
     let label = label.into();
     if !mac_mode(ui.ctx()) {
@@ -1684,7 +1684,7 @@ pub(crate) fn checkbox(ui: &mut Ui, on: &mut bool, label: impl Into<egui::Widget
     resp
 }
 
-/// `ui.radio_value`, drawn with Margin's radio in Margin mode.
+/// `ui.radio_value`, drawn with Optimo's radio in Optimo mode.
 pub(crate) fn radio_value<V: PartialEq>(ui: &mut Ui, current: &mut V, alt: V, label: impl Into<egui::WidgetText>) -> egui::Response {
     let label = label.into();
     if !mac_mode(ui.ctx()) {
@@ -1698,13 +1698,13 @@ pub(crate) fn radio_value<V: PartialEq>(ui: &mut Ui, current: &mut V, alt: V, la
     resp
 }
 
-/// Returns (ok, cancel). Margin: Cancel then OK, bottom-right, 12 apart.
+/// Returns (ok, cancel). Optimo: Cancel then OK, bottom-right, 12 apart.
 pub(crate) fn buttons(ui: &mut Ui, ok: &str) -> (bool, bool) {
     let (ok, cancel, _) = buttons_with(ui, ok, None);
     (ok, cancel)
 }
 
-/// [`buttons`] plus an extra action (Tabs…): bottom-left in Margin, left of Cancel otherwise.
+/// [`buttons`] plus an extra action (Tabs…): bottom-left in Optimo, left of Cancel otherwise.
 pub(crate) fn buttons_with(ui: &mut Ui, ok: &str, extra: Option<&str>) -> (bool, bool, bool) {
     let mut r = (false, false);
     let mut extra_hit = false;

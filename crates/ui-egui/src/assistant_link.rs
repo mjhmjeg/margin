@@ -122,7 +122,7 @@ impl AssistantLink {
     fn store_key(&mut self, p: ProviderId, raw: &str) -> Result<(), String> {
         let key = wordcraft_assistant::clean_key(raw).map_err(|e| e.to_string())?;
         if !self.keys.supported() {
-            return Err(AssistantError::Unsupported("this system has no keychain Margin can use, so the key can't be stored".into()).to_string());
+            return Err(AssistantError::Unsupported("this system has no keychain Optimo can use, so the key can't be stored".into()).to_string());
         }
         self.keys.set(p.id(), &key).map_err(|e| e.to_string())?;
         self.hints.insert(p, Some(wordcraft_assistant::masked(&key)));
@@ -182,7 +182,7 @@ fn finish(app: &mut WordApp, answer: Answer) {
 /// Start listing the chosen provider's models (also "Test connection").
 pub fn start(app: &mut WordApp) -> Result<Value, String> {
     if !app.ui.assistant.enabled {
-        return Err("turn on “Let an assistant work in Margin” first: nothing is sent anywhere while it is off".into());
+        return Err("turn on “Let an assistant work in Optimo” first: nothing is sent anywhere while it is off".into());
     }
     let p = app.ui.assistant.provider_id();
     if app.assistant_link.busy() {
@@ -200,7 +200,7 @@ pub fn start(app: &mut WordApp) -> Result<Value, String> {
 
 #[cfg(target_arch = "wasm32")]
 fn spawn(_app: &mut WordApp, _p: ProviderId, _url: String) -> Result<(), String> {
-    Err("the assistant works in the Margin desktop app".into())
+    Err("the assistant works in the Optimo desktop app".into())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -635,7 +635,7 @@ mod tests {
         let mut a = app();
         a.run("ui.assistant", json!({"provider": "other", "baseUrl": base, "apiKey": KEY})).unwrap();
         let e = a.run("ui.assistant.test", json!({})).unwrap_err();
-        assert!(e.contains("Let an assistant work in Margin"), "{e}");
+        assert!(e.contains("Let an assistant work in Optimo"), "{e}");
         assert!(a.run("ui.assistant.models", json!({"refresh": true})).is_err());
         assert!(!a.assistant_link.busy());
         std::thread::sleep(std::time::Duration::from_millis(100));

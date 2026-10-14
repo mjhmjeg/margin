@@ -1,4 +1,4 @@
-//! View › Show Authorship (HANDOFF §10, V1–V4; Margin layout only). While the view is on:
+//! View › Show Authorship (HANDOFF §10, V1–V4; Optimo layout only). While the view is on:
 //!
 //! * V1 a pill at the top of the desk with the legend (People solid · assistant dotted), a note
 //!   that pending suggestions are counted apart, and Hide;
@@ -26,7 +26,7 @@ use wordcraft_layout::{DocLayout, Placed};
 
 use crate::WordApp;
 use crate::review_panel::mark_line;
-use crate::skin::{ASSISTANT_PAGE, MarginTokens};
+use crate::skin::{ASSISTANT_PAGE, OptimoTokens};
 use crate::theme::{Tokens, regular};
 
 /// A paragraph gets a chip from this share of assistant characters on.
@@ -138,7 +138,7 @@ pub fn paint(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[R
     }
     let a = attribution(app);
     let t = Tokens::get(ui.ctx());
-    let m = MarginTokens::get(ui.ctx());
+    let m = OptimoTokens::get(ui.ctx());
     let clip = ui.clip_rect();
     chips(&a, ui, painter, rects, layout, scale, &m, clip);
     if pill(&a, ui, painter, &t, &m, clip) {
@@ -147,7 +147,7 @@ pub fn paint(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[R
 }
 
 #[allow(clippy::too_many_arguments)]
-fn chips(a: &Attribution, ui: &mut Ui, painter: &egui::Painter, rects: &[Rect], layout: &DocLayout, scale: f32, m: &MarginTokens, clip: Rect) {
+fn chips(a: &Attribution, ui: &mut Ui, painter: &egui::Painter, rects: &[Rect], layout: &DocLayout, scale: f32, m: &OptimoTokens, clip: Rect) {
     let font = regular(11.0);
     for (pi, pr) in rects.iter().enumerate() {
         let Some(page) = layout.pages.get(pi) else { continue };
@@ -193,7 +193,7 @@ fn chips(a: &Attribution, ui: &mut Ui, painter: &egui::Painter, rects: &[Rect], 
 }
 
 /// The pill; `true` when Hide was clicked.
-fn pill(a: &Attribution, ui: &mut Ui, painter: &egui::Painter, t: &Tokens, m: &MarginTokens, clip: Rect) -> bool {
+fn pill(a: &Attribution, ui: &mut Ui, painter: &egui::Painter, t: &Tokens, m: &OptimoTokens, clip: Rect) -> bool {
     let font = crate::mac_controls::font();
     let names = legend_names(a);
     // Parts: (text, colour, swatch dotted?) — a swatch is drawn before the text when given.

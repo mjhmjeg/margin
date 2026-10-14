@@ -109,14 +109,14 @@ fn fill(sub: &Submenu, entries: &[Entry], app: &WordApp, acts: &mut HashMap<Menu
 fn standard(s: Std) -> PredefinedMenuItem {
     match s {
         Std::About => PredefinedMenuItem::about(
-            Some("About Margin"),
-            Some(muda::AboutMetadata { name: Some("Margin".into()), version: Some(env!("CARGO_PKG_VERSION").into()), ..Default::default() }),
+            Some("About Optimo"),
+            Some(muda::AboutMetadata { name: Some("Optimo".into()), version: Some(env!("CARGO_PKG_VERSION").into()), ..Default::default() }),
         ),
         Std::Services => PredefinedMenuItem::services(None),
-        Std::Hide => PredefinedMenuItem::hide(Some("Hide Margin")),
+        Std::Hide => PredefinedMenuItem::hide(Some("Hide Optimo")),
         Std::HideOthers => PredefinedMenuItem::hide_others(None),
         Std::ShowAll => PredefinedMenuItem::show_all(None),
-        Std::Quit => PredefinedMenuItem::quit(Some("Quit Margin")),
+        Std::Quit => PredefinedMenuItem::quit(Some("Quit Optimo")),
         Std::Minimize => PredefinedMenuItem::minimize(None),
         Std::Zoom => PredefinedMenuItem::maximize(Some("Zoom")),
         Std::Fullscreen => PredefinedMenuItem::fullscreen(None),

@@ -843,7 +843,7 @@ fn typing_rtl_letters_into_an_empty_paragraph_makes_it_rtl() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Assistant spans (Margin A5): Word's bookmark rule for text typed at the ends of a mark.
+// Assistant spans (Optimo A5): Word's bookmark rule for text typed at the ends of a mark.
 
 /// "AI text" in a paragraph "Before AI text after.", accepted from an assistant suggestion.
 fn with_ai_span() -> Session {

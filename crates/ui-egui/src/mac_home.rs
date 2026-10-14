@@ -1,4 +1,4 @@
-//! Margin's Home screen, Pages-style: a full-height sidebar (New, Recent, Open…, the document
+//! Optimo's Home screen, Pages-style: a full-height sidebar (New, Recent, Open…, the document
 //! group, Settings) and a document chooser — template cards or recent documents as page
 //! thumbnails (grid or list), with Open… / Cancel / Create at the bottom. Shown at launch and on
 //! File › New. The document pages (Save As, Print, Export, Options) are upstream's, in the same frame.
@@ -50,7 +50,7 @@ fn came_from_document(app: &mut WordApp) -> bool {
 /// The Home screen in place of upstream's Backstage.
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
-    // Upstream's start page is "home"; Margin's is the template chooser.
+    // Upstream's start page is "home"; Optimo's is the template chooser.
     if app.ui.backstage_page == "home" {
         app.ui.backstage_page = "new".into();
     }
@@ -335,7 +335,7 @@ fn chooser(app: &mut WordApp, ui: &mut Ui, t: &Tokens, recent: bool) {
 
 /// Header search field: 240 × 28, search icon on the left; returns true when the text changed.
 fn search_field(ui: &mut Ui, t: &Tokens, query: &mut String, hint: &str) -> bool {
-    let m = crate::skin::MarginTokens::get(ui.ctx());
+    let m = crate::skin::OptimoTokens::get(ui.ctx());
     let (r, _) = ui.allocate_exact_size(vec2(240.0, mc::ROW_H), Sense::hover());
     ui.painter().rect(r, mc::RADIUS, m.field_bg, Stroke::new(1.0, t.input_border), egui::StrokeKind::Inside);
     crate::icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 15.0, r.center().y), vec2(15.0, 15.0)), "search", t.text_dim, t.text_dim);
@@ -605,7 +605,7 @@ mod tests {
         h
     }
 
-    /// The sample document, unsaved and clean, in the Margin layout, with File › Home opened.
+    /// The sample document, unsaved and clean, in the Optimo layout, with File › Home opened.
     fn sample_then_home(page: &str) -> egui_kittest::Harness<'static, WordApp> {
         let mut a = WordApp::new(crate::Session::new(wordcraft_engine::sample::sample_document()), crate::Services::default());
         a.integrated_titlebar = true;

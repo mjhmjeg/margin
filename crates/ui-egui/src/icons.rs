@@ -2,7 +2,7 @@
 //!
 //! Icons are designed on a 20×20 grid in two colours: line work (`c`) and an accent (`a`).
 //!
-//! The Margin handoff set (HANDOFF §11) lives in [`handoff`]: one colour, 24 grid, stroke 1.5,
+//! The Optimo handoff set (HANDOFF §11) lives in [`handoff`]: one colour, 24 grid, stroke 1.5,
 //! round caps and joins. Names that exist in both sets draw the handoff shape.
 
 use egui::{Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, pos2, vec2};
@@ -1200,7 +1200,7 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.line(&[(7.0, 17.0), (12.0, 17.0)]);
             pen.fill(&[(17.5, 8.0), (13.5, 4.5), (13.5, 11.5)], a);
         }
-        // Home screen (Margin handoff): a new page, a clock, sliders, grid and list views.
+        // Home screen (Optimo handoff): a new page, a clock, sliders, grid and list views.
         "newDocument" => {
             pen.page(4.5, 2.5, 15.5, 17.5);
             pen.line(&[(10.0, 10.0), (10.0, 14.0)]);
@@ -1276,7 +1276,7 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.line(&[(4.0, 10.0), (16.0, 10.0)]);
         }
         "minus" => pen.line(&[(4.0, 10.0), (16.0, 10.0)]),
-        // Margin's editor icons (design handoff section 11), drawn on the 20 grid.
+        // Optimo's editor icons (design handoff section 11), drawn on the 20 grid.
         "inspector" => {
             pen.rect(3.0, 4.0, 17.0, 16.0, c);
             pen.line(&[(12.5, 4.0), (12.5, 16.0)]);
@@ -1530,7 +1530,7 @@ pub fn library(p: &Painter, r: Rect, icon: &wordcraft_render::icon_lib::Icon, c:
     }
 }
 
-/// The Margin icon set from the design handoff (`docs/design-handoff/claude-design/icons`):
+/// The Optimo icon set from the design handoff (`docs/design-handoff/claude-design/icons`):
 /// 24 × 24 grid, stroke 1.5, round caps and joins, one colour. The geometry below is the SVG
 /// data verbatim (a test compares it with the SVG files); a small SVG path interpreter turns it
 /// into egui shapes.

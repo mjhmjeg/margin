@@ -4502,7 +4502,7 @@ fn text_after_a_column_break_takes_the_new_column_s_width() {
     assert!(wide_lines <= 3, "broken for the 348 pt column, not the 67 pt one: {lines:?}");
 }
 
-/// Author marks (Margin's review marks): each author's colour, a dotted line and bar for the
+/// Author marks (Optimo's review marks): each author's colour, a dotted line and bar for the
 /// assistant, the bar 22 pt left of the text, and the comment tint; without marks nothing changes.
 #[test]
 fn author_marks_colour_and_style_revisions_per_author() {
