@@ -1,4 +1,4 @@
-//! Authorship of accepted assistant text (Margin A5): accepting a suggestion marks it, rejecting
+//! Authorship of accepted assistant text (Optimo A5): accepting a suggestion marks it, rejecting
 //! leaves nothing, the marks survive a `.docx` round trip and other formats drop them quietly.
 
 use serde_json::json;
@@ -62,7 +62,7 @@ fn accepting_an_assistant_insertion_marks_it_and_records_a_span() {
     assert_eq!(span.len(), 1);
     assert_eq!((span[0].author.as_str(), span[0].model.as_str(), span[0].text.as_deref()), ("Claude", "claude-opus-5", Some(" happily")));
     assert!(span[0].accepted_at.ends_with('Z') && span[0].accepted_at.contains('T'), "{}", span[0].accepted_at);
-    assert!(span[0].name.starts_with("_MarginAI_") && span[0].name.len() == "_MarginAI_".len() + 8);
+    assert!(span[0].name.starts_with("_OptimoAI_") && span[0].name.len() == "_OptimoAI_".len() + 8);
     assert_eq!(shares(&mut s), (31, 23, 8, 0));
     let list = run(&mut s, "authorship.spans", json!({}));
     assert_eq!(list[0]["chars"], 8);
@@ -152,10 +152,13 @@ fn adjacent_and_nested_unedited_spans_merge_but_edited_ones_do_not() {
 fn outside_assistants_cannot_make_or_remove_marks() {
     let mut s = session("Hello world");
     run(&mut s, "select.text", json!({"text": "Hello"}));
+    let e = s.run_as_assistant("Claude", "insert.bookmark", &json!({"name": "_OptimoAI_deadbeef"})).unwrap_err().to_string();
+    assert!(e.starts_with("not allowed for assistants: insert.bookmark"), "{e}");
+    let e = s.run_as_assistant("Claude", "insert.bookmark", &json!({"name": " _OptimoAI_x "})).unwrap_err().to_string();
+    assert!(e.contains("insert.bookmark"), "{e}");
+    // Margin's old prefix (still read as a mark) can't be forged either.
     let e = s.run_as_assistant("Claude", "insert.bookmark", &json!({"name": "_MarginAI_deadbeef"})).unwrap_err().to_string();
     assert!(e.starts_with("not allowed for assistants: insert.bookmark"), "{e}");
-    let e = s.run_as_assistant("Claude", "insert.bookmark", &json!({"name": " _MarginAI_x "})).unwrap_err().to_string();
-    assert!(e.contains("insert.bookmark"), "{e}");
     s.run_as_assistant("Claude", "insert.bookmark", &json!({"name": "Intro"})).unwrap();
     assert!(scan(&s.doc).ranges.is_empty());
     // Read-only authorship commands stay open to them; the view switch too.
@@ -181,8 +184,8 @@ fn docx_keeps_the_marks_and_other_formats_drop_them_without_error() {
     for name in ["a.odt", "a.md", "a.rtf", "a.html", "a.txt", "a.tex", "a.pdf"] {
         let out = crate::io::save_bytes(name, &s.doc).unwrap_or_else(|e| panic!("{name}: {e}"));
         assert!(!out.is_empty(), "{name}");
-        assert!(!out.windows(10).any(|w| w == b"_MarginAI_"), "{name}: the marks are stripped from copies in other formats");
-        assert!(!out.windows(21).any(|w| w == b"urn:margin:authorship"), "{name}: no store");
+        assert!(!out.windows(10).any(|w| w == b"_OptimoAI_"), "{name}: the marks are stripped from copies in other formats");
+        assert!(!out.windows(21).any(|w| w == b"urn:optimo:authorship"), "{name}: no store");
     }
     let dir = std::env::temp_dir().join(format!("wordcraft-authorship-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

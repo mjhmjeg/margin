@@ -35,7 +35,7 @@ impl Reader<'_> {
                 if !self.doc.sources.is_empty() && self.xml(&rel.target).ok().flatten().is_some_and(|r| r.local() == "Sources") {
                     continue;
                 }
-                // Margin's authorship store was read into the model and is rewritten from it.
+                // Optimo's authorship store was read into the model and is rewritten from it.
                 if self.authorship_parts.contains(&rel.target) {
                     continue;
                 }

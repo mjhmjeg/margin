@@ -1,4 +1,4 @@
-//! Authorship of accepted assistant text (Margin's A5): what the engine does when a suggestion
+//! Authorship of accepted assistant text (Optimo's A5): what the engine does when a suggestion
 //! by an assistant is accepted, and how typing treats the marks afterwards. The model and the
 //! file format live in `wordcraft_doc::authorship` and the docx crate.
 //!
@@ -10,12 +10,12 @@
 //!   session, compared by [`name_matches`]. Every decision goes through
 //!   [`Session::is_assistant_author`] ([`is_assistant_name`]); nothing compares names elsewhere.
 //! * **Accept.** Before a paragraph's changes are accepted, each assistant insertion in the
-//!   accepted range is wrapped in a `_MarginAI_<8 hex>` bookmark ([`wrap_before_accept`]); after,
+//!   accepted range is wrapped in a `_OptimoAI_<8 hex>` bookmark ([`wrap_before_accept`]); after,
 //!   the text inside is recorded as a span with the author as written on the change, the model
 //!   the host configured, and the time ([`record_accepted`]). A new span next to, or inside, an
 //!   unedited span by the same author extends that span instead. Rejected changes leave nothing.
 //! * **Typing.** Text typed at the end of a span goes after its bookmark end, as Word does for
-//!   bookmarks ([`past_span_end`]): a person's continuation is the person's. Only `_MarginAI_`
+//!   bookmarks ([`past_span_end`]): a person's continuation is the person's. Only `_OptimoAI_`
 //!   bookmarks are treated this way; ordinary bookmarks keep upstream's behaviour.
 
 use wordcraft_doc::authorship::{self as model, MarkRange, Span, is_mark, mark_name, visible_text};
@@ -49,7 +49,7 @@ pub fn name_matches(a: &str, b: &str) -> bool {
     !a.is_empty() && a.eq_ignore_ascii_case(b)
 }
 
-/// Is `name` (trimmed) a `_MarginAI_` mark name? Outside assistants may not make or remove one.
+/// Is `name` (trimmed) a `_OptimoAI_` mark name? Outside assistants may not make or remove one.
 pub fn is_mark_name(name: &str) -> bool {
     is_mark(name.trim())
 }

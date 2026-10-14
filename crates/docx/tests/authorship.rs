@@ -1,10 +1,10 @@
-//! Margin's authorship store (`customXml/itemN.xml`, `urn:margin:authorship`): written only while
+//! Optimo's authorship store (`customXml/itemN.xml`, `urn:optimo:authorship`): written only while
 //! the document has accepted assistant text, read back and repaired on load, and never a reason
 //! for a file to fail. Fixtures are hand-written from the OOXML package contract.
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read, Write};
 
-use wordcraft_doc::authorship::{BOOKMARK_PREFIX, MAX_SPANS, NAMESPACE, Span, scan, span_text};
+use wordcraft_doc::authorship::{BOOKMARK_PREFIX, LEGACY_NAMESPACE, MAX_SPANS, NAMESPACE, Span, scan, span_text};
 use wordcraft_doc::para::InlineObject;
 use wordcraft_doc::props::CharProps;
 use wordcraft_doc::{Document, Paragraph, Path, StoryRef, para_block};
@@ -105,6 +105,64 @@ fn spans_round_trip_and_a_second_save_is_byte_stable() {
     assert_eq!(wordcraft_docx::read(&again).unwrap().authorship, d.authorship);
 }
 
+/// A file saved while the app was called Margin (until 2026-10-14): `_MarginAI_` marks and the
+/// `urn:margin:authorship` part. Opened: the spans are kept. Saved: only the new names
+/// (`_OptimoAI_`, `urn:optimo:authorship`) are written. Saved again: the same bytes.
+#[test]
+fn a_margin_file_keeps_its_spans_and_is_saved_in_optimos_format() {
+    let body = concat!(
+        r#"<w:p><w:bookmarkStart w:id="0" w:name="_MarginAI_1a2b3c4d"/><w:r><w:t>Mist lifts off the river by eight,</w:t></w:r>"#,
+        r#"<w:bookmarkEnd w:id="0"/><w:r><w:t> and the bakery opens.</w:t></w:r></w:p>"#,
+        r#"<w:p><w:bookmarkStart w:id="1" w:name="_MarginAI1"/><w:r><w:t>Spike mark.</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>"#
+    );
+    let part = format!(
+        concat!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+            r#"<mg:authorship xmlns:mg="{ns}" mg:version="1">"#,
+            r#"<mg:span mg:anchor="bookmark" mg:ref="_MarginAI_1a2b3c4d" mg:author="Claude" mg:kind="ai" mg:acceptedAt="2026-10-13T09:00:00Z" mg:model="claude-opus-5" mg:len="34">"#,
+            r#"<mg:text>Mist lifts off the river by eight,</mg:text></mg:span>"#,
+            r#"<mg:span mg:ref="_MarginAI1" mg:author="Mistral" mg:acceptedAt="2026-10-12T09:00:00Z"><mg:text>Spike mark.</mg:text></mg:span>"#,
+            r#"</mg:authorship>"#
+        ),
+        ns = LEGACY_NAMESPACE
+    );
+    assert_eq!(LEGACY_NAMESPACE, "urn:margin:authorship");
+    let back = wordcraft_docx::read(&zip(&fixture(body, Some(&part)))).unwrap();
+    let names: Vec<&str> = back.authorship.spans.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["_OptimoAI_1a2b3c4d", "_OptimoAI_1"], "both spans kept, renamed");
+    assert_eq!(back.authorship.spans[0].author, "Claude");
+    assert_eq!(back.authorship.spans[0].model, "claude-opus-5");
+    let sc = scan(&back);
+    assert_eq!(sc.ranges.len(), 2);
+    assert_eq!(span_text(&back, &sc.ranges[0]), "Mist lifts off the river by eight,");
+    assert_eq!(span_text(&back, &sc.ranges[1]), "Spike mark.");
+    let a = wordcraft_doc::authorship::attribution(&back, &|_| false);
+    assert_eq!(a.ai_chars, 34 + 11);
+
+    let bytes = wordcraft_docx::write(&back).unwrap();
+    let parts = unzip(&bytes);
+    let all = parts.values().map(|v| String::from_utf8_lossy(v).into_owned()).collect::<String>();
+    assert!(!all.contains("MarginAI") && !all.contains(LEGACY_NAMESPACE), "nothing of the old names is written");
+    let item = parts
+        .iter()
+        .find(|(k, v)| k.starts_with("customXml/item") && !k.contains("Props") && String::from_utf8_lossy(v).contains(NAMESPACE))
+        .map(|(_, v)| String::from_utf8_lossy(v).into_owned())
+        .expect("the new part");
+    assert!(item.contains(r#"mg:ref="_OptimoAI_1a2b3c4d""#) && item.contains(r#"mg:ref="_OptimoAI_1""#), "{item}");
+    let doc_xml = text(&parts, "word/document.xml");
+    assert!(doc_xml.contains(r#"w:name="_OptimoAI_1a2b3c4d""#) && doc_xml.contains(r#"w:name="_OptimoAI_1""#), "{doc_xml}");
+    assert_eq!(
+        parts.keys().filter(|k| k.starts_with("customXml/item") && !k.contains("Props")).count(),
+        1,
+        "the old part is replaced, not kept beside: {:?}",
+        parts.keys()
+    );
+
+    let again = wordcraft_docx::read(&bytes).unwrap();
+    assert_eq!(again.authorship, back.authorship);
+    assert_eq!(wordcraft_docx::write(&again).unwrap(), bytes, "a second save writes the same bytes");
+}
+
 #[test]
 fn edits_around_a_span_keep_it_and_the_stored_text_tells_what_changed() {
     let d = marked(&["Mist lifts off the river by eight."], 0, 34, &mark_name(7));
@@ -135,7 +193,7 @@ fn a_document_without_spans_writes_no_part_and_a_plain_file_is_untouched() {
     let bytes = wordcraft_docx::write(&back).unwrap();
     let parts = unzip(&bytes);
     assert!(parts.keys().all(|k| !k.starts_with("customXml/")));
-    assert!(!String::from_utf8_lossy(&bytes).contains("margin"));
+    assert!(!String::from_utf8_lossy(&bytes).contains("margin") && !String::from_utf8_lossy(&bytes).contains("optimo"));
     assert!(text(&parts, "word/document.xml").contains(r#"w:name="Intro""#));
     assert_eq!(wordcraft_docx::write(&wordcraft_docx::read(&bytes).unwrap()).unwrap(), bytes);
 }

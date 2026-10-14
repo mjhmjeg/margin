@@ -14,7 +14,7 @@ use wordcraft_engine::{CommandSpec, Registry};
 
 use crate::WordApp;
 use crate::mac_controls as mc;
-use crate::skin::MarginTokens;
+use crate::skin::OptimoTokens;
 use crate::theme::Tokens;
 
 pub const FIELD_W: f32 = 300.0;
@@ -26,7 +26,7 @@ const VISIBLE_ROWS: f32 = 8.0;
 /// How many recent commands are remembered, and how many distinct commands keep a count.
 const MAX_RECENT: usize = 12;
 const MAX_COUNTED: usize = 300;
-/// The key that focuses the field: ⌘Y (⌥Q does too, in the Margin layout). ⌘J is Justify (Word's
+/// The key that focuses the field: ⌘Y (⌥Q does too, in the Optimo layout). ⌘J is Justify (Word's
 /// shortcut), and Redo is only ⇧⌘Z. macOS shortcuts match the typed letter, so on a QWERTZ keyboard
 /// ⌘Y is the key labelled Y (not Undo's position, which is Z there). This constant, the Help
 /// menu's accelerator and `mac_ui::shortcuts` are all that name it.
@@ -65,7 +65,7 @@ impl Scope {
     }
 }
 
-/// The field's transient state (the counts live in [`crate::mac_ui::MarginPrefs`]).
+/// The field's transient state (the counts live in [`crate::mac_ui::OptimoPrefs`]).
 #[derive(Default)]
 pub struct CommandField {
     pub query: String,
@@ -122,7 +122,7 @@ impl Usage<'_> {
 }
 
 /// Record that `id` was run from the field: front of the recents, one more on its count.
-pub fn record(prefs: &mut crate::mac_ui::MarginPrefs, id: &str) {
+pub fn record(prefs: &mut crate::mac_ui::OptimoPrefs, id: &str) {
     prefs.command_recent.retain(|r| r != id);
     prefs.command_recent.insert(0, id.to_string());
     prefs.command_recent.truncate(MAX_RECENT);
@@ -290,7 +290,7 @@ fn close(app: &mut WordApp, ctx: &egui::Context) {
 fn run_row(app: &mut WordApp, ctx: &egui::Context, row: &Row) {
     match row {
         Row::Command { id, .. } => {
-            record(&mut app.ui.margin, id);
+            record(&mut app.ui.optimo, id);
             let _ = app.run(id, json!({}));
         }
         Row::Ask(text) => ask(app, text),
@@ -321,7 +321,7 @@ fn ask(app: &mut WordApp, instruction: &str) {
 pub fn show(app: &mut WordApp, ui: &mut Ui, rect: Rect) {
     let ctx = ui.ctx().clone();
     let t = Tokens::get(&ctx);
-    let m = MarginTokens::get(&ctx);
+    let m = OptimoTokens::get(&ctx);
     let assistant = crate::review_panel::assistant_enabled();
     let edit_id = egui::Id::new("command_field_edit");
 
@@ -343,7 +343,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui, rect: Rect) {
         f.scroll_to = true;
     }
     let reg = app.session.registry.clone();
-    let usage = Usage { recent: &app.ui.margin.command_recent, counts: &app.ui.margin.command_counts };
+    let usage = Usage { recent: &app.ui.optimo.command_recent, counts: &app.ui.optimo.command_counts };
     let hits = if app.command_field.mode == Mode::Ask { Vec::new() } else { search(&reg, &app.command_field.query, usage) };
     let files = crate::assistant_panel::facts_available(app);
     let list = rows(&hits, &app.command_field.query, app.command_field.mode, assistant, files);
@@ -452,7 +452,7 @@ fn take_keys(ctx: &egui::Context, assistant: bool) -> Option<Key> {
 }
 
 /// The field itself; true when it has keyboard focus. `live` is false for the frame that closes it.
-fn paint_field(app: &mut WordApp, ui: &mut Ui, rect: Rect, t: &Tokens, m: &MarginTokens, live: bool, edit_id: egui::Id) -> bool {
+fn paint_field(app: &mut WordApp, ui: &mut Ui, rect: Rect, t: &Tokens, m: &OptimoTokens, live: bool, edit_id: egui::Id) -> bool {
     let assistant = crate::review_panel::assistant_enabled();
     let f = &mut app.command_field;
     let had_focus = ui.ctx().memory(|mem| mem.has_focus(edit_id));
@@ -609,7 +609,7 @@ fn paint_row(app: &WordApp, ui: &mut Ui, row: &Row, highlighted: bool, t: &Token
 }
 
 fn ask_row(ui: &Ui, r: Rect, label: &str, t: &Tokens, font: &egui::FontId) {
-    let assistant = MarginTokens::get(ui.ctx()).assistant;
+    let assistant = OptimoTokens::get(ui.ctx()).assistant;
     crate::icons::paint(
         ui.painter(),
         Rect::from_center_size(pos2(r.min.x + 19.0, r.center().y), vec2(15.0, 15.0)),
@@ -680,7 +680,7 @@ mod tests {
 
     #[test]
     fn counts_are_recorded_capped_and_survive_junk() {
-        let mut p = crate::mac_ui::MarginPrefs::default();
+        let mut p = crate::mac_ui::OptimoPrefs::default();
         for _ in 0..3 {
             record(&mut p, "format.bold");
         }
@@ -722,9 +722,9 @@ mod tests {
     fn asking_without_an_assistant_is_an_error_not_a_panic() {
         let mut app = WordApp::new(session(), crate::Services::default());
         let r = submit_ask(&mut app, "Shorten this.", &Scope { words: 3, ..Default::default() });
-        assert!(r.as_ref().is_err_and(|e| e.contains("Let an assistant work in Margin")), "{r:?}");
+        assert!(r.as_ref().is_err_and(|e| e.contains("Let an assistant work in Optimo")), "{r:?}");
         ask(&mut app, "Shorten this.");
-        assert!(app.status_msg.as_ref().is_some_and(|(m, _)| m.contains("Let an assistant work in Margin")));
+        assert!(app.status_msg.as_ref().is_some_and(|(m, _)| m.contains("Let an assistant work in Optimo")));
         assert!(!app.assistant_panel.working());
     }
 
@@ -781,8 +781,8 @@ mod tests {
         h.run_steps(3);
         assert_ne!(h.state().session.view.ruler, ruler, "↩ ran View › Show Ruler");
         assert!(!h.state().command_field.open && h.state().command_field.query.is_empty());
-        assert_eq!(h.state().ui.margin.command_counts.get("view.ruler"), Some(&1));
-        assert_eq!(h.state().ui.margin.command_recent, ["view.ruler"]);
+        assert_eq!(h.state().ui.optimo.command_counts.get("view.ruler"), Some(&1));
+        assert_eq!(h.state().ui.optimo.command_recent, ["view.ruler"]);
     }
 
     /// ⌘Y and ⌥Q focus the field; Redo is only ⇧⌘Z (⌘Y no longer redoes). Shortcuts match the
@@ -807,7 +807,7 @@ mod tests {
         assert!(!h.state().command_field.open);
         h.key_press_modifiers(alt, egui::Key::Q);
         h.run_steps(3);
-        assert!(h.state().command_field.open && h.state().dialog.is_none(), "⌥Q opens the field in the Margin layout");
+        assert!(h.state().command_field.open && h.state().dialog.is_none(), "⌥Q opens the field in the Optimo layout");
         assert!(h.state().command_field.query.is_empty(), "no stray character");
         h.key_press(egui::Key::Escape);
         h.run_steps(3);
@@ -834,15 +834,15 @@ mod tests {
         assert!(!h.state().command_field.open);
     }
 
-    /// The Classic ribbon keeps the old Search Commands dialog; the Margin layout never opens it.
+    /// The Classic ribbon keeps the old Search Commands dialog; the Optimo layout never opens it.
     #[test]
     fn classic_layout_still_opens_the_dialog() {
         let mut h = harness();
-        h.state_mut().ui.margin.classic_ribbon = true;
+        h.state_mut().ui.optimo.classic_ribbon = true;
         h.state_mut().run("ui.dialog", json!({"name": "commands"})).unwrap();
         assert!(matches!(h.state().dialog, Some(crate::dialogs::Dialog::Commands { .. })));
         h.state_mut().dialog = None;
-        h.state_mut().ui.margin.classic_ribbon = false;
+        h.state_mut().ui.optimo.classic_ribbon = false;
         h.state_mut().run("ui.dialog", json!({"name": "commands"})).unwrap();
         assert!(h.state().dialog.is_none() && h.state().command_field.open);
     }
@@ -851,12 +851,29 @@ mod tests {
     #[test]
     fn usage_survives_a_restart_and_junk() {
         let mut ui = crate::UiState::default();
-        record(&mut ui.margin, "format.bold");
+        record(&mut ui.optimo, "format.bold");
         let bytes = serde_json::to_vec(&ui).unwrap();
         let back = crate::UiState::from_json(&bytes).unwrap();
-        assert_eq!(back.margin.command_counts.get("format.bold"), Some(&1));
-        let junk = br#"{"margin": {"commandRecent": 7, "commandCounts": {"a": "x"}, "inspector": false}}"#;
+        assert_eq!(back.optimo.command_counts.get("format.bold"), Some(&1));
+        let junk = br#"{"optimo": {"commandRecent": 7, "commandCounts": {"a": "x"}, "inspector": false}}"#;
         let back = crate::UiState::from_json(junk).unwrap();
-        assert!(back.margin.command_recent.is_empty() && back.margin.command_counts.is_empty());
+        assert!(back.optimo.command_recent.is_empty() && back.optimo.command_counts.is_empty());
+        assert!(!back.optimo.inspector);
+        let s = String::from_utf8(serde_json::to_vec(&back).unwrap()).unwrap();
+        assert!(s.contains("\"optimo\":") && !s.contains("\"margin\":"), "{s}");
+    }
+
+    /// Settings saved while the app was called Margin (`"margin": {…}` in `ui.json`) come back
+    /// under the new key; when both are there, the new one wins.
+    #[test]
+    fn margins_layout_settings_survive_the_rename() {
+        let old = br#"{"margin": {"classicRibbon": true, "inspector": false, "textWidth": "narrow", "commandRecent": ["view.ruler"], "commandCounts": {"view.ruler": 3}}}"#;
+        let back = crate::UiState::from_json(old).unwrap();
+        assert!(back.optimo.classic_ribbon && !back.optimo.inspector);
+        assert_eq!(back.optimo.text_width, crate::mac_ui::TextWidth::Narrow);
+        assert_eq!(back.optimo.command_recent, ["view.ruler"]);
+        assert_eq!(back.optimo.command_counts.get("view.ruler"), Some(&3));
+        let both = br#"{"margin": {"classicRibbon": true}, "optimo": {"classicRibbon": false}}"#;
+        assert!(!crate::UiState::from_json(both).unwrap().optimo.classic_ribbon);
     }
 }

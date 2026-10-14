@@ -42,13 +42,13 @@ pub fn is_word_package(ext: &str) -> bool {
     wordcraft_docx::Flavor::from_ext(ext).is_some()
 }
 
-/// Does a `.ext` copy keep the authorship of accepted assistant text (Margin A5)? Only Word
+/// Does a `.ext` copy keep the authorship of accepted assistant text (Optimo A5)? Only Word
 /// packages (and the Flat OPC and JSON forms of the same model) do; every other export drops it.
 pub fn keeps_authorship(ext: &str) -> bool {
     is_word_package(ext) || ext == "xml" || ext == "json"
 }
 
-/// A copy of `doc` without its authorship: no spans, no `_MarginAI_` bookmarks.
+/// A copy of `doc` without its authorship: no spans, no `_OptimoAI_` bookmarks.
 fn without_authorship(doc: &Document) -> Document {
     let mut d = doc.clone();
     let scan = wordcraft_doc::authorship::scan(&d);
@@ -217,8 +217,8 @@ pub fn save_bytes(name: &str, doc: &Document) -> Result<Vec<u8>, String> {
 /// [`save_bytes`] with export options (Print Markup).
 pub fn save_bytes_opts(name: &str, doc: &Document, opts: &ExportOptions) -> Result<Vec<u8>, String> {
     let ext = ext_of(name);
-    // Who wrote what (Margin A5) travels only in Word's formats: a copy in another format gets
-    // neither the store nor the `_MarginAI_` bookmarks (they would turn into anchors).
+    // Who wrote what (Optimo A5) travels only in Word's formats: a copy in another format gets
+    // neither the store nor the `_OptimoAI_` bookmarks (they would turn into anchors).
     let stripped;
     let doc = if !keeps_authorship(&ext) && !doc.authorship.is_empty() {
         log::warn!("{name}: a .{ext} copy does not keep who wrote what ({} assistant span(s) are left out)", doc.authorship.spans.len());

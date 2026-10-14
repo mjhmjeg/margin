@@ -20,7 +20,7 @@ const MAX_STREAM: Duration = Duration::from_secs(600);
 fn agent(timeout: Duration, stream: bool) -> Agent {
     let builder = Agent::config_builder()
         .http_status_as_error(false)
-        .user_agent(concat!("Margin/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("Optimo/", env!("CARGO_PKG_VERSION")))
         .timeout_connect(Some(timeout))
         .timeout_recv_response(Some(timeout));
     let builder = if stream { builder.timeout_recv_body(Some(MAX_STREAM)) } else { builder.timeout_global(Some(timeout)) };

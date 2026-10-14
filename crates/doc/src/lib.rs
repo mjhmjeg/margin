@@ -590,7 +590,7 @@ pub struct Document {
     /// Source-format parts we keep verbatim for round-trip (e.g. custom XML), by part name.
     #[serde(skip)]
     pub passthrough: BTreeMap<String, Arc<Vec<u8>>>,
-    /// Accepted assistant text: which `_MarginAI_` bookmarks hold it and what was accepted
+    /// Accepted assistant text: which `_OptimoAI_` bookmarks hold it and what was accepted
     /// ([`authorship`]).
     #[serde(default, skip_serializing_if = "authorship::Authorship::is_empty")]
     pub authorship: authorship::Authorship,

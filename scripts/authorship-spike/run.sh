@@ -3,7 +3,7 @@
 #
 # Builds the harness (crates/docx/examples/authorship_spike.rs), writes one synthetic document
 # per candidate, then round-trips each through
-#   - this repo's wordcraft-cli (Margin): a plain open+save, and a save after scripted edits
+#   - this repo's wordcraft-cli (Optimo): a plain open+save, and a save after scripted edits
 #     inside / at the edge of the AI spans;
 #   - upstream WordCraft's wordcraft-cli, when UPSTREAM_CLI points at one
 #     (git worktree add /tmp/wc upstream/main && CARGO_TARGET_DIR=/tmp/wc-target cargo build -p wordcraft-cli);
@@ -20,10 +20,10 @@ OUT=${OUT:-$ROOT/plan/word/authorship-spike}
 UPSTREAM_CLI=${UPSTREAM_CLI:-}
 WORD_TIMEOUT=${WORD_TIMEOUT:-180}
 # f-feature is not a synthetic candidate: it is the A5 feature's own output, a document whose
-# assistant suggestions were accepted in Margin (hidden `_MarginAI_` bookmarks + the
-# `urn:margin:authorship` store), with the same text and spans as the candidates.
+# assistant suggestions were accepted in Optimo (hidden `_OptimoAI_` bookmarks + the
+# `urn:optimo:authorship` store), with the same text and spans as the candidates.
 CANDIDATES=(a-bookmarks b-offsets c-ignorable d-sdt e-style f-feature)
-STAGES=(src margin margin-edit upstream upstream-edit word word-edit)
+STAGES=(src optimo optimo-edit upstream upstream-edit word word-edit)
 
 # The scripted edits, as WordCraft commands: a paragraph-start insertion (shifts every offset),
 # an insertion inside span 1, a deletion at the start of span 2, typing right after span 3.
@@ -38,7 +38,7 @@ cd "$ROOT"
 cargo build -q -p wordcraft-docx --example authorship_spike
 cargo build -q -p wordcraft-cli
 SPIKE=$ROOT/target/debug/examples/authorship_spike
-MARGIN_CLI=$ROOT/target/debug/wordcraft-cli
+OPTIMO_CLI=$ROOT/target/debug/wordcraft-cli
 
 check() { "$SPIKE" check "$1" > "${1%.docx}.check.txt"; }
 summary() { sed -n 's/^summary //p' "${1%.docx}.check.txt"; }
@@ -92,7 +92,7 @@ roundtrip_word() {
 # author), which wraps each accepted insertion in a mark and records it in the store.
 make_feature() {
   local out=$1
-  "$MARGIN_CLI" run --template blank --author Person \
+  "$OPTIMO_CLI" run --template blank --author Person \
     --cmd 'text.insert={"text":"The valley wakes slowly. ","raw":true}' \
     --cmd 'file.setAuthor={"name":"Claude"}' --cmd 'review.trackChanges={"value":true}' \
     --cmd 'text.insert={"text":"Mist lifts off the river by eight,","raw":true}' \
@@ -120,7 +120,7 @@ mkdir -p "$OUT/src"
 make_feature "$OUT/src/f-feature.docx"
 for f in "${CANDIDATES[@]}"; do check "$OUT/src/$f.docx"; done
 
-roundtrip_cli margin "$MARGIN_CLI"
+roundtrip_cli optimo "$OPTIMO_CLI"
 if [ -n "$UPSTREAM_CLI" ]; then roundtrip_cli upstream "$UPSTREAM_CLI"; else echo "UPSTREAM_CLI not set: upstream round trip skipped" >&2; fi
 if word_present; then roundtrip_word; else echo "Microsoft Word not installed (or automation refused): Word round trip skipped" >&2; fi
 
