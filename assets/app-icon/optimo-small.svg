@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Optimo app icon, concept A, small variant (2026-10-14): use at 32 pt and below. Thicker
+       stroke and three bigger dots, so the dotted half stays legible at 16 px. -->
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="#0A64D6"/>
+  <!-- left half: a solid round-capped stroke (the person) -->
+  <path d="M 512 272 A 240 240 0 0 0 512 752" fill="none" stroke="#FFFFFF" stroke-width="136" stroke-linecap="round"/>
+  <!-- right half: round dots (the AI) -->
+  <circle cx="681.7" cy="342.3" r="68" fill="#FFFFFF"/>
+  <circle cx="752.0" cy="512.0" r="68" fill="#FFFFFF"/>
+  <circle cx="681.7" cy="681.7" r="68" fill="#FFFFFF"/>
+</svg>
