@@ -38,6 +38,7 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - Product name: "Margin" chosen 2026-10-12. Near-clash: an early Mac markdown notes app "Margin" (peerlist) and iPad tracker "The Margin". No formal trademark search done.
 
 ## Known bugs
+- 2026-10-14 Incident: upstream WordCraft (in /Applications) rewrote the shared ui.json and wiped Margin's assistant settings (key in Keychain unaffected). Fixed: Margin uses Application Support/Margin, copies the old file once (test + verified on this Mac).
 - 2026-10-13 Incident: whole-document ask with Mistral failed ("no JSON object"): 4096-token cap cut the answer; Mistral reasoning chunks dropped. Fixed with tests (salvage, JSON mode, budget 8–16k). ⌘Y ask ignored the selection (⇥ moved focus) — fixed with key-event tests.
 - 2026-10-13 Incident: disk full twice from two parallel debug builds (~50 GB). Rule now: one build at a time.
 - Review groups word-level pieces only for the session; after restart they show as separate rows.
@@ -50,7 +51,6 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - E19: switching Page numbers off only shows a message — no engine command removes page numbers.
 - Review "Show": Simple markup / Original draw like All / No markup (engine has markup on/off only).
 - Headless `wordcraft-cli mcp` edits files directly, not as tracked suggestions.
-- Margin shares the settings folder (~/Library/Application Support/WordCraft) with an installed WordCraft.
 - Upstream warning: contributors/people.toml TOML parse error at line 71 (theirs).
 - Toolbar sits in the 28 pt traffic-light band (AppKit fixes the lights; moving them needs unsafe code, forbidden upstream) — slimmer than the 52 pt mockup.
 - Pageless and the inspector settings are app-wide, not saved per document.
