@@ -12,8 +12,8 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - Phase 5: packaging works (Margin.app, ai.spert.margin, icon, README; package.sh takes APP_NAME/BUNDLE_ID/APP_ICNS/FILE_PREFIX/NOTARY_PROFILE). Waiting on Martijn: Developer ID identity name + notarytool keychain profile → signed universal build → draft GitHub release ✋
 
 ## Next
-- Optimo O2: ⌘Y Anything box over the page, replaces the command field and old Search Commands (OPTIMO.md §3) (Opus, high)
-- Commit Claude Design's OPTIMO.md + 5 new icons (untracked in the rename/optimo checkout) with O2
+- Optimo O3: co-writer runner + guards, margin-note component, Settings › Co-writer; bring back ⌘Y's ask row as margin notes and switch on the 3 parked ⌘Y-ask tests (OPTIMO.md §4) (Fable, xhigh: the guards are the product rules)
+- Martijn: try ⌘Y in the running app (scripts/optimo-run.sh on branch rename/optimo) ✋
 - Martijn: try branch assistant/integrate in the running app (Mistral key, ⌘Y on a selection, Show Authorship, Home › Back); clear the Author name field to get "AI · <model>" ✋
 - Run scripts/authorship-spike/run.sh on a Mac with Word (Word not installed here) ✋
 - Merge assistant/integrate to main, then upstream PRs per phase (Opus, high)
@@ -23,6 +23,7 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - Weekly upstream merge (scheduled, Sonnet)
 
 ## Done
+- 2026-10-15 Optimo O2: ⌘Y Anything box (scope chip, Format chips, Go to headings, commands + headings + recent files); old Search Commands dialog removed (both layouts); Repeat → ⇧⌘Y; ask row hidden until O3; on rename/optimo, xtask ci green, screens docs/design-handoff/phase-O2/
 - 2026-10-15 Optimo O1: bare window (centred title, Anything ⌘Y pill, Co-writer, bottom line "words · Your words %", quiet "2 notes" markers, ruler off); panels on ⇧⌘F Format (opens on the font list) / ⇧⌘R Review / ⇧⌘O Outline; on branch rename/optimo, not pushed, xtask ci green, screens docs/design-handoff/phase-O1/
 - 2026-10-14 Optimo O0: rename Margin → Optimo (bundle ai.spert.optimo, settings + Keychain + authorship marks carried over, icon concept A); on branch rename/optimo
 - 2026-10-14 A5 authorship view + .docx persistence (hidden bookmarks + custom XML part; WordCraft round trip ok); assistant fixes: cut-off/JSON answers, ⌘Y uses selection / This section, word-level suggestions, "AI · <model>" author, Home Back; branch assistant/integrate pushed, xtask ci green
@@ -39,8 +40,8 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - 2026-10-12 Research storytold org; chose WordCraft, option B (restructure UI on egui)
 
 ## Open decisions
-- OPTIMO.md §13: (1) ⌘Y Repeat → ⇧⌘Y? (needed for O2) (2) Look list Clean/Classic/Report/Letter, user-saved looks? (3) Research: provider web search or own search API key?
-- Branch rename/optimo (O0 + O1, built on assistant/integrate) not merged to main or pushed yet.
+- OPTIMO.md §13: (1) ⌘Y Repeat → ⇧⌘Y — decided 2026-10-15 (2) Look list Clean/Classic/Report/Letter, user-saved looks? (3) Research: provider web search or own search API key?
+- Branch rename/optimo (O0 + O1 + O2, built on assistant/integrate) not merged to main or pushed yet.
 - Product name: Optimo (2026-10-14, replaces Margin). No formal trademark search done.
 
 ## Known bugs
