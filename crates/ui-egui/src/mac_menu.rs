@@ -178,9 +178,9 @@ const REVIEW: &[Entry] = &[
 ];
 
 const VIEW: &[Entry] = &[
-    key("Show Outline", Margin(MarginAct::Outline), "Control+Super+O"),
-    key("Show Format Inspector", Margin(MarginAct::Inspector), "CmdOrCtrl+Alt+I"),
-    key("Show Review", Margin(MarginAct::Review), "Control+Super+V"),
+    key("Show Outline", Margin(MarginAct::Outline), "CmdOrCtrl+Shift+O"),
+    key("Show Format Inspector", Margin(MarginAct::Inspector), "CmdOrCtrl+Shift+F"),
+    key("Show Review", Margin(MarginAct::Review), "CmdOrCtrl+Shift+R"),
     it("Show Ruler", Cmd("view.ruler")),
     key("Show Invisibles", Keys("Mod+8"), "CmdOrCtrl+8"),
     it("Show Authorship", Cmd("view.authorship")),
@@ -260,7 +260,7 @@ pub fn perform(app: &mut WordApp, act: &Act) {
             app.ui.backstage_page = "new".into();
         }
         Margin(MarginAct::Outline) => mac_ui::toggle_panel(app, mac_ui::Panel::Outline),
-        Margin(MarginAct::Inspector) => mac_ui::toggle_panel(app, mac_ui::Panel::Format),
+        Margin(MarginAct::Inspector) => mac_ui::format_with_font_list(app),
         Margin(MarginAct::Review) => mac_ui::toggle_panel(app, mac_ui::Panel::Review),
         Margin(MarginAct::Pageless) => {
             let on = !mac_ui::pageless(app);

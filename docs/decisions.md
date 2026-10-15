@@ -225,9 +225,13 @@ Upstream round trips of the feature's own document: kept.
 (Format ⌥⌘I, Review ⌥⌘V, Outline ⌥⌘O, "confirm free keys in the registry").
 
 **Decision.**
-- **Shortcuts:** Format ⌥⌘I (free). Review **⌃⌘V** and Outline **⌃⌘O**: ⌥⌘V is Paste Special
-  (`edit.pasteSpecial`, Word's key) and ⌥⌘O the Outline *view* (`view.outline`). The old Show
-  Outline key ⌥⌘1 clashed with Heading 1 and is gone. View menu gains "Show Review".
+- **Shortcuts (Martijn, 2026-10-15: "Format on F, Review on R, Outline on O", with Shift):**
+  Format **⇧⌘F**, Review **⇧⌘R**, Outline **⇧⌘O**; ⌥⌘I stays as a second Format key (Pages).
+  ⇧⌘F is Word's "font" key (`format.font`): in Optimo it opens Format on the Text tab with the
+  font list open, so Word users still land on the font. ⌘D keeps the Font dialog. ⇧⌘R and ⇧⌘O
+  were free. ⌥⌘F (Footnote), ⌥⌘O (Outline view), ⌥⌘V (Paste Special) and ⌃⌘F (macOS full
+  screen) were taken; ⌥⌘R is reserved for Read as a reader (O6). The old Show Outline key ⌥⌘1
+  clashed with Heading 1 and is gone. View menu gains "Show Review".
 - **Panels are not remembered:** `inspector` is no longer saved in `ui.json`; every window starts
   bare. Ruler off by default in the Optimo layout (View › Show Ruler).
 - **"Your words"** = people's characters / all characters from `Session::authorship`: pending
@@ -241,6 +245,6 @@ Upstream round trips of the feature's own document: kept.
 - **Removed from the bottom line:** page count, language, tracking indicator, Pages/Pageless
   switch (all still in the menus); transient status messages stay.
 
-**Alternatives rejected.** ⌥⌘V/⌥⌘O as specced (would shadow Paste Special and Outline view);
+**Alternatives rejected.** ⌥⌘V/⌥⌘O as specced (would shadow Paste Special and Outline view); ⌃⌘F/R/O (⌃⌘F is full screen);
 keeping the inspector preference (an old default of "open" would show the panel on every
 existing install).

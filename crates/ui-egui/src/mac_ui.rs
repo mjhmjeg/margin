@@ -20,6 +20,9 @@ pub struct MarginPrefs {
     /// Not saved: every window starts on the bare page (W2).
     #[serde(skip)]
     pub inspector: bool,
+    /// Open the font list when the inspector next draws (⇧⌘F).
+    #[serde(skip)]
+    pub font_list: bool,
     pub tab: InspectorTab,
     pub text_width: TextWidth,
     /// Commands run from the command field, most recent first (capped).
@@ -33,6 +36,7 @@ impl Default for MarginPrefs {
         MarginPrefs {
             classic_ribbon: false,
             inspector: false,
+            font_list: false,
             tab: InspectorTab::Text,
             text_width: TextWidth::Medium,
             command_recent: Vec::new(),
@@ -240,21 +244,37 @@ pub fn shortcuts(app: &mut WordApp, ctx: &egui::Context) {
     if cmd_y || alt_q {
         crate::command_field::open(app, "");
     }
-    // W2: the panels left the window; their keys (also in the View menu). ⌥⌘V is Paste Special
-    // and ⌥⌘O the Outline view in the registry, so Review and Outline take ⌃⌘.
+    // W2: the panels left the window; their keys (also in the View menu): ⇧⌘F Format (Word's
+    // "font" key: it opens with the font list), ⇧⌘R Review, ⇧⌘O Outline; ⌥⌘I as in Pages.
     if !active(app) {
         return;
     }
+    let shift_cmd = egui::Modifiers { shift: true, mac_cmd: true, command: true, ..Default::default() };
     let cmd_alt = egui::Modifiers { alt: true, mac_cmd: true, command: true, ..Default::default() };
-    let ctrl_cmd = egui::Modifiers { ctrl: true, mac_cmd: true, command: true, ..Default::default() };
+    if ctx.input_mut(|i| i.consume_key(shift_cmd, egui::Key::F)) {
+        format_with_font_list(app);
+    }
     if ctx.input_mut(|i| i.consume_key(cmd_alt, egui::Key::I)) {
         toggle_panel(app, Panel::Format);
     }
-    if ctx.input_mut(|i| i.consume_key(ctrl_cmd, egui::Key::V)) {
+    if ctx.input_mut(|i| i.consume_key(shift_cmd, egui::Key::R)) {
         toggle_panel(app, Panel::Review);
     }
-    if ctx.input_mut(|i| i.consume_key(ctrl_cmd, egui::Key::O)) {
+    if ctx.input_mut(|i| i.consume_key(shift_cmd, egui::Key::O)) {
         toggle_panel(app, Panel::Outline);
+    }
+}
+
+/// The Format inspector's font list (⇧⌘F opens it).
+const FONT_POPUP: &str = "margin_font";
+
+/// ⇧⌘F / View › Show Format Inspector: Format on the Text tab with the font list open, where
+/// Word's ⇧⌘F would put you; again closes it.
+pub fn format_with_font_list(app: &mut WordApp) {
+    toggle_panel(app, Panel::Format);
+    if app.ui.margin.inspector {
+        app.ui.margin.tab = InspectorTab::Text;
+        app.ui.margin.font_list = true;
     }
 }
 
@@ -542,8 +562,11 @@ fn text_tab(app: &mut WordApp, ui: &mut Ui) {
         let w = ui.available_width();
         let font_name = st.get("font").and_then(Value::as_str).unwrap_or("").to_string();
         let shown = app.previews.font_shown(&font_name);
+        if std::mem::take(&mut app.ui.margin.font_list) {
+            mc::request_open(ui.ctx(), FONT_POPUP);
+        }
         let fams = app.previews.families();
-        if let Some(f) = mc::popup_button(ui, "margin_font", w, &shown, &fams, true) {
+        if let Some(f) = mc::popup_button(ui, FONT_POPUP, w, &shown, &fams, true) {
             let f = app.previews.font_stored(&f);
             run_from_ribbon(app, "format.font", json!({"name": f}));
         }
@@ -996,16 +1019,21 @@ mod tests {
         let app = h.state();
         assert!(!app.session.view.ruler && !app.ui.margin.inspector && !app.session.view.comments_pane && !app.session.view.nav_pane);
         assert!(h.query_by_role_and_label(Role::RadioButton, "Center").is_none(), "no inspector");
-        let cmd_alt = egui::Modifiers { alt: true, mac_cmd: true, command: true, ..Default::default() };
-        let ctrl_cmd = egui::Modifiers { ctrl: true, mac_cmd: true, command: true, ..Default::default() };
-        h.key_press_modifiers(cmd_alt, egui::Key::I);
+        let shift_cmd = egui::Modifiers { shift: true, mac_cmd: true, command: true, ..Default::default() };
+        let font = h.state_mut().session.run("format.state", &json!({})).ok().and_then(|v| v.get("font").cloned());
+        h.key_press_modifiers(shift_cmd, egui::Key::F);
         h.step();
-        assert!(h.state().ui.margin.inspector);
-        h.key_press_modifiers(ctrl_cmd, egui::Key::V);
+        h.step();
+        assert!(h.state().ui.margin.inspector, "⇧⌘F opens Format");
+        assert!(egui::Popup::is_any_open(&h.ctx), "with the font list open");
+        let app = h.state_mut();
+        assert_eq!(app.session.run("format.state", &json!({})).ok().and_then(|v| v.get("font").cloned()), font, "not Word's font command");
+        h.key_press(egui::Key::Escape);
+        h.key_press_modifiers(shift_cmd, egui::Key::R);
         h.step();
         assert!(h.state().session.view.comments_pane && !h.state().ui.margin.inspector, "one right panel at a time");
-        h.key_press_modifiers(ctrl_cmd, egui::Key::V);
-        h.key_press_modifiers(ctrl_cmd, egui::Key::O);
+        h.key_press_modifiers(shift_cmd, egui::Key::R);
+        h.key_press_modifiers(shift_cmd, egui::Key::O);
         h.step();
         assert!(!h.state().session.view.comments_pane && h.state().session.view.nav_pane);
         // The pill opens the command field.

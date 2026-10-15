@@ -169,6 +169,15 @@ pub fn segmented_one(ui: &mut Ui, id: &str, items: &[Seg], selected: Option<usiz
 
 /// Popup button: one control, 28 high, `field_bg` + `input_border`, label left (10 pt in), popup
 /// glyph right. Returns the chosen item. Long lists scroll; typing filters when `searchable`.
+/// Ask the [`popup_button`] with this `id` to open its list the next time it is drawn.
+pub fn request_open(ctx: &egui::Context, id: &str) {
+    ctx.data_mut(|d| d.insert_temp(open_request(id), true));
+}
+
+fn open_request(id: &str) -> egui::Id {
+    egui::Id::new(("popup_button_open", id))
+}
+
 pub fn popup_button(ui: &mut Ui, id: &str, width: f32, current: &str, items: &[String], searchable: bool) -> Option<String> {
     let (t, m) = tokens(ui);
     let (r, resp) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::click());
@@ -187,6 +196,9 @@ pub fn popup_button(ui: &mut Ui, id: &str, width: f32, current: &str, items: &[S
     );
     focus_ring(ui, &resp, r, RADIUS);
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, current));
+    if ui.ctx().data_mut(|d| d.remove_temp::<bool>(open_request(id))).is_some() {
+        egui::Popup::open_id(ui.ctx(), egui::Popup::default_response_id(&resp));
+    }
     let mut chosen = None;
     egui::Popup::menu(&resp).width(width.max(180.0)).show(|ui| {
         let qid = ui.id().with((id, "query"));

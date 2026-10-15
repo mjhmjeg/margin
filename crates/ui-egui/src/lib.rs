@@ -1578,6 +1578,8 @@ impl WordApp {
         // Keytips are read before layout so the frame paints the new state; badges paint after
         // the ribbon so they sit on top of it.
         crate::keytips::logic(self, &ctx);
+        // Before the canvas: ⇧⌘F etc. must not reach the registry's bindings (Word's font key).
+        mac_ui::shortcuts(self, &ctx);
         if self.ui.backstage {
             backstage::show(self, ui);
         } else {
@@ -1618,7 +1620,6 @@ impl WordApp {
         zotero::show_alert(self, &ctx);
         read_aloud::show(self, &ctx);
         crate::keytips::show(self, &ctx, ui);
-        mac_ui::shortcuts(self, &ctx);
         keys::global_shortcuts(self, &ctx);
         if let Some(url) = self.canvas.open_url.take() {
             ctx.open_url(egui::OpenUrl::new_tab(url));
