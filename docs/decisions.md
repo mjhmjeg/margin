@@ -312,3 +312,28 @@ forever. Serde aliases for `margin`: a JSON-level move keeps one key in the file
 **Alternatives rejected.** ⌥⌘V/⌥⌘O as specced (would shadow Paste Special and Outline view); ⌃⌘F/R/O (⌃⌘F is full screen);
 keeping the inspector preference (an old default of "open" would show the panel on every
 existing install).
+
+## 2026-10-15 — Optimo O2: ⌘Y Anything (OPTIMO.md §3)
+
+**Context.** Y1–Y2: one box for doing, finding, formatting and going to, replacing phase 6's
+toolbar field (K) and the old Search Commands dialog.
+
+**Decision.**
+- **One box in both layouts.** ⌘Y, the pill, Help › Search Commands…, `ui.dialog commands`,
+  Alt+Q (Windows/Linux) and the Classic ribbon's Commands button all open it; `Dialog::Commands`
+  is gone. 640 wide, 92 below the window top, radius 12, shadow 0 12 40 at 16 %.
+- **Repeat → ⇧⌘Y** (Martijn, 2026-10-15), added to Edit › Repeat; F4 stays. egui matches ⌘Y with
+  an extra Shift, so ⌘Y is now consumed only on an exact match.
+- **Empty state:** Format the selection chips (B, I, Heading 2, Quote, Link…, Comment, More
+  format… → Format inspector) and Go to (headings; "Heading · empty" when no text follows before
+  the next heading). The Co-writer group is not shown: its verbs land with O3–O9.
+- **Typing:** matching commands (recent and frequent first), then matching headings, then
+  matching recent files. A fixed group order, not one score (`ponytail:` note in `results`).
+- **Ask rows hidden until O3** (§11). Today's ask lands as tracked suggestions, which rule 1
+  replaces with margin notes. The three ⌘Y-ask tests are `#[ignore]`d with that reason, to be
+  switched back on in O3. The context menu's "Ask …" opens the Co-writer panel instead.
+- The floating mini toolbar hides while the box is open.
+
+**Alternatives rejected.** Keeping the old dialog for Classic (two searches to maintain);
+dropping Repeat's key entirely (Martijn chose ⇧⌘Y).
+

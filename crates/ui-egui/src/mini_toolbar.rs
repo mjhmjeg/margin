@@ -68,8 +68,8 @@ pub fn visible(app: &WordApp) -> bool {
     if app.session.view.read_mode {
         return false;
     }
-    // Never over a modal dialog or the Backstage.
-    if app.dialog.is_some() || app.colors.is_some() || app.ui.backstage {
+    // Never over a modal dialog, ⌘Y Anything or the Backstage.
+    if app.dialog.is_some() || app.colors.is_some() || app.ui.backstage || app.command_field.open {
         return false;
     }
     // Never while the right-click context menu is open: it owns the pointer and would double up.

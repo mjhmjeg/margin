@@ -1,10 +1,11 @@
-//! Phase 6 (HANDOFF §6): the command field. A 300 × 28 search field in the toolbar centre with a
-//! 480-wide results popover that searches the same registry as the old Search Commands dialog.
+//! O2 (OPTIMO.md §3): ⌘Y Anything. A 640-wide box centred over the page: one input row with the
+//! scope chip, then — with nothing typed — Format the selection (chips) and Go to (headings), and
+//! once you type one ranked list across every registry command, the headings and recent files.
+//! It replaced phase 6's toolbar field and the old Search Commands dialog, in both layouts.
 //!
-//! Everything the field shows is a row ([`Row`]), built by pure functions ([`search`], [`rows`]) so
-//! the ranking and the hidden assistant paths are tested without a window. The assistant rows
-//! (Ask Claude, quick asks, the Commands / Ask toggle) exist but only show while
-//! [`crate::review_panel::assistant_enabled`] is true, which is false until Settings › Assistant.
+//! Everything the box lists is a row ([`Row`]), built by pure functions ([`search`], [`rows`],
+//! [`results`]) so the ranking is tested without a window. The co-writer rows (Ask, quick asks,
+//! the Commands / Ask toggle) stay hidden until O3 brings them back as margin notes.
 
 use std::collections::BTreeMap;
 
@@ -17,10 +18,11 @@ use crate::mac_controls as mc;
 use crate::skin::OptimoTokens;
 use crate::theme::Tokens;
 
-pub const FIELD_W: f32 = 300.0;
-pub const FIELD_H: f32 = 28.0;
-pub const POPOVER_W: f32 = 480.0;
-pub const ROW_H: f32 = 28.0;
+/// Y1: the box's width and its distance from the window's top.
+pub const BOX_W: f32 = 640.0;
+const BOX_TOP: f32 = 92.0;
+const INPUT_H: f32 = 48.0;
+pub const ROW_H: f32 = 32.0;
 /// Rows visible before the list scrolls.
 const VISIBLE_ROWS: f32 = 8.0;
 /// How many recent commands are remembered, and how many distinct commands keep a count.
@@ -52,6 +54,7 @@ pub enum Mode {
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Scope {
     pub words: usize,
+    pub sentences: usize,
     /// The person's selection at the moment the field opened. The ask uses it even when focus
     /// moving to the field (or a key that reached the page) changed the live selection since.
     pub sel: Option<wordcraft_engine::Selection>,
@@ -61,7 +64,25 @@ impl Scope {
     /// The scope of `app`'s current selection, if it has text.
     pub fn capture(app: &WordApp) -> Option<Scope> {
         let text = app.session.selected_text();
-        (!text.trim().is_empty()).then(|| Scope { words: text.split_whitespace().count(), sel: Some(app.session.sel.clone()) })
+        (!text.trim().is_empty()).then(|| Scope {
+            words: text.split_whitespace().count(),
+            sentences: sentences(&text),
+            sel: Some(app.session.sel.clone()),
+        })
+    }
+}
+
+/// Sentences in `text`, at least 1: pieces ended by `.`, `!`, `?` or `…` that hold a word.
+pub fn sentences(text: &str) -> usize {
+    text.split_terminator(['.', '!', '?', '…']).filter(|s| s.chars().any(char::is_alphanumeric)).count().max(1)
+}
+
+/// Y1: the scope chip: "Selection: 1 sentence" or "Whole document".
+pub fn scope_label(scope: Option<&Scope>) -> String {
+    match scope {
+        Some(s) if s.sentences == 1 => tl!("Selection: 1 sentence").to_string(),
+        Some(s) => crate::i18n::fmt(tl!("Selection: {n} sentences"), &[("n", &s.sentences.to_string())]),
+        None => tl!("Whole document").to_string(),
     }
 }
 
@@ -79,8 +100,6 @@ pub struct CommandField {
     pub scope: Option<Scope>,
     /// "This section “…”", captured when the field opened without a selection.
     pub section: String,
-    /// Set by the toolbar each frame: whether the field fits (a narrow window drops it).
-    pub field_visible: bool,
     scroll_y: f32,
     scroll_to: bool,
     /// The query the highlighted row belongs to (a new query highlights the top hit again).
@@ -99,6 +118,15 @@ pub enum Row {
     Ask(String),
     /// A quick ask: label, instruction.
     Quick(&'static str, &'static str),
+    /// Go to a heading; `empty`: no text before the next heading.
+    Heading {
+        path: wordcraft_doc::Path,
+        text: String,
+        level: u8,
+        empty: bool,
+    },
+    /// A recent file (full path).
+    File(String),
 }
 
 /// Recent and frequent commands, from `ui.json`.
@@ -164,7 +192,8 @@ pub fn search<'a>(reg: &'a Registry, query: &str, usage: Usage<'_>) -> Vec<&'a C
                 c.id.to_lowercase(),
                 crate::i18n::lowercase(&format!("{} {}", c.location, crate::i18n::location(c.location)))
             );
-            if tokens.iter().all(|t| hay.contains(t.as_str())) {
+            // English words and ASCII ids also match with plain lowercase (Turkish "I" → "ı").
+            if tokens.iter().all(|t| hay.contains(t.as_str())) || en.split_whitespace().all(|t| hay.contains(t)) {
                 1
             } else {
                 continue;
@@ -211,6 +240,46 @@ pub fn rows(hits: &[&CommandSpec], query: &str, mode: Mode, assistant: bool, fil
     }
 }
 
+/// Y2 / typing: what the box lists. Nothing typed: the headings (Go to). Typed: the matching
+/// commands (recent and frequent first, as [`search`] ranks them), then matching headings, then
+/// matching recent files.
+// ponytail: three groups in a fixed order, not one score; mix them when people miss headings.
+pub fn results(hits: &[&CommandSpec], query: &str, headings: &[Row], recent: &[String]) -> Vec<Row> {
+    let q = crate::i18n::lowercase(query.trim());
+    if q.is_empty() {
+        return headings.to_vec();
+    }
+    let mut out = rows(hits, query, Mode::Commands, false, false);
+    out.extend(headings.iter().filter(|h| matches!(h, Row::Heading { text, .. } if crate::i18n::lowercase(text).contains(&q))).cloned());
+    out.extend(recent.iter().filter(|p| crate::i18n::lowercase(file_name(p)).contains(&q)).map(|p| Row::File(p.clone())));
+    out
+}
+
+fn file_name(path: &str) -> &str {
+    std::path::Path::new(path).file_name().and_then(|n| n.to_str()).unwrap_or(path)
+}
+
+/// The document's headings as Go to rows, each marked empty when no text follows it before the
+/// next heading.
+pub fn heading_rows(app: &WordApp) -> Vec<Row> {
+    let (items, _) = crate::panes::nav_items(app);
+    let doc = &app.session.doc;
+    let body = wordcraft_doc::StoryRef::Body;
+    let paras = doc.para_paths(body);
+    let top = |p: &wordcraft_doc::Path| p.0.first().copied().unwrap_or(0);
+    let mut out = Vec::with_capacity(items.len());
+    for (i, (path, level, text)) in items.iter().enumerate() {
+        let from = top(path);
+        let to = items.get(i + 1).map(|n| top(&n.0));
+        let empty = !paras
+            .iter()
+            .filter(|p| top(p) > from && to.is_none_or(|t| top(p) < t))
+            .any(|p| doc.para(body, p).is_some_and(|para| !para.text.trim().is_empty()));
+        out.push(Row::Heading { path: path.clone(), text: text.clone(), level: *level, empty });
+    }
+    out
+}
+
 /// Quick asks that need folder access (Settings › Assistant S5) stay hidden until a folder is allowed.
 pub const NEEDS_FILES: &str = "Check facts against a file…";
 
@@ -247,13 +316,9 @@ fn section_label(app: &WordApp) -> String {
     }
 }
 
-/// Focus the field (Help › Search Commands…, the shortcut, Alt+Q). In the Classic ribbon layout
-/// the old Search Commands dialog still serves, so it opens there instead.
+/// Open ⌘Y Anything (⌘Y, the pill, Help › Search Commands…, Alt+Q on Windows/Linux), in either
+/// layout.
 pub fn open(app: &mut WordApp, query: &str) {
-    if !crate::mac_ui::active(app) || !app.command_field.field_visible {
-        app.dialog = Some(crate::dialogs::Dialog::Commands { query: query.to_string() });
-        return;
-    }
     let f = &mut app.command_field;
     f.query = query.to_string();
     f.open = true;
@@ -270,10 +335,10 @@ fn capture_scope(app: &mut WordApp) {
     app.command_field.section = if app.command_field.scope.is_none() { section_label(app) } else { String::new() };
 }
 
-/// The context menu's "Ask Claude…": the field, pre-scoped to the selection, in Ask mode.
+/// The context menu's "Ask …": the Co-writer panel, scoped to the selection (⌘Y's ask row
+/// returns in O3, as margin notes).
 pub fn open_ask(app: &mut WordApp) {
-    open(app, "");
-    app.command_field.mode = Mode::Ask;
+    crate::assistant_panel::set_open(app, true);
 }
 
 fn close(app: &mut WordApp, ctx: &egui::Context) {
@@ -303,6 +368,14 @@ fn run_row(app: &mut WordApp, ctx: &egui::Context, row: &Row) {
             }
         }
         Row::Quick(_, instruction) => ask(app, instruction),
+        Row::Heading { path, .. } => {
+            let _ = app.run("caret.set", json!({"pos": wordcraft_doc::Pos { story: wordcraft_doc::StoryRef::Body, path: path.clone(), off: 0 }}));
+            app.canvas.nav_to_caret = true;
+            app.canvas.scroll_to_caret = false;
+        }
+        Row::File(path) => {
+            let _ = app.run("file.open", json!({"path": path}));
+        }
     }
     close(app, ctx);
 }
@@ -317,23 +390,45 @@ fn ask(app: &mut WordApp, instruction: &str) {
 // ---------------------------------------------------------------------------------------------
 // Drawing
 
-/// The field and its popover. `rect` is where the field sits in the toolbar.
-pub fn show(app: &mut WordApp, ui: &mut Ui, rect: Rect) {
-    let ctx = ui.ctx().clone();
-    let t = Tokens::get(&ctx);
-    let m = OptimoTokens::get(&ctx);
-    let assistant = crate::review_panel::assistant_enabled();
+/// Y2: the Format the selection chips: label, command, params. "More format…" opens the
+/// Format inspector instead.
+const CHIPS: [(&str, &str, &str); 6] = [
+    ("B", "format.bold", "{}"),
+    ("I", "format.italic", "{}"),
+    ("Heading 2", "para.style", r#"{"style": "Heading2"}"#),
+    ("Quote", "para.style", r#"{"style": "Quote"}"#),
+    ("Link…", "insert.link", "{}"),
+    ("Comment", "review.newComment", "{}"),
+];
+const MORE_FORMAT: &str = "More format…";
+
+/// What a click in the box asked for.
+enum Pick {
+    Row(usize),
+    Chip(usize),
+    MoreFormat,
+}
+
+/// The ⌘Y box while it is open: centred over the window, 92 below its top (Y1).
+pub fn show_box(app: &mut WordApp, ctx: &egui::Context) {
+    if !app.command_field.open {
+        return;
+    }
+    let t = Tokens::get(ctx);
+    let m = OptimoTokens::get(ctx);
+    // ponytail: the co-writer rows wait for O3 (OPTIMO.md §11: "ask row hidden until O3").
+    let assistant = false;
     let edit_id = egui::Id::new("command_field_edit");
 
     // Keys first, so the text field doesn't also act on them.
     let focused = ctx.memory(|mem| mem.has_focus(edit_id));
-    let mut pending: Option<Key> = None;
-    // egui drops focus on Escape before we see it, so Escape is read without needing focus.
-    if app.command_field.open && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        pending = Some(Key::Escape);
-    } else if app.command_field.open && focused {
-        pending = take_keys(&ctx, assistant);
-    }
+    let pending = if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        Some(Key::Escape)
+    } else if focused {
+        take_keys(ctx, assistant)
+    } else {
+        None
+    };
 
     let f = &mut app.command_field;
     if f.query != f.last_query {
@@ -344,15 +439,15 @@ pub fn show(app: &mut WordApp, ui: &mut Ui, rect: Rect) {
     }
     let reg = app.session.registry.clone();
     let usage = Usage { recent: &app.ui.optimo.command_recent, counts: &app.ui.optimo.command_counts };
-    let hits = if app.command_field.mode == Mode::Ask { Vec::new() } else { search(&reg, &app.command_field.query, usage) };
-    let files = crate::assistant_panel::facts_available(app);
-    let list = rows(&hits, &app.command_field.query, app.command_field.mode, assistant, files);
+    let typed = !app.command_field.query.trim().is_empty();
+    let hits = if typed { search(&reg, &app.command_field.query, usage) } else { Vec::new() };
+    let headings = heading_rows(app);
+    let list = results(&hits, &app.command_field.query, &headings, &app.ui.recent);
     let f = &mut app.command_field;
     if f.sel >= list.len() {
         f.sel = list.len().saturating_sub(1);
     }
-
-    let mut run: Option<usize> = None;
+    let mut pick: Option<Pick> = None;
     match pending {
         Some(Key::Down) if !list.is_empty() => {
             f.sel = (f.sel + 1) % list.len();
@@ -362,67 +457,240 @@ pub fn show(app: &mut WordApp, ui: &mut Ui, rect: Rect) {
             f.sel = (f.sel + list.len() - 1) % list.len();
             f.scroll_to = true;
         }
-        Some(Key::Enter) if !list.is_empty() => run = Some(f.sel),
-        Some(Key::Tab) => {
-            f.mode = if f.mode == Mode::Commands { Mode::Ask } else { Mode::Commands };
-            f.sel = 0;
-            f.scroll_y = 0.0;
-            f.scroll_to = true;
-        }
+        Some(Key::Enter) if !list.is_empty() => pick = Some(Pick::Row(f.sel)),
         Some(Key::Escape) => {
-            close(app, &ctx);
-            paint_field(app, ui, rect, &t, &m, false, edit_id);
+            close(app, ctx);
             return;
         }
         _ => {}
     }
 
-    let has_focus = paint_field(app, ui, rect, &t, &m, true, edit_id);
-    if has_focus && !app.command_field.open {
-        // Opened by a click into the field: the scope is taken now, like ⌘Y does.
-        app.command_field.open = true;
-        capture_scope(app);
-    }
-    let f = &mut app.command_field;
-
-    // Popover.
-    if f.open {
-        let mut clicked: Option<usize> = None;
-        let area = egui::Area::new(egui::Id::new("command_field_popover"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(pos2((rect.center().x - POPOVER_W / 2.0).max(8.0), rect.max.y + 6.0))
-            .show(&ctx, |ui| {
-                egui::Frame::new()
-                    .fill(m.popover_bg)
-                    .stroke(Stroke::new(1.0, m.popover_border))
-                    .corner_radius(8)
-                    .shadow(m.popover_shadow)
-                    .inner_margin(egui::Margin::same(6))
-                    .show(ui, |ui| {
-                        ui.set_width(POPOVER_W - 12.0);
-                        ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-                        clicked = list_ui(app, ui, &list, &t, assistant);
+    let screen = ctx.content_rect();
+    let w = BOX_W.min(screen.width() - 32.0).max(200.0);
+    let area = egui::Area::new(egui::Id::new("anything_box"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(pos2(screen.center().x - w / 2.0, screen.min.y + BOX_TOP))
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(m.popover_bg)
+                .stroke(Stroke::new(1.0, m.popover_border))
+                .corner_radius(12)
+                .shadow(egui::Shadow { offset: [0, 12], blur: 40, spread: 0, color: Color32::from_black_alpha(41) })
+                .show(ui, |ui| {
+                    ui.set_width(w);
+                    ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                    input_row(app, ui, w, &t, edit_id);
+                    let r = ui.available_rect_before_wrap();
+                    ui.painter().hline(r.x_range(), r.min.y, Stroke::new(1.0, t.border));
+                    egui::Frame::NONE.inner_margin(egui::Margin::symmetric(8, 6)).show(ui, |ui| {
+                        if !typed {
+                            if let Some(p) = format_chips(ui, &t, &m) {
+                                pick = Some(p);
+                            }
+                            group_title(ui, tl!("Go to"), &t);
+                        }
+                        if let Some(i) = list_ui(app, ui, &list, &t) {
+                            pick = Some(Pick::Row(i));
+                        }
                     });
-            });
-        let popover_rect = area.response.rect;
-        if let Some(i) = clicked {
-            run = Some(i);
+                    footer(ui, reg.all().len(), &t);
+                });
+        });
+    // A press outside the box closes it.
+    let outside = ctx.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p| !area.response.rect.contains(p)));
+    match pick {
+        Some(Pick::Row(i)) => {
+            if let Some(row) = list.get(i) {
+                run_row(app, ctx, row);
+            }
         }
-        // A press outside both the field and the popover closes it.
-        let outside =
-            ctx.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p| !rect.contains(p) && !popover_rect.contains(p)));
-        if outside && run.is_none() {
-            let f = &mut app.command_field;
-            f.open = false;
-            f.query.clear();
-            f.mode = Mode::Commands;
+        Some(Pick::Chip(i)) => {
+            if let Some((_, id, params)) = CHIPS.get(i) {
+                record(&mut app.ui.optimo, id);
+                let _ = app.run(id, serde_json::from_str(params).unwrap_or_else(|_| json!({})));
+            }
+            close(app, ctx);
         }
+        Some(Pick::MoreFormat) => {
+            close(app, ctx);
+            if !app.ui.optimo.inspector {
+                crate::mac_ui::toggle_panel(app, crate::mac_ui::Panel::Format);
+            }
+        }
+        None if outside => close(app, ctx),
+        None => {}
     }
-    if let Some(i) = run
-        && let Some(row) = list.get(i)
-    {
-        run_row(app, &ctx, row);
+}
+
+/// Y1: the 48 pt input row: search icon, the field, the scope chip on the right.
+fn input_row(app: &mut WordApp, ui: &mut Ui, w: f32, t: &Tokens, edit_id: egui::Id) {
+    let (r, _) = ui.allocate_exact_size(vec2(w, INPUT_H), Sense::hover());
+    let font = mc::font();
+    crate::icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 22.0, r.center().y), vec2(17.0, 17.0)), "search", t.text_dim, t.text_dim);
+    let chip = scope_label(app.command_field.scope.as_ref());
+    let g = ui.painter().layout_no_wrap(chip.clone(), font.clone(), t.text_dim);
+    let chip_r = Rect::from_min_max(pos2(r.max.x - 14.0 - g.size().x - 20.0, r.center().y - 11.0), pos2(r.max.x - 14.0, r.center().y + 11.0));
+    ui.painter().rect_filled(chip_r, 10.0, t.checked);
+    ui.painter().galley(chip_r.center() - g.size() / 2.0, g, t.text_dim);
+    let placeholder = tl!("Do, find, format, go to — or ask your co-writer");
+    let edit_rect = Rect::from_min_max(pos2(r.min.x + 42.0, r.min.y + 8.0), pos2(chip_r.min.x - 10.0, r.max.y - 8.0));
+    let f = &mut app.command_field;
+    let te = ui.put(
+        edit_rect,
+        egui::TextEdit::singleline(&mut f.query)
+            .id(edit_id)
+            .frame(egui::Frame::NONE)
+            .vertical_align(egui::Align::Center)
+            .font(egui::FontId::proportional(crate::skin::UI_SIZE + 2.0))
+            .text_color(t.text)
+            .hint_text(egui::RichText::new(placeholder).color(t.text_dim))
+            .lock_focus(true)
+            .desired_width(edit_rect.width()),
+    );
+    if f.focus {
+        te.request_focus();
+        if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), edit_id) {
+            let end = egui::text::CCursor::new(f.query.chars().count());
+            state.cursor.set_char_range(Some(egui::text::CCursorRange::one(end)));
+            state.store(ui.ctx(), edit_id);
+        }
+        f.focus = false;
     }
+    te.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, placeholder));
+}
+
+/// A group's title, 28 high, in `text_dim`.
+fn group_title(ui: &mut Ui, title: &str, t: &Tokens) {
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::hover());
+    ui.painter().text(pos2(r.min.x + 8.0, r.center().y), Align2::LEFT_CENTER, title, mc::font(), t.text_dim);
+}
+
+/// Y2 "Format the selection": chips 26 high, radius 6, `field_bg`, `border_strong`.
+fn format_chips(ui: &mut Ui, t: &Tokens, m: &OptimoTokens) -> Option<Pick> {
+    group_title(ui, tl!("Format the selection"), t);
+    let mut pick = None;
+    ui.horizontal(|ui| {
+        ui.add_space(8.0);
+        ui.spacing_mut().item_spacing.x = 6.0;
+        let labels = CHIPS.iter().map(|c| c.0).chain([MORE_FORMAT]);
+        for (i, label) in labels.enumerate() {
+            let mut job = egui::text::LayoutJob::default();
+            let font = if label == "B" { crate::theme::semibold(crate::skin::UI_SIZE) } else { mc::font() };
+            job.append(tl!(label), 0.0, egui::TextFormat { font_id: font, color: t.text, italics: label == "I", ..Default::default() });
+            let g = ui.painter().layout_job(job);
+            let (r, resp) = ui.allocate_exact_size(vec2((g.size().x + 20.0).max(28.0), 26.0), Sense::click());
+            let fill = if resp.hovered() { t.hover } else { m.field_bg };
+            ui.painter().rect(r, 6.0, fill, Stroke::new(1.0, t.border_strong), egui::StrokeKind::Inside);
+            ui.painter().galley(r.center() - g.size() / 2.0, g, t.text);
+            let name = match label {
+                "B" => tl!("Bold"),
+                "I" => tl!("Italic"),
+                other => tl!(other),
+            };
+            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, name));
+            if resp.clicked() {
+                pick = Some(if label == MORE_FORMAT { Pick::MoreFormat } else { Pick::Chip(i) });
+            }
+        }
+    });
+    ui.add_space(6.0);
+    pick
+}
+
+/// The rows (scrolling past 8). Returns the row clicked.
+fn list_ui(app: &mut WordApp, ui: &mut Ui, list: &[Row], t: &Tokens) -> Option<usize> {
+    let mut clicked = None;
+    if list.is_empty() {
+        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::hover());
+        let text = if app.command_field.query.trim().is_empty() {
+            tl!("No headings yet").to_string()
+        } else {
+            crate::i18n::fmt(tl!("Nothing matches “{query}”"), &[("query", app.command_field.query.trim())])
+        };
+        ui.painter().text(pos2(r.min.x + 8.0, r.center().y), Align2::LEFT_CENTER, text, mc::font(), t.text_dim);
+        return None;
+    }
+    let visible = (list.len() as f32).min(VISIBLE_ROWS);
+    let view_h = visible * ROW_H;
+    let sel = app.command_field.sel;
+    let mut area = egui::ScrollArea::vertical().max_height(view_h).auto_shrink([false, true]).id_salt("command_field_rows");
+    if std::mem::take(&mut app.command_field.scroll_to) {
+        let top = sel as f32 * ROW_H;
+        let mut y = app.command_field.scroll_y;
+        if top < y {
+            y = top;
+        } else if top + ROW_H > y + view_h {
+            y = top + ROW_H - view_h;
+        }
+        area = area.vertical_scroll_offset(y);
+    }
+    let out = area.show_rows(ui, ROW_H, list.len(), |ui, range| {
+        for i in range {
+            let Some(row) = list.get(i) else { continue };
+            if paint_row(app, ui, row, i == sel, t) {
+                clicked = Some(i);
+            }
+        }
+    });
+    app.command_field.scroll_y = out.state.offset.y;
+    clicked
+}
+
+/// Y2 footer: "Type to search 600 commands · ↩ run · esc close".
+fn footer(ui: &mut Ui, commands: usize, t: &Tokens) {
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::hover());
+    ui.painter().hline(r.x_range(), r.min.y, Stroke::new(1.0, t.border));
+    let text = format!(
+        "{} · ↩ {} · esc {}",
+        crate::i18n::fmt(tl!("Type to search {n} commands"), &[("n", &commands.to_string())]),
+        tl!("run"),
+        tl!("close")
+    );
+    ui.painter().text(pos2(r.min.x + 16.0, r.center().y), Align2::LEFT_CENTER, text, mc::font(), t.text_dim);
+}
+
+/// One row, 32 high: name, then its menu path (or kind) in `text_dim`, the shortcut on the right.
+/// True when clicked.
+fn paint_row(app: &WordApp, ui: &mut Ui, row: &Row, highlighted: bool, t: &Tokens) -> bool {
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::click());
+    if highlighted || resp.hovered() {
+        ui.painter().rect_filled(r, 6.0, t.checked);
+    }
+    let font = mc::font();
+    let (name, detail, shortcut, enabled) = match row {
+        Row::Command { id, label, location } => {
+            let enabled = app.session.registry.get(id).is_none_or(|s| (s.enabled)(&app.session).is_none());
+            (tl!(label).to_string(), crate::i18n::location(location), crate::widgets::shortcut_text(app, id), enabled)
+        }
+        Row::Heading { text, level, empty, .. } => {
+            let indent = "   ".repeat(usize::from(level.saturating_sub(1)).min(5));
+            let kind = if *empty { tl!("Heading · empty") } else { tl!("Heading") };
+            (format!("{indent}{text}"), kind.to_string(), String::new(), true)
+        }
+        Row::File(path) => (file_name(path).to_string(), tl!("Recent file").to_string(), String::new(), true),
+        Row::Ask(text) => (text.clone(), String::new(), String::new(), true),
+        Row::Quick(label, _) => (tl!(label).to_string(), String::new(), String::new(), true),
+    };
+    let ink = if enabled { t.text } else { t.text_dim };
+    let sc_w = if shortcut.is_empty() { 0.0 } else { ui.painter().layout_no_wrap(shortcut.clone(), font.clone(), t.text_dim).size().x + 12.0 };
+    if !shortcut.is_empty() {
+        ui.painter().text(pos2(r.max.x - 10.0, r.center().y), Align2::RIGHT_CENTER, &shortcut, font.clone(), t.text_dim);
+    }
+    let avail = r.width() - 20.0 - sc_w;
+    let mut job = egui::text::LayoutJob::simple_singleline(name.clone(), font.clone(), ink);
+    job.wrap = egui::text::TextWrapping::truncate_at_width(avail.min(360.0));
+    let g = ui.painter().layout_job(job);
+    let name_w = g.size().x;
+    ui.painter().galley(pos2(r.min.x + 10.0, r.center().y - g.size().y / 2.0), g, ink);
+    let detail_w = avail - name_w - 12.0;
+    if detail_w > 40.0 && !detail.is_empty() {
+        let mut job = egui::text::LayoutJob::simple_singleline(detail, font, t.text_dim);
+        job.wrap = egui::text::TextWrapping::truncate_at_width(detail_w);
+        let g = ui.painter().layout_job(job);
+        ui.painter().galley(pos2(r.min.x + 10.0 + name_w + 12.0, r.center().y - g.size().y / 2.0), g, t.text_dim);
+    }
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.trim()));
+    resp.clicked()
 }
 
 enum Key {
@@ -433,7 +701,7 @@ enum Key {
     Escape,
 }
 
-/// Take the field's navigation keys out of this frame's input.
+/// Take the box's navigation keys out of this frame's input.
 fn take_keys(ctx: &egui::Context, assistant: bool) -> Option<Key> {
     ctx.input_mut(|i| {
         let none = egui::Modifiers::NONE;
@@ -451,181 +719,10 @@ fn take_keys(ctx: &egui::Context, assistant: bool) -> Option<Key> {
     })
 }
 
-/// The field itself; true when it has keyboard focus. `live` is false for the frame that closes it.
-fn paint_field(app: &mut WordApp, ui: &mut Ui, rect: Rect, t: &Tokens, m: &OptimoTokens, live: bool, edit_id: egui::Id) -> bool {
-    let assistant = crate::review_panel::assistant_enabled();
-    let f = &mut app.command_field;
-    let had_focus = ui.ctx().memory(|mem| mem.has_focus(edit_id));
-    let focused = live && (had_focus || f.focus);
-    let border = if focused { t.accent } else { t.input_border };
-    ui.painter().rect(rect, mc::RADIUS, m.field_bg, Stroke::new(1.0, border), egui::StrokeKind::Inside);
-    if focused {
-        ui.painter().rect_stroke(rect.expand(1.5), mc::RADIUS + 1.5, Stroke::new(3.0, m.focus_ring), egui::StrokeKind::Outside);
-    }
-    crate::icons::paint(
-        ui.painter(),
-        Rect::from_center_size(pos2(rect.min.x + 15.0, rect.center().y), vec2(15.0, 15.0)),
-        "search",
-        t.text_dim,
-        t.accent,
-    );
-    let placeholder = if assistant {
-        crate::i18n::fmt(tl!("Search commands or ask {name}"), &[("name", &crate::review_panel::shown_assistant_name())])
-    } else {
-        tl!("Search commands").to_string()
-    };
-    let hint_w = if focused || !f.query.is_empty() { 0.0 } else { 44.0 };
-    let edit_rect = Rect::from_min_max(pos2(rect.min.x + 30.0, rect.min.y + 2.0), pos2(rect.max.x - 8.0 - hint_w, rect.max.y - 2.0));
-    let te = ui.put(
-        edit_rect,
-        egui::TextEdit::singleline(&mut f.query)
-            .id(edit_id)
-            .frame(egui::Frame::NONE)
-            .vertical_align(egui::Align::Center)
-            .font(mc::font())
-            .text_color(t.text)
-            .hint_text(egui::RichText::new(&placeholder).color(t.text_dim).font(mc::font()))
-            // ⇥ switches Commands / Ask; it must not move the focus to the page (typing would
-            // then go into the document, over the selection).
-            .lock_focus(true)
-            .desired_width(edit_rect.width()),
-    );
-    if f.focus && live {
-        te.request_focus();
-        if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), edit_id) {
-            let end = egui::text::CCursor::new(f.query.chars().count());
-            state.cursor.set_char_range(Some(egui::text::CCursorRange::one(end)));
-            state.store(ui.ctx(), edit_id);
-        }
-        f.focus = false;
-    }
-    if te.changed() {
-        f.open = true;
-    }
-    if hint_w > 0.0 {
-        ui.painter().text(pos2(rect.max.x - 10.0, rect.center().y), Align2::RIGHT_CENTER, SHORTCUT_LABEL, mc::font(), t.text_dim);
-    }
-    te.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, &placeholder));
-    live && te.has_focus()
-}
-
-/// The rows, a hairline and the footer hints. Returns the row clicked.
-fn list_ui(app: &mut WordApp, ui: &mut Ui, list: &[Row], t: &Tokens, assistant: bool) -> Option<usize> {
-    let mut clicked = None;
-    // The scope line: what an ask is about.
-    if assistant {
-        let scope = match &app.command_field.scope {
-            Some(s) => format!("{} · {}", tl!("Selection"), crate::i18n::fmt(tl!("{n} words"), &[("n", &s.words.to_string())])),
-            None => app.command_field.section.clone(),
-        };
-        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
-        ui.painter().text(pos2(r.min.x + 10.0, r.center().y), Align2::LEFT_CENTER, scope, mc::font(), t.text_dim);
-    }
-    if list.is_empty() {
-        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::hover());
-        let text = if app.command_field.query.trim().is_empty() {
-            tl!("Type to search every command").to_string()
-        } else {
-            crate::i18n::fmt(tl!("No commands match “{query}”"), &[("query", app.command_field.query.trim())])
-        };
-        ui.painter().text(pos2(r.min.x + 10.0, r.center().y), Align2::LEFT_CENTER, text, mc::font(), t.text_dim);
-    } else {
-        let visible = (list.len() as f32).min(VISIBLE_ROWS);
-        let view_h = visible * ROW_H;
-        let sel = app.command_field.sel;
-        let mut area = egui::ScrollArea::vertical().max_height(view_h).auto_shrink([false, true]).id_salt("command_field_rows");
-        if std::mem::take(&mut app.command_field.scroll_to) {
-            let top = sel as f32 * ROW_H;
-            let mut y = app.command_field.scroll_y;
-            if top < y {
-                y = top;
-            } else if top + ROW_H > y + view_h {
-                y = top + ROW_H - view_h;
-            }
-            area = area.vertical_scroll_offset(y);
-        }
-        let out = area.show_rows(ui, ROW_H, list.len(), |ui, range| {
-            for i in range {
-                let Some(row) = list.get(i) else { continue };
-                if paint_row(app, ui, row, i == sel, t) {
-                    clicked = Some(i);
-                }
-            }
-        });
-        app.command_field.scroll_y = out.state.offset.y;
-    }
-    // Footer hints.
-    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::hover());
-    ui.painter().hline(r.x_range(), r.min.y + 2.0, Stroke::new(1.0, t.border));
-    let mut hints = format!("↩ {}     ↑↓ {}     esc {}", tl!("Run"), tl!("Move"), tl!("Close"));
-    if assistant {
-        let other = if app.command_field.mode == Mode::Commands { tl!("Ask") } else { tl!("Commands") };
-        hints.push_str(&format!("     ⇥ {other}"));
-    }
-    ui.painter().text(pos2(r.min.x + 10.0, r.center().y + 1.0), Align2::LEFT_CENTER, hints, mc::font(), t.text_dim);
-    clicked
-}
-
-/// One row: 28 high. True when clicked.
-fn paint_row(app: &WordApp, ui: &mut Ui, row: &Row, highlighted: bool, t: &Tokens) -> bool {
-    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::click());
-    if highlighted || resp.hovered() {
-        ui.painter().rect_filled(r, 5.0, t.checked);
-    }
-    let font = mc::font();
-    match row {
-        Row::Command { id, label, location } => {
-            let enabled = app.session.registry.get(id).is_none_or(|s| (s.enabled)(&app.session).is_none());
-            let ink = if enabled { t.text } else { t.text_dim };
-            let sc = crate::widgets::shortcut_text(app, id);
-            let sc_w = if sc.is_empty() { 0.0 } else { ui.painter().layout_no_wrap(sc.clone(), font.clone(), t.text_dim).size().x + 12.0 };
-            if !sc.is_empty() {
-                ui.painter().text(pos2(r.max.x - 10.0, r.center().y), Align2::RIGHT_CENTER, &sc, font.clone(), t.text_dim);
-            }
-            let name = ui.painter().layout_no_wrap(tl!(label).to_string(), font.clone(), ink);
-            let name_w = name.size().x;
-            let avail = r.width() - 20.0 - sc_w;
-            ui.painter().galley(pos2(r.min.x + 10.0, r.center().y - name.size().y / 2.0), name, ink);
-            let path_w = avail - name_w - 10.0;
-            if path_w > 40.0 {
-                let mut job = egui::text::LayoutJob::simple_singleline(crate::i18n::location(location), font, t.text_dim);
-                job.wrap = egui::text::TextWrapping::truncate_at_width(path_w);
-                let g = ui.painter().layout_job(job);
-                ui.painter().galley(pos2(r.min.x + 10.0 + name_w + 10.0, r.center().y - g.size().y / 2.0), g, t.text_dim);
-            }
-            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, tl!(label)));
-        }
-        Row::Ask(text) => {
-            let label = crate::i18n::fmt(tl!("Ask {name} “{text}”"), &[("name", &crate::review_panel::shown_assistant_name()), ("text", text)]);
-            ask_row(ui, r, &label, t, &font);
-            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
-        }
-        Row::Quick(label, _) => {
-            ask_row(ui, r, tl!(label), t, &font);
-            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tl!(label)));
-        }
-    }
-    resp.clicked()
-}
-
-fn ask_row(ui: &Ui, r: Rect, label: &str, t: &Tokens, font: &egui::FontId) {
-    let assistant = OptimoTokens::get(ui.ctx()).assistant;
-    crate::icons::paint(
-        ui.painter(),
-        Rect::from_center_size(pos2(r.min.x + 19.0, r.center().y), vec2(15.0, 15.0)),
-        "assistant",
-        assistant,
-        assistant,
-    );
-    let mut job = egui::text::LayoutJob::simple_singleline(label.to_string(), font.clone(), t.text);
-    job.wrap = egui::text::TextWrapping::truncate_at_width(r.width() - 40.0);
-    let g = ui.painter().layout_job(job);
-    ui.painter().galley(pos2(r.min.x + 36.0, r.center().y - g.size().y / 2.0), g, Color32::PLACEHOLDER);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use egui_kittest::kittest::Queryable;
 
     fn session() -> wordcraft_engine::Session {
         wordcraft_engine::Session::new(wordcraft_doc::Document::new())
@@ -834,17 +931,114 @@ mod tests {
         assert!(!h.state().command_field.open);
     }
 
-    /// The Classic ribbon keeps the old Search Commands dialog; the Optimo layout never opens it.
+    /// Search Commands is ⌘Y Anything in both layouts; the old dialog is gone (O2).
     #[test]
-    fn classic_layout_still_opens_the_dialog() {
+    fn both_layouts_open_the_box() {
         let mut h = harness();
         h.state_mut().ui.optimo.classic_ribbon = true;
         h.state_mut().run("ui.dialog", json!({"name": "commands"})).unwrap();
-        assert!(matches!(h.state().dialog, Some(crate::dialogs::Dialog::Commands { .. })));
-        h.state_mut().dialog = None;
-        h.state_mut().ui.optimo.classic_ribbon = false;
-        h.state_mut().run("ui.dialog", json!({"name": "commands"})).unwrap();
         assert!(h.state().dialog.is_none() && h.state().command_field.open);
+        h.run_steps(3);
+        assert!(h.query_by_label("Do, find, format, go to — or ask your co-writer").is_some(), "the box shows in Classic too");
+    }
+
+    /// Y2: nothing typed shows the Format chips and the headings (empty sections marked); a chip
+    /// runs on the selection and closes the box; the scope chip names the selection.
+    #[test]
+    fn empty_query_shows_chips_and_headings() {
+        let mut app = WordApp::new(wordcraft_engine::Session::new(wordcraft_engine::sample::sample_document()), crate::Services::default());
+        app.integrated_titlebar = true;
+        let mut h = egui_kittest::Harness::builder().with_size(vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app,
+        );
+        h.run_steps(4);
+        let rows = heading_rows(h.state());
+        assert!(rows.iter().any(|r| matches!(r, Row::Heading { text, empty: false, .. } if text == "Why share a studio?")), "{rows:?}");
+        assert!(!rows.iter().any(|r| matches!(r, Row::Heading { empty: true, .. })), "the sample has no empty section");
+        // A heading straight after another: the first one's section is empty.
+        let mut a = WordApp::new(session(), crate::Services::default());
+        for (text, style) in [("Costs", "Heading1"), ("Rules", "Heading1"), ("Be kind.", "Normal")] {
+            a.run("text.insert", json!({"text": text})).unwrap();
+            a.run("para.style", json!({"style": style})).unwrap();
+            a.run("text.newParagraph", json!({})).unwrap();
+        }
+        let empty: Vec<_> = heading_rows(&a)
+            .into_iter()
+            .map(|r| if let Row::Heading { text, empty, .. } = r { (text, empty) } else { (String::new(), false) })
+            .collect();
+        assert_eq!(empty, [("Costs".to_string(), true), ("Rules".to_string(), false)]);
+        h.state_mut().run("select.text", json!({"text": "Every Thursday evening"})).unwrap();
+        h.key_press_modifiers(egui::Modifiers { mac_cmd: true, command: true, ..Default::default() }, egui::Key::Y);
+        h.run_steps(3);
+        assert!(!crate::mini_toolbar::visible(h.state()), "the mini toolbar stays out of the box's way");
+        assert_eq!(scope_label(h.state().command_field.scope.as_ref()), "Selection: 1 sentence");
+        assert!(h.query_by_label("Why share a studio?").is_some(), "Go to lists the headings");
+        h.get_by_label("Heading 2").click();
+        h.run_steps(3);
+        assert!(!h.state().command_field.open, "a chip closes the box");
+        let st = h.state_mut().session.run("format.state", &json!({})).unwrap();
+        assert_eq!(st.get("style"), Some(&json!("Heading2")), "the chip styled the selection's paragraph: {st}");
+    }
+
+    #[test]
+    fn typed_query_lists_commands_then_headings_then_files() {
+        let s = session();
+        let heads = [
+            Row::Heading { path: wordcraft_doc::Path::top(0), text: "Studio rules".into(), level: 1, empty: false },
+            Row::Heading { path: wordcraft_doc::Path::top(3), text: "Costs".into(), level: 1, empty: true },
+        ];
+        let recent = ["/tmp/Studio notes.docx".to_string(), "/tmp/other.docx".to_string()];
+        assert_eq!(results(&[], "", &heads, &recent), heads.to_vec(), "nothing typed: Go to");
+        let hits = search(&s.registry, "studio", NO_USE);
+        let out = results(&hits, "studio", &heads, &recent);
+        assert!(matches!(out.get(out.len() - 2), Some(Row::Heading { text, .. }) if text == "Studio rules"), "{out:?}");
+        assert_eq!(out.last(), Some(&Row::File("/tmp/Studio notes.docx".into())));
+        assert!(!out.iter().any(|r| matches!(r, Row::Ask(_))), "no ask row until O3");
+        assert_eq!(sentences("One. Two! Three?"), 3);
+        assert_eq!(sentences("no stop at the end"), 1);
+        assert_eq!(sentences("Etc. …"), 1);
+        assert_eq!(scope_label(None), "Whole document");
+    }
+
+    /// ⇧⌘Y is Repeat, not ⌘Y Anything (egui would match ⌘Y with Shift held).
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn shift_cmd_y_repeats() {
+        let mut h = harness();
+        h.state_mut().run("text.insert", json!({"text": "ab"})).unwrap();
+        h.state_mut().canvas.want_focus = true;
+        h.run_steps(2);
+        h.key_press_modifiers(egui::Modifiers { shift: true, mac_cmd: true, command: true, ..Default::default() }, egui::Key::Y);
+        h.run_steps(3);
+        assert!(!h.state().command_field.open, "⇧⌘Y does not open the box");
+        assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body), "abab");
+    }
+
+    /// Ordinary Turkish queries find dotted-I labels; English labels and ASCII command ids keep
+    /// matching case-insensitively in every interface language (moved from the old dialog).
+    #[test]
+    fn search_respects_turkish_i_pairs_and_keeps_canonical_matches() {
+        let s = session();
+        for (language, query, id) in [
+            ("tr", "italik", "format.italic"),
+            ("tr", "İTALİK", "format.italic"),
+            ("tr", "içindekiler", "references.toc"),
+            ("tr", "INSERT.TABLE", "insert.table"),
+            ("tr", "FORMAT.ITALIC", "format.italic"),
+            ("tr", "TABLE OF CONTENTS", "references.toc"),
+            ("en", "ITALIC", "format.italic"),
+            ("en", "INSERT.TABLE", "insert.table"),
+        ] {
+            crate::i18n::set_current(crate::i18n::Lang::from_pref(language));
+            let ids: Vec<_> = search(&s.registry, query, NO_USE).iter().map(|c| c.id).collect();
+            crate::i18n::set_current(crate::i18n::Lang::EN);
+            assert!(ids.contains(&id), "{language}: {query} → {ids:?}");
+        }
     }
 
     /// The counts come back after a restart, and junk in `ui.json` reads as no history.

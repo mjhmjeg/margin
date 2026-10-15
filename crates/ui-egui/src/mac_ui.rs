@@ -135,20 +135,11 @@ pub fn toolbar(app: &mut WordApp, ui: &mut Ui) {
             }
         }
         x = toggle.rect.min.x - 8.0;
-        if app.command_field.open {
-            // ⌘Y open: the command field takes the pill's place (O2 moves it over the page).
-            app.command_field.field_visible = true;
-            let rect = Rect::from_min_max(pos2(x - crate::command_field::FIELD_W, cy - PILL_H / 2.0), pos2(x, cy + PILL_H / 2.0));
-            crate::command_field::show(app, ui, rect);
-            x = rect.min.x;
-        } else {
-            app.command_field.field_visible = true;
-            let pill = anything_pill(ui, pos2(x, cy));
-            if pill.clicked() {
-                crate::command_field::open(app, "");
-            }
-            x = pill.rect.min.x;
+        let pill = anything_pill(ui, pos2(x, cy), app.command_field.open);
+        if pill.clicked() {
+            crate::command_field::open(app, "");
         }
+        x = pill.rect.min.x;
 
         // The title, centred on the window (moved left only when the controls need the room).
         let stem = app.title_stem();
@@ -173,7 +164,7 @@ pub fn toolbar(app: &mut WordApp, ui: &mut Ui) {
 
 /// W2: "Anything ⌘Y", right edge at `right`: 28 high, radius 14, `field_bg`, 1 pt `border_strong`,
 /// a search icon, the label in `text_dim` and a `⌘Y` key cap (`checked`, radius 9).
-fn anything_pill(ui: &mut Ui, right: egui::Pos2) -> Response {
+fn anything_pill(ui: &mut Ui, right: egui::Pos2, open: bool) -> Response {
     let t = Tokens::get(ui.ctx());
     let m = crate::skin::OptimoTokens::get(ui.ctx());
     let label = ui.painter().layout_no_wrap(tl!("Anything").to_string(), font(), t.text_dim);
@@ -182,7 +173,13 @@ fn anything_pill(ui: &mut Ui, right: egui::Pos2) -> Response {
     let w = 10.0 + 15.0 + 6.0 + label.size().x + 8.0 + cap_w + 5.0;
     let r = Rect::from_min_max(pos2(right.x - w, right.y - PILL_H / 2.0), pos2(right.x, right.y + PILL_H / 2.0));
     let resp = ui.interact(r, ui.id().with("anything_pill"), Sense::click());
-    let fill = if resp.hovered() { t.hover } else { m.field_bg };
+    let fill = if open {
+        t.checked
+    } else if resp.hovered() {
+        t.hover
+    } else {
+        m.field_bg
+    };
     ui.painter().rect(r, PILL_H / 2.0, fill, Stroke::new(1.0, t.border_strong), egui::StrokeKind::Inside);
     crate::icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 17.5, r.center().y), vec2(15.0, 15.0)), "search", t.text_dim, t.text_dim);
     ui.painter().galley(pos2(r.min.x + 31.0, r.center().y - label.size().y / 2.0), label, t.text_dim);
@@ -235,7 +232,8 @@ pub fn shortcuts(app: &mut WordApp, ctx: &egui::Context) {
     // ⌘Y focuses the command field (the Help menu's accelerator does the same when AppKit sees it
     // first); so does ⌥Q in the Optimo layout (Classic keeps Alt+Q for the old dialog). The letter
     // is matched as typed, so on QWERTZ keyboards this is the key labelled Y.
-    let cmd_y = ctx.input_mut(|i| i.consume_key(egui::Modifiers { mac_cmd: true, command: true, ..Default::default() }, egui::Key::Y));
+    // Exactly ⌘Y: egui's consume_key ignores an extra Shift, and ⇧⌘Y is Repeat.
+    let cmd_y = ctx.input_mut(|i| consume_exact(i, egui::Modifiers { mac_cmd: true, command: true, ..Default::default() }, egui::Key::Y));
     let alt_q = active(app) && ctx.input_mut(|i| i.consume_key(egui::Modifiers { alt: true, ..Default::default() }, egui::Key::Q));
     if alt_q {
         // Option+Q types "œ" on a US Mac keyboard: drop that text.
@@ -276,6 +274,17 @@ pub fn format_with_font_list(app: &mut WordApp) {
         app.ui.optimo.tab = InspectorTab::Text;
         app.ui.optimo.font_list = true;
     }
+}
+
+/// Take a key press whose modifiers are exactly `m` out of this frame's input.
+fn consume_exact(i: &mut egui::InputState, m: egui::Modifiers, key: egui::Key) -> bool {
+    let mut hit = false;
+    i.events.retain(|e| {
+        let this = !hit && matches!(e, egui::Event::Key { key: k, pressed: true, modifiers, .. } if *k == key && modifiers.matches_exact(m));
+        hit |= this;
+        !this
+    });
+    hit
 }
 
 /// The panels that open only from ⌘Y, the menu bar or a shortcut (W2).

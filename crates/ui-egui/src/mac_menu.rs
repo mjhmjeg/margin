@@ -104,6 +104,7 @@ const FILE: &[Entry] = &[
 const EDIT: &[Entry] = &[
     key("Undo", Keys("Mod+Z"), "CmdOrCtrl+Z"),
     key("Redo", Keys("Mod+Shift+Z"), "CmdOrCtrl+Shift+Z"),
+    key("Repeat", Cmd("edit.repeat"), "CmdOrCtrl+Shift+Y"),
     Sep,
     key("Cut", Cut, "CmdOrCtrl+X"),
     key("Copy", Copy, "CmdOrCtrl+C"),

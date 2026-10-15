@@ -914,6 +914,7 @@ fn sent(m: &Mock) -> String {
 }
 
 #[test]
+#[ignore = "the ⌘Y ask row is hidden until O3 (OPTIMO.md §3, §11); switch back on with it"]
 fn cmd_y_with_a_selection_asks_about_the_selection() {
     let m = mock_script(vec![stream_of(&answer(json!([])), 1, "stop")]);
     let mut h = studio_harness(&m);
@@ -931,6 +932,7 @@ fn cmd_y_with_a_selection_asks_about_the_selection() {
 }
 
 #[test]
+#[ignore = "the ⌘Y ask row is hidden until O3 (OPTIMO.md §3, §11); switch back on with it"]
 fn cmd_y_tab_ask_with_a_selection_sends_the_typed_ask_about_the_selection() {
     let m = mock_script(vec![stream_of(&answer(json!([])), 1, "stop")]);
     let mut h = studio_harness(&m);
@@ -951,6 +953,7 @@ fn cmd_y_tab_ask_with_a_selection_sends_the_typed_ask_about_the_selection() {
 }
 
 #[test]
+#[ignore = "the ⌘Y ask row is hidden until O3 (OPTIMO.md §3, §11); switch back on with it"]
 fn cmd_y_without_a_selection_asks_about_the_section_at_the_caret() {
     let m = mock_script(vec![stream_of(&answer(json!([])), 1, "stop")]);
     let mut h = studio_harness(&m);

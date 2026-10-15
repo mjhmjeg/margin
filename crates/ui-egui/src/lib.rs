@@ -1023,8 +1023,8 @@ impl WordApp {
                 self.colors = Some(d);
                 json!({"dialog": "colors"})
             }
-            "ui.dialog" if s("name") == Some("commands") && mac_ui::active(self) => {
-                // The Optimo layout's Search Commands is the toolbar's command field.
+            "ui.dialog" if s("name") == Some("commands") => {
+                // Search Commands is ⌘Y Anything, in both layouts (the old dialog is gone, O2).
                 command_field::open(self, "");
                 json!({"dialog": "commands", "field": true})
             }
@@ -1626,6 +1626,7 @@ impl WordApp {
         }
         content_controls::popup(self, &ctx);
         dialogs::show(self, &ctx);
+        command_field::show_box(self, &ctx);
         #[cfg(not(target_arch = "wasm32"))]
         file_browser::show(self, &ctx);
         assistant_panel::show_file_picker(self, &ctx);
@@ -3250,7 +3251,7 @@ mod tests {
         h.event(egui::Event::Key { key: egui::Key::Q, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::ALT });
         h.event(egui::Event::Text("q".into()));
         h.step();
-        assert!(matches!(h.state().dialog, Some(dialogs::Dialog::Commands { .. })), "command search is open");
+        assert!(h.state().command_field.open && h.state().dialog.is_none(), "⌘Y Anything is open");
         assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body), "Kilns");
     }
 
