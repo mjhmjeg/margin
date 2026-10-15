@@ -1,3 +1,5 @@
+> **Update 14 Oct 2026:** the app is now **Optimo**. Read `OPTIMO.md` first; it replaces this file's toolbar, status bar, command field (K), Assistant panel (A) and authorship view (V). Phases 1–2 below are done and still apply.
+
 # Margin — design handoff for Claude Code
 
 From: Claude Design pass, 13 Oct 2026 · For: the `wordcraft-mac` repo (Margin fork of WordCraft 0.6.0)
