@@ -164,12 +164,36 @@ fn the_memory_store_keeps_one_key_per_provider() {
     assert_eq!(s.get("anthropic").unwrap().as_deref(), Some("b"));
 }
 
+/// Margin → Optimo (2026-10-14): a key stored under the old service is copied to the new one
+/// where the new one has none; the old entry stays as a backup; a key already in the new store
+/// is never overwritten; running it twice changes nothing. Memory stores only: the real
+/// keychain is never touched by tests.
+#[test]
+fn keys_move_from_margins_service_to_optimos_once_and_never_overwrite() {
+    use crate::keys::migrate;
+    assert_eq!(crate::keys::SERVICE, "ai.spert.optimo.assistant");
+    assert_eq!(crate::keys::LEGACY_SERVICE, "ai.spert.margin.assistant");
+    assert_eq!(crate::keys::SystemKeys::default().service(), crate::keys::SERVICE);
+    assert_eq!(crate::keys::SystemKeys::legacy().service(), crate::keys::LEGACY_SERVICE);
+    let (old, new) = (MemoryKeys::default(), MemoryKeys::default());
+    old.set("mistral", KEY).unwrap();
+    old.set("anthropic", "old-anthropic").unwrap();
+    new.set("anthropic", "new-anthropic").unwrap();
+    let accounts: Vec<&str> = ProviderId::ALL.iter().map(|p| p.id()).collect();
+    assert_eq!(migrate(&old, &new, &accounts), (vec!["mistral".to_string()], true));
+    assert_eq!(new.get("mistral").unwrap().as_deref(), Some(KEY));
+    assert_eq!(new.get("anthropic").unwrap().as_deref(), Some("new-anthropic"), "never overwritten");
+    assert_eq!(old.get("mistral").unwrap().as_deref(), Some(KEY), "the old entry stays as a backup");
+    assert_eq!(new.get("openai").unwrap(), None);
+    assert_eq!(migrate(&old, &new, &accounts), (vec![], true), "a second run copies nothing");
+}
+
 /// The real keychain: run by hand (`cargo test -p wordcraft-assistant -- --ignored`). Ignored in
 /// CI because it writes to the login keychain of whoever runs it and may show a macOS prompt.
 #[test]
 #[ignore = "touches the real system keychain"]
 fn the_system_keychain_round_trips() {
-    let s = crate::keys::SystemKeys;
+    let s = crate::keys::SystemKeys::default();
     let account = "test-wordcraft-assistant";
     s.set(account, KEY).unwrap();
     assert_eq!(s.get(account).unwrap().as_deref(), Some(KEY));

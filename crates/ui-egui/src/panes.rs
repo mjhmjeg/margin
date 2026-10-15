@@ -26,7 +26,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             });
     }
     if app.session.view.nav_pane && crate::mac_ui::active(app) {
-        // E21: Margin's outline sidebar, 220 wide.
+        // E21: Optimo's outline sidebar, 220 wide.
         egui::Panel::left("nav_pane")
             .exact_size(crate::mac_ui::OUTLINE_W)
             .resizable(false)
@@ -88,7 +88,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             });
     }
     if app.session.view.comments_pane && crate::mac_ui::active(app) {
-        // R2–R9: Margin's Review panel replaces the Comments pane (the Classic ribbon keeps its own).
+        // R2–R9: Optimo's Review panel replaces the Comments pane (the Classic ribbon keeps its own).
         crate::review_panel::show(app, ui);
     } else if app.session.view.comments_pane {
         egui::Panel::right("comments_pane")

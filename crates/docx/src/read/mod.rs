@@ -274,7 +274,13 @@ pub(crate) fn read_opened(pkg: &Package) -> Result<Document, DocxError> {
     }
     let mut doc = r.doc;
     doc.ensure_nonempty();
-    // Spans and `_MarginAI_` bookmarks must agree (docs/authorship-storage.md §6).
+    // Margin's marks (files made before 2026-10-14) take Optimo's names, so the next save
+    // writes only the new ones; then spans and `_OptimoAI_` bookmarks must agree
+    // (docs/authorship-storage.md §6).
+    let renamed = wordcraft_doc::authorship::upgrade_legacy(&mut doc);
+    if renamed > 0 {
+        log::info!("docx: authorship: {renamed} Margin mark(s) renamed to Optimo's");
+    }
     for line in wordcraft_doc::authorship::reconcile(&mut doc) {
         log::info!("docx: authorship: {line}");
     }
@@ -285,7 +291,8 @@ pub(crate) fn read_opened(pkg: &Package) -> Result<Document, DocxError> {
 const MAX_AUTHORSHIP_PARTS: usize = 64;
 
 impl Reader<'_> {
-    /// Read Margin's authorship part(s) (custom XML stores in `urn:margin:authorship`, related
+    /// Read Optimo's authorship part(s) (custom XML stores in `urn:optimo:authorship`, or
+    /// Margin's `urn:margin:authorship`, related
     /// from the package or the main document) into `Document::authorship`. Other stores are
     /// untouched; a part that doesn't parse is left to `keep_custom_xml` as a foreign store.
     fn read_authorship(&mut self, package: &Rels, document: &Rels) {

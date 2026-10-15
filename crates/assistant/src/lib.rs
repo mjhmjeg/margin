@@ -1,4 +1,4 @@
-//! Margin's assistant connectors (HANDOFF §9, S2–S3).
+//! Optimo's assistant connectors (HANDOFF §9, S2–S3).
 //!
 //! People bring their own provider and API key. A provider is a [`Preset`]: a base URL, which of
 //! the two wire formats it speaks ([`Connector`]), and whether a key is needed. Two connectors

@@ -1,4 +1,4 @@
-//! Icon sheet: every Margin handoff icon at 17 pt and 16 pt, light and dark, rendered offscreen.
+//! Icon sheet: every Optimo handoff icon at 17 pt and 16 pt, light and dark, rendered offscreen.
 //!
 //! `cargo run -p wordcraft-ui-egui --example icon_sheet -- docs/mac/icons`
 //! writes `sheet-light.png` and `sheet-dark.png` into the folder (relative to the cwd).

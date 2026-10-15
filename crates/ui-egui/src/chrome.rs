@@ -222,7 +222,7 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
             let mut right_start = full.max.x;
             ui.horizontal_centered(|ui| {
                 ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
-                // Margin: no AutoSave switch in the title bar (File › Options keeps it).
+                // Optimo: no AutoSave switch in the title bar (File › Options keeps it).
                 if !crate::skin::on() {
                     // AutoSave switch: greyed out, with the reason as its tooltip, when AutoSave can't
                     // cover the document (#196, #176); clicking it then offers Save As where that helps.
@@ -259,7 +259,7 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
                 quick_access(ui, app);
                 qat_end = ui.min_rect().max.x;
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    // Account / community (not in Margin).
+                    // Account / community (not in Optimo).
                     if !crate::skin::on() {
                         let (r, resp) = ui.allocate_exact_size(vec2(control_h, control_h), Sense::click());
                         ui.painter().circle_filled(r.center(), control_h / 2.0 - 1.0, t.accent);

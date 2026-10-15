@@ -3,7 +3,7 @@ name = "wordcraft-assistant"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Margin's assistant connectors: provider presets, the Anthropic Messages and OpenAI-compatible chat APIs, model listing, API keys in the system keychain"
+description = "Optimo's assistant connectors: provider presets, the Anthropic Messages and OpenAI-compatible chat APIs, model listing, API keys in the system keychain"
 
 [lints]
 workspace = true

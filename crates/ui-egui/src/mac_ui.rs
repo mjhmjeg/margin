@@ -1,4 +1,4 @@
-//! Margin's Mac layout: one slim toolbar in the title-bar band, a Format inspector on the right
+//! Optimo's Mac layout: one slim toolbar in the title-bar band, a Format inspector on the right
 //! (Text / Layout / Document) and the Navigation pane as the outline sidebar. The ribbon stays
 //! reachable as View › Classic Ribbon (⌃⌘R). Every control runs an existing engine command.
 
@@ -12,10 +12,10 @@ use crate::mac_controls as mc;
 use crate::theme::{Tokens, regular};
 use crate::widgets::run_from_ribbon;
 
-/// Margin's interface settings, saved with the other preferences in `ui.json`.
+/// Optimo's interface settings, saved with the other preferences in `ui.json`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
-pub struct MarginPrefs {
+pub struct OptimoPrefs {
     pub classic_ribbon: bool,
     /// Not saved: every window starts on the bare page (W2).
     #[serde(skip)]
@@ -31,9 +31,9 @@ pub struct MarginPrefs {
     pub command_counts: std::collections::BTreeMap<String, u32>,
 }
 
-impl Default for MarginPrefs {
+impl Default for OptimoPrefs {
     fn default() -> Self {
-        MarginPrefs {
+        OptimoPrefs {
             classic_ribbon: false,
             inspector: false,
             font_list: false,
@@ -77,7 +77,7 @@ impl TextWidth {
 
 /// Whether the Mac layout replaces the ribbon this frame.
 pub fn active(app: &WordApp) -> bool {
-    crate::skin::on() && !app.ui.margin.classic_ribbon
+    crate::skin::on() && !app.ui.optimo.classic_ribbon
 }
 
 /// Pageless is upstream's Web Layout view.
@@ -175,7 +175,7 @@ pub fn toolbar(app: &mut WordApp, ui: &mut Ui) {
 /// a search icon, the label in `text_dim` and a `⌘Y` key cap (`checked`, radius 9).
 fn anything_pill(ui: &mut Ui, right: egui::Pos2) -> Response {
     let t = Tokens::get(ui.ctx());
-    let m = crate::skin::MarginTokens::get(ui.ctx());
+    let m = crate::skin::OptimoTokens::get(ui.ctx());
     let label = ui.painter().layout_no_wrap(tl!("Anything").to_string(), font(), t.text_dim);
     let cap = ui.painter().layout_no_wrap("⌘Y".to_string(), font(), t.text_dim);
     let cap_w = cap.size().x + 12.0;
@@ -197,7 +197,7 @@ fn anything_pill(ui: &mut Ui, right: egui::Pos2) -> Response {
 /// `checked` while a co-writer view is open.
 fn cowriter_toggle(ui: &mut Ui, right: egui::Pos2, on: bool) -> Response {
     let t = Tokens::get(ui.ctx());
-    let m = crate::skin::MarginTokens::get(ui.ctx());
+    let m = crate::skin::OptimoTokens::get(ui.ctx());
     let label = tl!("Co-writer");
     let galley = ui.painter().layout_no_wrap(label.to_string(), font(), t.text);
     let w = 10.0 + 17.0 + 6.0 + galley.size().x + 10.0;
@@ -230,10 +230,10 @@ pub fn shortcuts(app: &mut WordApp, ctx: &egui::Context) {
     }
     let hit = ctx.input_mut(|i| i.consume_key(egui::Modifiers { ctrl: true, mac_cmd: true, command: true, ..Default::default() }, egui::Key::R));
     if hit {
-        app.ui.margin.classic_ribbon = !app.ui.margin.classic_ribbon;
+        app.ui.optimo.classic_ribbon = !app.ui.optimo.classic_ribbon;
     }
     // ⌘Y focuses the command field (the Help menu's accelerator does the same when AppKit sees it
-    // first); so does ⌥Q in the Margin layout (Classic keeps Alt+Q for the old dialog). The letter
+    // first); so does ⌥Q in the Optimo layout (Classic keeps Alt+Q for the old dialog). The letter
     // is matched as typed, so on QWERTZ keyboards this is the key labelled Y.
     let cmd_y = ctx.input_mut(|i| i.consume_key(egui::Modifiers { mac_cmd: true, command: true, ..Default::default() }, egui::Key::Y));
     let alt_q = active(app) && ctx.input_mut(|i| i.consume_key(egui::Modifiers { alt: true, ..Default::default() }, egui::Key::Q));
@@ -272,9 +272,9 @@ const FONT_POPUP: &str = "margin_font";
 /// Word's ⇧⌘F would put you; again closes it.
 pub fn format_with_font_list(app: &mut WordApp) {
     toggle_panel(app, Panel::Format);
-    if app.ui.margin.inspector {
-        app.ui.margin.tab = InspectorTab::Text;
-        app.ui.margin.font_list = true;
+    if app.ui.optimo.inspector {
+        app.ui.optimo.tab = InspectorTab::Text;
+        app.ui.optimo.font_list = true;
     }
 }
 
@@ -290,9 +290,9 @@ pub enum Panel {
 pub fn toggle_panel(app: &mut WordApp, panel: Panel) {
     match panel {
         Panel::Format => {
-            let open = app.ui.margin.inspector && !app.session.view.comments_pane && !crate::assistant_panel::visible(app);
-            app.ui.margin.classic_ribbon = false;
-            app.ui.margin.inspector = !open;
+            let open = app.ui.optimo.inspector && !app.session.view.comments_pane && !crate::assistant_panel::visible(app);
+            app.ui.optimo.classic_ribbon = false;
+            app.ui.optimo.inspector = !open;
             if !open {
                 app.session.view.comments_pane = false;
                 app.assistant_panel.open = false;
@@ -302,7 +302,7 @@ pub fn toggle_panel(app: &mut WordApp, panel: Panel) {
             let open = !app.session.view.comments_pane;
             app.session.view.comments_pane = open;
             if open {
-                app.ui.margin.inspector = false;
+                app.ui.optimo.inspector = false;
                 app.assistant_panel.open = false;
             }
         }
@@ -383,7 +383,7 @@ pub const OUTLINE_W: f32 = 220.0;
 /// The outline sidebar: search field, Headings / Pages / Results tabs, 28 pt rows.
 pub fn outline(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
-    let m = crate::skin::MarginTokens::get(ui.ctx());
+    let m = crate::skin::OptimoTokens::get(ui.ctx());
     ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
     // E21: search field, 12 pt margin.
     let qid = egui::Id::new("nav_query");
@@ -523,14 +523,14 @@ pub fn inspector(app: &mut WordApp, ui: &mut Ui) {
             ui.spacing_mut().item_spacing = vec2(8.0, mc::ROW_GAP);
             // E6: underline tabs, 44 high, hairline below.
             let tabs = [(InspectorTab::Text, "Text"), (InspectorTab::Layout, "Layout"), (InspectorTab::Document, "Document")];
-            let cur = app.ui.margin.tab;
+            let cur = app.ui.optimo.tab;
             let sel = tabs.iter().position(|(k, _)| *k == cur).unwrap_or(0);
             if let Some(i) = mc::underline_tabs(ui, &tabs.map(|(_, l)| l), sel, 44.0) {
-                app.ui.margin.tab = tabs.get(i).map_or(cur, |(k, _)| *k);
+                app.ui.optimo.tab = tabs.get(i).map_or(cur, |(k, _)| *k);
             }
             let r = ui.available_rect_before_wrap();
             ui.painter().hline(r.x_range(), r.min.y - mc::ROW_GAP, Stroke::new(1.0, t.border));
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| match app.ui.margin.tab {
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| match app.ui.optimo.tab {
                 InspectorTab::Text => text_tab(app, ui),
                 InspectorTab::Layout => layout_tab(app, ui),
                 InspectorTab::Document => document_tab(app, ui),
@@ -562,7 +562,7 @@ fn text_tab(app: &mut WordApp, ui: &mut Ui) {
         let w = ui.available_width();
         let font_name = st.get("font").and_then(Value::as_str).unwrap_or("").to_string();
         let shown = app.previews.font_shown(&font_name);
-        if std::mem::take(&mut app.ui.margin.font_list) {
+        if std::mem::take(&mut app.ui.optimo.font_list) {
             mc::request_open(ui.ctx(), FONT_POPUP);
         }
         let fams = app.previews.families();
@@ -741,9 +741,9 @@ fn document_tab(app: &mut WordApp, ui: &mut Ui) {
         // E20: Text width instead of Page and Margins.
         section(ui, "Text width", |ui| {
             let opts = [(TextWidth::Narrow, "Narrow"), (TextWidth::Medium, "Medium"), (TextWidth::Full, "Full")];
-            let cur = app.ui.margin.text_width;
+            let cur = app.ui.optimo.text_width;
             if let Some(i) = segmented(ui, &opts.map(|(_, l)| l), opts.iter().position(|(w, _)| *w == cur)) {
-                app.ui.margin.text_width = opts.get(i).map_or(cur, |(w, _)| *w);
+                app.ui.optimo.text_width = opts.get(i).map_or(cur, |(w, _)| *w);
             }
         });
         return;
@@ -863,7 +863,7 @@ pub fn before_canvas(app: &mut WordApp, avail_w: f32) {
     }
     let px_per_pt = app.session.view.zoom.max(0.1) * crate::canvas::PX_PER_PT;
     let full = (avail_w / px_per_pt - 128.0).max(200.0);
-    let w = app.ui.margin.text_width.points().map_or(full, |p| p.min(full));
+    let w = app.ui.optimo.text_width.points().map_or(full, |p| p.min(full));
     if (app.session.view.web_width - w).abs() > 0.5 {
         app.session.view.web_width = w;
     }
@@ -950,7 +950,7 @@ mod tests {
 
     fn mac_harness() -> egui_kittest::Harness<'static, WordApp> {
         let mut a = WordApp::new(crate::Session::new(wordcraft_engine::sample::sample_document()), crate::Services::default());
-        a.ui.margin = MarginPrefs::default();
+        a.ui.optimo = OptimoPrefs::default();
         let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
             |ui, app: &mut WordApp| {
                 let ctx = ui.ctx().clone();
@@ -995,11 +995,11 @@ mod tests {
         // Medium is 720 pt (no panel open).
         let w = h.state().session.view.web_width;
         assert!((700.0..=720.5).contains(&w), "Medium is {w} pt");
-        h.state_mut().ui.margin.text_width = TextWidth::Narrow;
+        h.state_mut().ui.optimo.text_width = TextWidth::Narrow;
         h.step();
         h.step();
         assert!((h.state().session.view.web_width - 560.0).abs() < 1.0);
-        h.state_mut().ui.margin.classic_ribbon = true;
+        h.state_mut().ui.optimo.classic_ribbon = true;
         h.step();
         h.step();
         assert!(!active(h.state()));
@@ -1017,21 +1017,21 @@ mod tests {
             assert!(h.query_by_role_and_label(Role::Button, gone).is_none(), "{gone} left the window");
         }
         let app = h.state();
-        assert!(!app.session.view.ruler && !app.ui.margin.inspector && !app.session.view.comments_pane && !app.session.view.nav_pane);
+        assert!(!app.session.view.ruler && !app.ui.optimo.inspector && !app.session.view.comments_pane && !app.session.view.nav_pane);
         assert!(h.query_by_role_and_label(Role::RadioButton, "Center").is_none(), "no inspector");
         let shift_cmd = egui::Modifiers { shift: true, mac_cmd: true, command: true, ..Default::default() };
         let font = h.state_mut().session.run("format.state", &json!({})).ok().and_then(|v| v.get("font").cloned());
         h.key_press_modifiers(shift_cmd, egui::Key::F);
         h.step();
         h.step();
-        assert!(h.state().ui.margin.inspector, "⇧⌘F opens Format");
+        assert!(h.state().ui.optimo.inspector, "⇧⌘F opens Format");
         assert!(egui::Popup::is_any_open(&h.ctx), "with the font list open");
         let app = h.state_mut();
         assert_eq!(app.session.run("format.state", &json!({})).ok().and_then(|v| v.get("font").cloned()), font, "not Word's font command");
         h.key_press(egui::Key::Escape);
         h.key_press_modifiers(shift_cmd, egui::Key::R);
         h.step();
-        assert!(h.state().session.view.comments_pane && !h.state().ui.margin.inspector, "one right panel at a time");
+        assert!(h.state().session.view.comments_pane && !h.state().ui.optimo.inspector, "one right panel at a time");
         h.key_press_modifiers(shift_cmd, egui::Key::R);
         h.key_press_modifiers(shift_cmd, egui::Key::O);
         h.step();
@@ -1055,6 +1055,6 @@ mod tests {
     fn text_widths() {
         assert_eq!(TextWidth::Narrow.points(), Some(560.0));
         assert_eq!(TextWidth::Full.points(), None);
-        assert!(!MarginPrefs::default().inspector, "every window starts on the bare page");
+        assert!(!OptimoPrefs::default().inspector, "every window starts on the bare page");
     }
 }

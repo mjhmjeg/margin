@@ -1,4 +1,4 @@
-//! Authorship (Margin A5), read-only: the spans of accepted assistant text and the document's
+//! Authorship (Optimo A5), read-only: the spans of accepted assistant text and the document's
 //! split between people, assistants and pending suggestions. The view switch is
 //! `view.authorship`; marks are only ever written by accepting a suggestion (`review.accept*`).
 

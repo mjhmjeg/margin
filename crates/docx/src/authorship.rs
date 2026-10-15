@@ -1,19 +1,20 @@
-//! Margin's authorship part: `customXml/itemN.xml` in the namespace `urn:margin:authorship`
+//! Optimo's authorship part: `customXml/itemN.xml` in the namespace `urn:optimo:authorship`
 //! (ECMA-376 Part 1 §11.3.5 custom XML data storage, with its `itemPropsN.xml`), one `mg:span`
-//! per `_MarginAI_` bookmark (`docs/authorship-storage.md`). The part is rewritten from the
-//! model on every save and only exists while the document has accepted assistant text; nothing
-//! in it is a prompt, a key or a path.
+//! per `_OptimoAI_` bookmark (`docs/authorship-storage.md`). Files made while the app was called
+//! Margin (`urn:margin:authorship`, `_MarginAI_` marks) are read too and saved in the new names.
+//! The part is rewritten from the model on every save and only exists while the document has
+//! accepted assistant text; nothing in it is a prompt, a key or a path.
 //!
 //! ```xml
-//! <mg:authorship xmlns:mg="urn:margin:authorship" mg:version="1">
-//!   <mg:span mg:anchor="bookmark" mg:ref="_MarginAI_1a2b3c4d" mg:author="Claude" mg:kind="ai"
+//! <mg:authorship xmlns:mg="urn:optimo:authorship" mg:version="1">
+//!   <mg:span mg:anchor="bookmark" mg:ref="_OptimoAI_1a2b3c4d" mg:author="Claude" mg:kind="ai"
 //!            mg:acceptedAt="2026-10-13T09:00:00Z" mg:model="claude-opus-5" mg:len="33"
 //!            mg:hash="…"><mg:text>the accepted text</mg:text></mg:span>
 //! </mg:authorship>
 //! ```
 
 use wordcraft_doc::Document;
-use wordcraft_doc::authorship::{MAX_SPANS, MAX_STORED_TEXT_CHARS, NAMESPACE, Span, is_mark, scan};
+use wordcraft_doc::authorship::{LEGACY_NAMESPACE, MAX_SPANS, MAX_STORED_TEXT_CHARS, NAMESPACE, Span, is_mark, scan};
 
 use crate::xml::{W, parse_ns};
 
@@ -22,13 +23,13 @@ pub const ITEM_ID: &str = "{6D1F3B2A-0C4E-4F8B-9A7D-2E5C1B3F4A60}";
 /// Longest part looked at (bytes); a bigger one is left alone.
 const MAX_PART_BYTES: usize = 64 * 1024 * 1024;
 
-/// The spans of a custom XML part that is ours; `None` for another store (or one that doesn't
-/// parse). Entries that cannot be trusted (no mark name, no text and no hash) are skipped.
+/// The spans of a custom XML part that is ours (the current namespace or Margin's); `None` for
+/// another store (or one that doesn't parse). Entries that cannot be trusted (no mark name, no text and no hash) are skipped.
 pub fn read_part(bytes: &[u8]) -> Option<Vec<Span>> {
     if bytes.len() > MAX_PART_BYTES {
         return None;
     }
-    let root = parse_ns(bytes, &[("mg", NAMESPACE)]).ok()?;
+    let root = parse_ns(bytes, &[("mg", NAMESPACE), ("mg", LEGACY_NAMESPACE)]).ok()?;
     if root.name != "mg:authorship" {
         return None;
     }
@@ -52,7 +53,7 @@ pub fn read_part(bytes: &[u8]) -> Option<Vec<Span>> {
     Some(out)
 }
 
-/// The part for `doc`: one span per `_MarginAI_` bookmark that has an entry, in document order.
+/// The part for `doc`: one span per `_OptimoAI_` bookmark that has an entry, in document order.
 /// `None` when the document has none (then no part is written).
 pub fn part_xml(doc: &Document) -> Option<Vec<u8>> {
     let mut w = W::new();

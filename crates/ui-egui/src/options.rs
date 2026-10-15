@@ -439,16 +439,16 @@ fn agents(ui: &mut Ui) {
     ui.label(tl!("Every command is available to scripts and AI agents: run `wordcraft-cli mcp` for an MCP server, or start the app with `--control <port>` for the JSON control channel."));
 }
 
-/// Options › Assistant (Margin, HANDOFF §9): the master switch (S1), provider and model (S2), the
+/// Options › Assistant (Optimo, HANDOFF §9): the master switch (S1), provider and model (S2), the
 /// API key (S3), the name assistants write under (S4), the rule that their edits are always
 /// suggestions, comments and the folders they may read (S5), and whether assistants outside
-/// Margin may connect (S6).
+/// Optimo may connect (S6).
 fn assistant(app: &mut WordApp, ui: &mut Ui) {
     use crate::mac_controls as mc;
     // The connected count changes on other threads: look again soon.
     ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
     mc::section(ui, "Assistant", |ui| {
-        if mc::switch(ui, "Let an assistant work in Margin", app.ui.assistant.enabled) {
+        if mc::switch(ui, "Let an assistant work in Optimo", app.ui.assistant.enabled) {
             let on = !app.ui.assistant.enabled;
             let _ = app.run("ui.assistant", json!({"enabled": on}));
         }
@@ -492,12 +492,12 @@ fn assistant(app: &mut WordApp, ui: &mut Ui) {
             let on = !app.ui.assistant.comments;
             let _ = app.run("ui.assistant", json!({"comments": on}));
         }
-        mc::hint(ui, "Off: Margin's assistant adds no comments, and assistants outside Margin are refused new comments and replies.");
+        mc::hint(ui, "Off: Optimo's assistant adds no comments, and assistants outside Optimo are refused new comments and replies.");
         ui.add_space(6.0);
         assistant_folders(app, ui);
     });
     mc::section(ui, "Outside Margin", |ui| {
-        if mc::switch(ui, "Allow assistants outside Margin to connect", app.ui.assistant.allow_outside) {
+        if mc::switch(ui, "Allow assistants outside Optimo to connect", app.ui.assistant.allow_outside) {
             let on = !app.ui.assistant.allow_outside;
             let _ = app.run("ui.assistant", json!({"allowOutside": on}));
         }
@@ -521,7 +521,7 @@ fn assistant(app: &mut WordApp, ui: &mut Ui) {
 }
 
 /// S5: "Read files in these folders (read-only)": the folder list with + and −. The same list
-/// confines the files assistants outside Margin can read (`control::handle_outside`).
+/// confines the files assistants outside Optimo can read (`control::handle_outside`).
 fn assistant_folders(app: &mut WordApp, ui: &mut Ui) {
     use crate::mac_controls as mc;
     let t = Tokens::get(ui.ctx());
@@ -572,7 +572,7 @@ fn assistant_folders(app: &mut WordApp, ui: &mut Ui) {
     });
     mc::hint(
         ui,
-        "Margin's assistant can check facts against files in these folders, and assistants outside Margin can read files only from them. Nothing is ever written, and links that lead out of a folder are not followed. No folders: no file access.",
+        "Optimo's assistant can check facts against files in these folders, and assistants outside Optimo can read files only from them. Nothing is ever written, and links that lead out of a folder are not followed. No folders: no file access.",
     );
 }
 
@@ -675,7 +675,7 @@ fn assistant_key(app: &mut WordApp, ui: &mut Ui) {
         let t = Tokens::get(ui.ctx());
         let hint = app.assistant_link.hint(p);
         if !app.assistant_link.keys_supported() {
-            mc::hint(ui, "This system has no keychain Margin can use, so a key can't be stored here.");
+            mc::hint(ui, "This system has no keychain Optimo can use, so a key can't be stored here.");
         } else if let Some(h) = hint.as_ref().filter(|_| !app.assistant_link.changing_key) {
             mc::labelled_row(ui, "Key", |ui| {
                 ui.label(RichText::new(h).font(mc::font()).color(t.text));
@@ -737,7 +737,7 @@ fn assistant_key(app: &mut WordApp, ui: &mut Ui) {
             }
         });
         let store = if cfg!(target_os = "macos") { "the macOS Keychain" } else { "the system keychain" };
-        let line = crate::i18n::fmt(tl!("Keys are kept in {store}, one per provider, never in Margin's settings files."), &[("store", tl!(store))]);
+        let line = crate::i18n::fmt(tl!("Keys are kept in {store}, one per provider, never in Optimo's settings files."), &[("store", tl!(store))]);
         mc::hint(ui, &line);
     });
 }

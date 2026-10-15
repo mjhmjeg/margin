@@ -215,16 +215,40 @@ fn services(file_dialog: file_dialogs::Hook, ctx: &egui::Context) -> Services {
         clipboard_html: Some(Box::new(clipboard::html)),
         clipboard_rtf: Some(Box::new(clipboard::rtf)),
         clipboard_formats: Some(Box::new(clipboard::formats)),
-        key_store: Some(std::sync::Arc::new(wordcraft_assistant::keys::SystemKeys)),
+        key_store: Some(std::sync::Arc::new(wordcraft_assistant::keys::SystemKeys::default())),
         ..Default::default()
+    }
+}
+
+/// Once (a marker file in the settings folder): copy the assistant keys stored under Margin's
+/// keychain service to Optimo's, where Optimo has none. The old entries stay as a backup; a key
+/// removed later in Optimo is not brought back. Tried again at the next start while the keychain
+/// reported an error. Keys are never logged, only provider ids.
+fn migrate_keychain(settings: &std::path::Path) {
+    let marker = settings.join("keychain-migrated");
+    if marker.exists() {
+        return;
+    }
+    let accounts: Vec<&str> = wordcraft_assistant::ProviderId::ALL.iter().map(|p| p.id()).collect();
+    let (old, new) = (wordcraft_assistant::keys::SystemKeys::legacy(), wordcraft_assistant::keys::SystemKeys::default());
+    let (copied, complete) = wordcraft_assistant::keys::migrate(&old, &new, &accounts);
+    if !copied.is_empty() {
+        log::info!("keychain: copied the assistant key(s) for {} to {}", copied.join(", "), wordcraft_assistant::keys::SERVICE);
+    }
+    if !complete {
+        log::warn!("keychain: could not check every assistant key; trying again at the next start");
+        return;
+    }
+    if std::fs::create_dir_all(settings).and_then(|()| std::fs::write(&marker, b"margin -> optimo\n")).is_err() {
+        log::warn!("keychain: could not write {}", marker.display());
     }
 }
 
 /// Window, Dock and taskbar icon.
 fn app_icon() -> Option<egui::IconData> {
     #[cfg(target_os = "macos")]
-    // Margin fork: its own icon (assets/app-icon/margin.svg, from the design handoff, via packaging/macos/margin-icon.sh).
-    let png: &[u8] = include_bytes!("../../../assets/app-icon/margin-macos-512.png");
+    // Optimo fork: its own icon (assets/app-icon/optimo.svg, concept A, via packaging/macos/optimo-icon.sh).
+    let png: &[u8] = include_bytes!("../../../assets/app-icon/optimo-macos-512.png");
     #[cfg(not(target_os = "macos"))]
     let png: &[u8] = include_bytes!("../../../assets/app-icon/hicolor/256x256/apps/ai.storyteller.wordcraft.png");
     eframe::icon_data::from_png_bytes(png).map_err(|e| log::warn!("app icon: {e}")).ok()
@@ -258,15 +282,17 @@ fn main() -> eframe::Result {
     // arguments, so `--version` leaves no file behind. Records logged until now are written to it
     // first. Runs without preferences (agents' test runs) log to standard error only, so they
     // don't rotate away the user's own logs.
-    // Margin's own settings folder (incident 2026-10-14): carry the old shared one over once.
+    // Optimo's own settings folder: carry the newest previous one (Margin's, else the one shared
+    // with WordCraft) over once; then the assistant keys from Margin's keychain service.
     if prefs_enabled()
-        && let (Some(old), Some(new)) = (wordcraft_control_key::legacy_settings_dir(), wordcraft_control_key::settings_dir())
+        && let Some(new) = wordcraft_control_key::settings_dir()
     {
-        match wordcraft_control_key::migrate(&old, &new) {
-            Ok(0) => {}
-            Ok(n) => log::info!("settings: copied {n} file(s) from {} to {}", old.display(), new.display()),
-            Err(e) => log::warn!("settings: could not copy from {}: {e}", old.display()),
+        match wordcraft_control_key::migrate_from_previous(&wordcraft_control_key::previous_settings_dirs(), &new) {
+            Ok(None) => {}
+            Ok(Some((old, n))) => log::info!("settings: copied {n} file(s) from {} to {}", old.display(), new.display()),
+            Err(e) => log::warn!("settings: could not copy the previous preferences: {e}"),
         }
+        migrate_keychain(&new);
     }
     if let Some(logger) = logger {
         match log_dir().filter(|_| prefs_enabled()) {

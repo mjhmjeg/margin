@@ -39,7 +39,7 @@ end run
 on spanRange(doc, anchor, k)
 	tell application id "com.microsoft.Word"
 		if anchor is "bookmark" then
-			return text object of bookmark ("_MarginAI" & k) of doc
+			return text object of bookmark ("_OptimoAI" & k) of doc
 		else if anchor is "sdt" then
 			return text object of content control k of doc
 		else

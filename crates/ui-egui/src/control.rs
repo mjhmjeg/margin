@@ -22,7 +22,7 @@ pub struct ControlRequest {
     pub method: String,
     pub params: Value,
     pub reply: Sender<Value>,
-    /// Sent by an assistant outside Margin (a connection to the control port): the assistant
+    /// Sent by an assistant outside Optimo (a connection to the control port): the assistant
     /// rules apply, see [`handle_outside`].
     pub outside: bool,
 }
@@ -143,7 +143,7 @@ pub fn handle(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> O
         },
         "ui.inspect" => ok(inspect(app, ctx)),
         "ui.parity" => ok(wordcraft_engine::catalog::parity(&app.session.registry)),
-        // Margin: choose a menu-bar item by its path, e.g. {"path": "Format/Bold"}.
+        // Optimo: choose a menu-bar item by its path, e.g. {"path": "Format/Bold"}.
         "ui.menu" => match s("path").and_then(crate::mac_menu::find) {
             Some(act) => {
                 crate::mac_menu::perform(app, &act);
@@ -283,11 +283,11 @@ const RAW_INPUT: [&str; 11] =
 /// Methods that only look: they are answered as they are.
 const LOOKING: [&str; 7] = ["engine.commands", "document.inspect", "ui.inspect", "ui.parity", "ui.screenshot", "ui.render", "ui.resize"];
 
-/// A request from an assistant outside Margin (HANDOFF §9, S5/S6). The one choke point for them:
+/// A request from an assistant outside Optimo (HANDOFF §9, S5/S6). The one choke point for them:
 /// every request that arrives over the control port comes through here, so MCP `--connect` and any
 /// raw client get the same rule, whatever they send.
 ///
-/// * Refused while "Allow assistants outside Margin to connect" is off.
+/// * Refused while "Allow assistants outside Optimo to connect" is off.
 /// * Raw input and quitting are refused ([`RAW_INPUT`]); looking (inspect, screenshots) is allowed.
 /// * Every command is checked against `wordcraft_engine::assistant::denied` (accept, reject,
 ///   tracking off, author changes…) and, when it changes the document, runs with track changes
@@ -300,7 +300,7 @@ const LOOKING: [&str; 7] = ["engine.commands", "document.inspect", "ui.inspect",
 /// * With "Add and reply to comments" off, `review.newComment` / `review.reply` are refused.
 pub fn handle_outside(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> Outcome {
     if !app.ui.assistant.allow_outside {
-        return err("assistants outside Margin are not allowed to connect: the person has turned this off in Settings › Assistant");
+        return err("assistants outside Optimo are not allowed to connect: the person has turned this off in Settings › Assistant");
     }
     let name = app.ui.assistant.name();
     crate::assistant_link::sync_names(&app.ui.assistant);

@@ -57,7 +57,7 @@ pub fn specs() -> Vec<CommandSpec> {
             s.redo();
             sel_result(s)
         })
-        // Margin: on macOS ⌘Y opens the command field, so Redo is only ⇧⌘Z (the Mac standard);
+        // Optimo: on macOS ⌘Y opens the command field, so Redo is only ⇧⌘Z (the Mac standard);
         // Windows/Linux keep Ctrl+Y.
         .key(if cfg!(target_os = "macos") { "Mod+Shift+Z" } else { "Mod+Y / Mod+Shift+Z" })
         .pure(),

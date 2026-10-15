@@ -390,7 +390,7 @@ pub(crate) fn write_parts(doc: &Document, flavor: Flavor) -> Result<Vec<(String,
         push_part(&mut entries, &mut overrides, &name, bytes, &ct, prels);
     }
 
-    // Margin's authorship store (accepted assistant text), related from the main document like
+    // Optimo's authorship store (accepted assistant text), related from the main document like
     // Word's own stores; only while the document has any. Its item number is the first free one
     // (the bibliography takes item1 below).
     if let Some(xml) = crate::authorship::part_xml(doc) {

@@ -289,7 +289,7 @@ fn resolve_para(
     props: bool,
     accept: bool,
 ) -> Result<(), CmdError> {
-    // Accepted assistant text keeps its authorship: wrap it in a mark first (Margin A5).
+    // Accepted assistant text keeps its authorship: wrap it in a mark first (Optimo A5).
     let (to, new_marks, mark_author) = if accept {
         let author = crate::authorship::accepted_author(s, story, path, from, to);
         let (to, names) = crate::authorship::wrap_before_accept(s, story, path, from, to)?;
@@ -1398,7 +1398,7 @@ mod tests {
         let r = s.run("review.acceptAll", &json!({"author": "Claude"})).unwrap();
         assert_eq!(r["resolved"], 2);
         assert_eq!(authors(&mut s), ["Ana"], "Ana's insertion is still pending");
-        // Margin: "Claude" is the assistant's name, so its accepted text is wrapped in two
+        // Optimo: "Claude" is the assistant's name, so its accepted text is wrapped in two
         // zero-width marks; the end of the text is past them.
         assert!(s.sel.is_collapsed() && s.sel.focus.off == body_para(&s).len(), "the caret stays at the end of the text");
         assert_eq!(s.doc.plain_text(wordcraft_doc::StoryRef::Body), "ana keep  more by claude");

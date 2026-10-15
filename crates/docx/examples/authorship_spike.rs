@@ -29,7 +29,7 @@ use wordcraft_doc::{ContentControl, ControlKind, Document, InlineObject, Paragra
 type Res<T> = Result<T, Box<dyn Error>>;
 
 /// Our namespace for authorship metadata (custom XML part, ignorable attributes).
-const MG_NS: &str = "urn:margin:authorship";
+const MG_NS: &str = "urn:optimo:authorship";
 const W_NS: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const W15_NS: &str = "http://schemas.microsoft.com/office/word/2012/wordml";
 const REL_NS: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
@@ -44,8 +44,8 @@ const MODEL: &str = "claude-opus-5";
 const ACCEPTED_AT: &str = "2026-10-13T09:00:00Z";
 const ITEM_ID: &str = "{6D1F3B2A-0C4E-4F8B-9A7D-2E5C1B3F4A60}";
 /// Bookmark names starting with `_` are hidden in Word's Bookmark dialog.
-const BOOKMARK_PREFIX: &str = "_MarginAI";
-const STYLE_ID: &str = "MarginAI";
+const BOOKMARK_PREFIX: &str = "_OptimoAI";
+const STYLE_ID: &str = "OptimoAI";
 
 const CANDIDATES: &[&str] = &["a-bookmarks", "b-offsets", "c-ignorable", "d-sdt", "e-style"];
 
@@ -123,7 +123,7 @@ fn bookmark_name(idx: usize) -> String {
 }
 
 fn sdt_tag() -> String {
-    format!("margin.ai;author={AUTHOR};model={MODEL};at={ACCEPTED_AT}")
+    format!("optimo.ai;author={AUTHOR};model={MODEL};at={ACCEPTED_AT}")
 }
 
 fn control(idx: usize) -> ContentControl {
@@ -140,7 +140,7 @@ fn build(mark: Mark) -> Res<(Document, Vec<SpanInfo>)> {
     if mark == Mark::Style {
         doc.styles.styles.push(Style {
             id: STYLE_ID.into(),
-            name: "Margin AI".into(),
+            name: "Optimo AI".into(),
             kind: StyleKind::Character,
             hidden: true,
             ..Default::default()
@@ -289,7 +289,7 @@ fn add_custom_part(parts: &mut Vec<(String, Vec<u8>)>, data: &str) -> Res<()> {
     parts.push((format!("customXml/itemProps{n}.xml"), props.into_bytes()));
     parts.push((format!("customXml/_rels/item{n}.xml.rels"), item_rels.into_bytes()));
     patch(parts, "word/_rels/document.xml.rels", |s| {
-        let rel = format!(r#"<Relationship Id="rIdMargin{n}" Type="{RT_CUSTOM_XML}" Target="../customXml/item{n}.xml"/></Relationships>"#);
+        let rel = format!(r#"<Relationship Id="rIdOptimo{n}" Type="{RT_CUSTOM_XML}" Target="../customXml/item{n}.xml"/></Relationships>"#);
         s.replacen("</Relationships>", &rel, 1)
     })?;
     patch(parts, "[Content_Types].xml", |s| {
@@ -487,7 +487,7 @@ fn check(file: &str) -> Res<()> {
         if !(lower.starts_with("customxml/item") && lower.ends_with(".xml")) || lower.contains("itemprops") {
             continue;
         }
-        let Some(list) = margin_spans(b)? else { continue };
+        let Some(list) = optimo_spans(b)? else { continue };
         let related = parts
             .iter()
             .filter(|(n, _)| n == "word/_rels/document.xml.rels" || n == "_rels/.rels")
@@ -837,7 +837,7 @@ fn walk_body(bytes: &[u8]) -> Res<Body> {
 }
 
 /// The `mg:span` entries of a custom XML part whose root is ours; `None` for another store.
-fn margin_spans(bytes: &[u8]) -> Res<Option<Vec<BTreeMap<String, String>>>> {
+fn optimo_spans(bytes: &[u8]) -> Res<Option<Vec<BTreeMap<String, String>>>> {
     let mut r = NsReader::from_reader(bytes);
     let mut buf = Vec::new();
     let mut out = Vec::new();

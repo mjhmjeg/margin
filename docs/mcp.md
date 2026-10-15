@@ -41,7 +41,7 @@ or a raw client) arrives as a suggestion, enforced in the app and not in the cli
   `ui.key`, `ui.menu`, …) and `app.quit` are refused too, since they could press Accept. Looking
   (`document.inspect`, `ui.inspect`, `ui.screenshot`, `ui.render`, `engine.commands`) and read-only
   commands are allowed.
-- Options › Assistant › "Allow assistants outside Margin to connect" (on by default; the port only
+- Options › Assistant › "Allow assistants outside Optimo to connect" (on by default; the port only
   exists when the app was started with `--control`) refuses every request while off and drops the
   connected assistants; "Disconnect" drops them without turning it off.
 - The headless `wordcraft-cli mcp` (no app) edits its own session and files directly and is not

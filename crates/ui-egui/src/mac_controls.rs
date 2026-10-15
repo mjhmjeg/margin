@@ -1,9 +1,9 @@
-//! Margin's shared controls (Claude Design handoff §2, Phase 2): one function per control, used by
-//! every Margin screen. Sizes in pt, colours from `Tokens` + `skin::MarginTokens`.
+//! Optimo's shared controls (Claude Design handoff §2, Phase 2): one function per control, used by
+//! every Optimo screen. Sizes in pt, colours from `Tokens` + `skin::OptimoTokens`.
 
 use egui::{Align2, Color32, CornerRadius, Rect, Response, Sense, Stroke, Ui, pos2, vec2};
 
-use crate::skin::MarginTokens;
+use crate::skin::OptimoTokens;
 use crate::theme::{Tokens, regular};
 
 pub const ROW_H: f32 = 28.0;
@@ -15,8 +15,8 @@ pub fn font() -> egui::FontId {
     regular(crate::skin::UI_SIZE)
 }
 
-fn tokens(ui: &Ui) -> (Tokens, MarginTokens) {
-    (Tokens::get(ui.ctx()), MarginTokens::get(ui.ctx()))
+fn tokens(ui: &Ui) -> (Tokens, OptimoTokens) {
+    (Tokens::get(ui.ctx()), OptimoTokens::get(ui.ctx()))
 }
 
 fn shadows(ui: &Ui, r: Rect, radius: f32, list: &[crate::skin::Shadow]) {
@@ -547,7 +547,7 @@ pub fn menu_row(ui: &mut Ui, label: &str, current: bool) -> Response {
 /// Popover / menu chrome (`popover_*`, radius 8, padding 6), applied to egui's popups and windows
 /// while the skin is on. Called from `theme::apply`.
 pub fn style_popovers(style: &mut egui::Style, dark: bool) {
-    let m = if dark { MarginTokens::dark() } else { MarginTokens::light() };
+    let m = if dark { OptimoTokens::dark() } else { OptimoTokens::light() };
     let v = &mut style.visuals;
     v.window_fill = m.popover_bg;
     v.window_stroke = Stroke::new(1.0, m.popover_border);
@@ -605,6 +605,6 @@ mod tests {
         h.run();
         assert_eq!(*h.state(), Some(0));
         // The chip is the neutral `segment_chip`, never the accent (HANDOFF §1).
-        assert_ne!(MarginTokens::light().segment_chip, Tokens::light().accent);
+        assert_ne!(OptimoTokens::light().segment_chip, Tokens::light().accent);
     }
 }

@@ -1,4 +1,4 @@
-//! Margin's macOS skin: flat Mac greys, the system blue accent, and one interface type size
+//! Optimo's macOS skin: flat Mac greys, the system blue accent, and one interface type size
 //! (13 pt, regular weight). Hooks in `theme.rs` (tokens, font helpers) and `chrome.rs` (title bar)
 //! consult [`on`]; everything else reads the tokens as before.
 
@@ -25,7 +25,7 @@ thread_local! {
     static CLASSIC: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// While alive, the font helpers give upstream's sizes and weights (colours stay Margin's): the Classic ribbon is laid out
+/// While alive, the font helpers give upstream's sizes and weights (colours stay Optimo's): the Classic ribbon is laid out
 /// for its own type sizes, and 13 pt everywhere would clip its labels.
 pub struct Classic(bool);
 
@@ -58,7 +58,7 @@ pub fn set(on: bool) {
 }
 
 /// The product name shown in the window title and menus.
-pub const APP_NAME: &str = "Margin";
+pub const APP_NAME: &str = "Optimo";
 
 /// The one interface type size, in points.
 pub const UI_SIZE: f32 = 13.0;
@@ -155,9 +155,9 @@ pub fn dark(base: Tokens) -> Tokens {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Margin tokens (Claude Design, 2026-10-13: docs/design-handoff/claude-design/tokens.json).
+// Optimo tokens (Claude Design, 2026-10-13: docs/design-handoff/claude-design/tokens.json).
 // Upstream's `Tokens` keeps chrome, panel, canvas, borders, text, hover/pressed/checked and the
-// accent; these are the ones Margin's own screens add.
+// accent; these are the ones Optimo's own screens add.
 
 /// A drop shadow (CSS `x y blur` + colour), in pt.
 pub type Shadow = egui::epaint::Shadow;
@@ -185,7 +185,7 @@ pub const ASSISTANT_TINT: Color32 = rgba(91, 79, 207, 0.09);
 pub const PERSON_TINT: Color32 = rgba(184, 50, 122, 0.12);
 
 #[derive(Clone, Copy, Debug)]
-pub struct MarginTokens {
+pub struct OptimoTokens {
     pub dark: bool,
     /// Inspector and dialog section titles (replaces upstream's `group_label` there: 2.5:1 failed).
     pub section_title: Color32,
@@ -212,9 +212,9 @@ pub struct MarginTokens {
     pub assistant: Color32,
 }
 
-impl MarginTokens {
+impl OptimoTokens {
     pub fn light() -> Self {
-        MarginTokens {
+        OptimoTokens {
             dark: false,
             section_title: Color32::from_rgb(0x1D, 0x1D, 0x1F),
             hint: Color32::from_rgb(0x6E, 0x6E, 0x73),
@@ -235,7 +235,7 @@ impl MarginTokens {
     }
 
     pub fn dark() -> Self {
-        MarginTokens {
+        OptimoTokens {
             dark: true,
             section_title: Color32::from_gray(0xF2),
             hint: Color32::from_rgb(0x98, 0x98, 0x9D),
@@ -288,8 +288,8 @@ mod tests {
 
     /// Claude Design's pairs (HANDOFF.md §1), in both appearances: text ≥ 4.5:1, field outlines ≥ 3:1.
     #[test]
-    fn margin_tokens_meet_contrast_floors() {
-        for (t, m) in [(Tokens::light(), MarginTokens::light()), (Tokens::dark(), MarginTokens::dark())] {
+    fn optimo_tokens_meet_contrast_floors() {
+        for (t, m) in [(Tokens::light(), OptimoTokens::light()), (Tokens::dark(), OptimoTokens::dark())] {
             let text = [
                 ("section_title on panel", m.section_title, t.panel),
                 ("text_dim on panel", t.text_dim, t.panel),

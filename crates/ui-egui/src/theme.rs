@@ -586,7 +586,7 @@ pub fn apply(ctx: &egui::Context, appearance: Appearance) {
         s.text_styles.insert(egui::TextStyle::Heading, semibold(17.0));
         s.interaction.tooltip_delay = 0.45;
     });
-    // Margin: popovers, menus and dialog frames from its design tokens.
+    // Optimo: popovers, menus and dialog frames from its design tokens.
     if crate::skin::on() {
         ctx.style_mut_of(egui::Theme::Light, |s| crate::mac_controls::style_popovers(s, false));
         ctx.style_mut_of(egui::Theme::Dark, |s| crate::mac_controls::style_popovers(s, true));

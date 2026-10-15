@@ -174,8 +174,9 @@ pub type Inbox = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct UiState {
-    /// Margin's Mac layout (toolbar, inspector, Classic ribbon, pageless width).
-    pub margin: mac_ui::MarginPrefs,
+    /// Optimo's Mac layout (toolbar, inspector, Classic ribbon, pageless width).
+    /// Saved as `optimo`; read from Margin's `margin` too ([`migrate_optimo_key`]).
+    pub optimo: mac_ui::OptimoPrefs,
     pub tab: String,
     pub backstage: bool,
     pub backstage_page: String,
@@ -264,8 +265,8 @@ pub struct UiState {
     pub update_fields_before_print: bool,
     /// The custom dictionary (File › Options › Proofing, Add to Dictionary), kept between runs.
     pub dictionary: Vec<String>,
-    /// File › Options › Assistant (Margin): the assistant's author name and whether assistants
-    /// outside Margin may connect.
+    /// File › Options › Assistant (Optimo): the assistant's author name and whether assistants
+    /// outside Optimo may connect.
     pub assistant: assistant::AssistantPrefs,
 }
 
@@ -277,7 +278,7 @@ pub const MAX_DICTIONARY: usize = 10_000;
 impl Default for UiState {
     fn default() -> Self {
         UiState {
-            margin: mac_ui::MarginPrefs::default(),
+            optimo: mac_ui::OptimoPrefs::default(),
             tab: "Home".into(),
             backstage: false,
             backstage_page: "home".into(),
@@ -286,7 +287,7 @@ impl Default for UiState {
             recent: Vec::new(),
             recent_symbols: Vec::new(),
             recent_colors: Vec::new(),
-            // Margin follows the macOS appearance out of the box, like a native Mac app.
+            // Optimo follows the macOS appearance out of the box, like a native Mac app.
             theme: if crate::skin::on() { theme::Appearance::System } else { theme::Appearance::default() },
             interface_size: theme::InterfaceSize::default(),
             animations: theme::Animations::default(),
@@ -333,6 +334,7 @@ impl UiState {
             return None;
         }
         migrate_units(&mut v);
+        migrate_optimo_key(&mut v);
         Some(options::lenient(&v))
     }
 
@@ -354,6 +356,17 @@ fn migrate_units(v: &mut Value) {
     if let Some(old) = editing.get("units").and_then(Value::as_str).filter(|u| *u != "inches") {
         let old = Value::String(old.to_string());
         editing.insert("measurementUnits".into(), old);
+    }
+}
+
+/// The app was called Margin until 2026-10-14 and saved its layout settings under `margin`; they
+/// now live under `optimo`. The old key is carried over when the new one is missing, and dropped.
+fn migrate_optimo_key(v: &mut Value) {
+    let Some(map) = v.as_object_mut() else { return };
+    if let Some(old) = map.remove("margin")
+        && !map.contains_key("optimo")
+    {
+        map.insert("optimo".into(), old);
     }
 }
 
@@ -1011,7 +1024,7 @@ impl WordApp {
                 json!({"dialog": "colors"})
             }
             "ui.dialog" if s("name") == Some("commands") && mac_ui::active(self) => {
-                // The Margin layout's Search Commands is the toolbar's command field.
+                // The Optimo layout's Search Commands is the toolbar's command field.
                 command_field::open(self, "");
                 json!({"dialog": "commands", "field": true})
             }
@@ -1602,7 +1615,7 @@ impl WordApp {
             }
             if mac && assistant_panel::visible(self) {
                 assistant_panel::show(self, ui);
-            } else if mac && self.ui.margin.inspector && !self.session.view.comments_pane {
+            } else if mac && self.ui.optimo.inspector && !self.session.view.comments_pane {
                 mac_ui::inspector(self, ui);
             }
             panes::show(self, ui);
@@ -1967,11 +1980,11 @@ mod tests {
         assert!(cjk.canvas.ime_faces.is_empty(), "CJK collections are not copied into the fallback list");
     }
 
-    /// Upstream's tests exercise the ribbon layout: run them with Margin's Classic ribbon on
+    /// Upstream's tests exercise the ribbon layout: run them with Optimo's Classic ribbon on
     /// (`mac_ui` tests the Mac layout).
     fn app() -> WordApp {
         let mut a = WordApp::new(Session::new(wordcraft_doc::Document::new()), Services::default());
-        a.ui.margin.classic_ribbon = true;
+        a.ui.optimo.classic_ribbon = true;
         a
     }
 

@@ -1,4 +1,4 @@
-//! Margin's macOS menu bar, as data: the desktop app builds native menus from [`MENUS`] and calls
+//! Optimo's macOS menu bar, as data: the desktop app builds native menus from [`MENUS`] and calls
 //! [`perform`] when one is chosen. Kept here (no AppKit) so it is testable and reachable over the
 //! control channel (`ui.menu`).
 //!
@@ -24,13 +24,13 @@ pub enum Act {
     Paste,
     /// File › Export as PDF: ask where (the engine command needs a path), then write it.
     ExportPdf,
-    Margin(MarginAct),
+    Optimo(OptimoAct),
     /// Standard AppKit items (About, Hide, Quit, Minimize…): the native layer makes them.
     Std(Std),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum MarginAct {
+pub enum OptimoAct {
     /// File › New: the template chooser (Pages-style), not a blank document straight away.
     Home,
     Outline,
@@ -75,21 +75,21 @@ const fn key(label: &'static str, act: Act, accel: &'static str) -> Entry {
 }
 
 const APP: &[Entry] = &[
-    it("About Margin", Std(self::Std::About)),
+    it("About Optimo", Std(self::Std::About)),
     Sep,
     key("Settings…", Cmd("file.options"), "CmdOrCtrl+Comma"),
     Sep,
     it("Services", Std(self::Std::Services)),
     Sep,
-    it("Hide Margin", Std(self::Std::Hide)),
+    it("Hide Optimo", Std(self::Std::Hide)),
     it("Hide Others", Std(self::Std::HideOthers)),
     it("Show All", Std(self::Std::ShowAll)),
     Sep,
-    it("Quit Margin", Std(self::Std::Quit)),
+    it("Quit Optimo", Std(self::Std::Quit)),
 ];
 
 const FILE: &[Entry] = &[
-    key("New…", Margin(MarginAct::Home), "CmdOrCtrl+N"),
+    key("New…", Optimo(OptimoAct::Home), "CmdOrCtrl+N"),
     key("Open…", Keys("Mod+O"), "CmdOrCtrl+O"),
     Sep,
     key("Close", Keys("Mod+W"), "CmdOrCtrl+W"),
@@ -178,14 +178,14 @@ const REVIEW: &[Entry] = &[
 ];
 
 const VIEW: &[Entry] = &[
-    key("Show Outline", Margin(MarginAct::Outline), "CmdOrCtrl+Shift+O"),
-    key("Show Format Inspector", Margin(MarginAct::Inspector), "CmdOrCtrl+Shift+F"),
-    key("Show Review", Margin(MarginAct::Review), "CmdOrCtrl+Shift+R"),
+    key("Show Outline", Optimo(OptimoAct::Outline), "CmdOrCtrl+Shift+O"),
+    key("Show Format Inspector", Optimo(OptimoAct::Inspector), "CmdOrCtrl+Shift+F"),
+    key("Show Review", Optimo(OptimoAct::Review), "CmdOrCtrl+Shift+R"),
     it("Show Ruler", Cmd("view.ruler")),
     key("Show Invisibles", Keys("Mod+8"), "CmdOrCtrl+8"),
     it("Show Authorship", Cmd("view.authorship")),
     Sep,
-    it("Pageless", Margin(MarginAct::Pageless)),
+    it("Pageless", Optimo(OptimoAct::Pageless)),
     it("Dark Page", Cmd("view.darkMode")),
     it("Focus", Cmd("view.focus")),
     Sep,
@@ -194,18 +194,18 @@ const VIEW: &[Entry] = &[
     key("Actual Size", Cmd("view.zoom100"), "CmdOrCtrl+0"),
     it("Fit Width", Cmd("view.pageWidth")),
     Sep,
-    key("Classic Ribbon", Margin(MarginAct::Classic), "Control+Super+R"),
+    key("Classic Ribbon", Optimo(OptimoAct::Classic), "Control+Super+R"),
     it("Enter Full Screen", Std(self::Std::Fullscreen)),
 ];
 
 const WINDOW: &[Entry] =
     &[it("Minimize", Std(self::Std::Minimize)), it("Zoom", Std(self::Std::Zoom)), Sep, it("Bring All to Front", Std(self::Std::BringAllToFront))];
 
-const HELP: &[Entry] = &[key("Search Commands…", Margin(MarginAct::CommandField), "CmdOrCtrl+Y")];
+const HELP: &[Entry] = &[key("Search Commands…", Optimo(OptimoAct::CommandField), "CmdOrCtrl+Y")];
 
 /// The menu bar, left to right. The first menu is the application menu.
 pub const MENUS: &[(&str, &[Entry])] = &[
-    ("Margin", APP),
+    ("Optimo", APP),
     ("File", FILE),
     ("Edit", EDIT),
     ("Insert", INSERT),
@@ -220,11 +220,11 @@ pub const MENUS: &[(&str, &[Entry])] = &[
 pub fn checked(app: &WordApp, act: &Act) -> Option<bool> {
     let v = &app.session.view;
     Some(match act {
-        Margin(MarginAct::Outline) => v.nav_pane,
-        Margin(MarginAct::Inspector) => app.ui.margin.inspector && mac_ui::active(app),
-        Margin(MarginAct::Review) => v.comments_pane,
-        Margin(MarginAct::Pageless) => mac_ui::pageless(app),
-        Margin(MarginAct::Classic) => app.ui.margin.classic_ribbon,
+        Optimo(OptimoAct::Outline) => v.nav_pane,
+        Optimo(OptimoAct::Inspector) => app.ui.optimo.inspector && mac_ui::active(app),
+        Optimo(OptimoAct::Review) => v.comments_pane,
+        Optimo(OptimoAct::Pageless) => mac_ui::pageless(app),
+        Optimo(OptimoAct::Classic) => app.ui.optimo.classic_ribbon,
         Keys("Mod+Shift+E") => app.session.doc.settings.track_changes,
         Keys("Mod+8") => v.marks,
         Cmd("view.ruler") => v.ruler,
@@ -255,19 +255,19 @@ pub fn perform(app: &mut WordApp, act: &Act) {
             Some(t) if !t.is_empty() => app.synthetic.push(egui::Event::Paste(t)),
             _ => perform(app, &Keys("Mod+V")),
         },
-        Margin(MarginAct::Home) => {
+        Optimo(OptimoAct::Home) => {
             app.ui.backstage = true;
             app.ui.backstage_page = "new".into();
         }
-        Margin(MarginAct::Outline) => mac_ui::toggle_panel(app, mac_ui::Panel::Outline),
-        Margin(MarginAct::Inspector) => mac_ui::format_with_font_list(app),
-        Margin(MarginAct::Review) => mac_ui::toggle_panel(app, mac_ui::Panel::Review),
-        Margin(MarginAct::Pageless) => {
+        Optimo(OptimoAct::Outline) => mac_ui::toggle_panel(app, mac_ui::Panel::Outline),
+        Optimo(OptimoAct::Inspector) => mac_ui::format_with_font_list(app),
+        Optimo(OptimoAct::Review) => mac_ui::toggle_panel(app, mac_ui::Panel::Review),
+        Optimo(OptimoAct::Pageless) => {
             let on = !mac_ui::pageless(app);
             set_pageless(app, on);
         }
-        Margin(MarginAct::Classic) => app.ui.margin.classic_ribbon = !app.ui.margin.classic_ribbon,
-        Margin(MarginAct::CommandField) => crate::command_field::open(app, ""),
+        Optimo(OptimoAct::Classic) => app.ui.optimo.classic_ribbon = !app.ui.optimo.classic_ribbon,
+        Optimo(OptimoAct::CommandField) => crate::command_field::open(app, ""),
         // The native layer handles these itself.
         Std(_) => {}
     }

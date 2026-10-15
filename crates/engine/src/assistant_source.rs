@@ -5,7 +5,7 @@
 //!   the person's list as the roots: the path is made absolute, its links are followed, and it
 //!   must lie inside one of the folders (whole folder names, so `/work2` is not inside `/work`).
 //!   `..` and links that lead out are refused. Nothing is ever written.
-//! * **Files.** Regular files only, at most [`MAX_SOURCE_BYTES`], of a type Margin reads as text
+//! * **Files.** Regular files only, at most [`MAX_SOURCE_BYTES`], of a type Optimo reads as text
 //!   ([`EXTS`]). The file is read through the checked gateway (`io::read_file_capped`) from the
 //!   resolved path, then parsed by the same readers as File › Open.
 //! * **Cap.** At most [`MAX_SOURCE_CHARS`] characters go to the model, cut at a paragraph end

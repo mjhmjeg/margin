@@ -15,7 +15,7 @@ winit or rfd.
 | Layer | Crate | Lines | Job |
 |---|---|---|---|
 | L0 | `geom` | 0.2k | Units (points, twips, EMU, inches, cm), rectangles, measurement parsing |
-| L0 | `assistant` | 0.9k | Margin assistant connectors: provider presets, Anthropic Messages + OpenAI-compatible chat and model listing (ureq + rustls, native only), API keys in the system keychain (`keyring`, native only); standalone |
+| L0 | `assistant` | 0.9k | Optimo assistant connectors: provider presets, Anthropic Messages + OpenAI-compatible chat and model listing (ureq + rustls, native only), API keys in the system keychain (`keyring`, native only); standalone |
 | L1 | `doc` | 10.0k | Document model: stories, paragraphs, runs, tables, sections, styles, numbering, fields, notes, comments, revisions, equations (OMML-shaped math tree, linear/LaTeX input); edit primitives; bidi |
 | L1 | `fonts` | 2.3k | Font database (bundled OFL + system fonts), metrics, outlines, shaping with HarfRust, Word font substitution (`word.rs`: Carlito ↔ Calibri, Caladea ↔ Cambria, Liberation ↔ Arial/Times/Courier), OpenType MATH |
 | L1 | `proof` | 3.8k | Proofing per language (`ProofLang` from a run's `w:lang`): English (public-domain word list) and Polish (installed Hunspell dictionary through a Hunspell-style affix engine) spelling and suggestions, rule-based grammar for both, hyphenation dictionary and Liang patterns (English, Polish) |

@@ -10,7 +10,10 @@ use std::sync::Mutex;
 use crate::AssistantError;
 
 /// The keychain service name keys are stored under.
-pub const SERVICE: &str = "ai.spert.margin.assistant";
+pub const SERVICE: &str = "ai.spert.optimo.assistant";
+/// The service keys were stored under while the app was called Margin (until 2026-10-14). Read
+/// once by [`migrate`]; its entries stay as a backup.
+pub const LEGACY_SERVICE: &str = "ai.spert.margin.assistant";
 
 /// Where keys are kept.
 pub trait KeyStore: Send + Sync {
@@ -21,6 +24,37 @@ pub trait KeyStore: Send + Sync {
     fn set(&self, account: &str, key: &str) -> Result<(), AssistantError>;
     /// Remove the key; removing a missing key is not an error.
     fn remove(&self, account: &str) -> Result<(), AssistantError>;
+}
+
+/// Copy each account's key from `old` to `new` where `new` has none (never overwrites, never
+/// removes anything from `old`). Returns the accounts copied and whether every account could be
+/// checked (false: a store reported an error, so it is worth trying again later). Errors never
+/// carry a key.
+pub fn migrate(old: &dyn KeyStore, new: &dyn KeyStore, accounts: &[&str]) -> (Vec<String>, bool) {
+    let mut copied = Vec::new();
+    if !old.supported() || !new.supported() {
+        return (copied, true);
+    }
+    let mut complete = true;
+    for account in accounts {
+        match new.get(account) {
+            Ok(None) => {}
+            Ok(Some(_)) => continue,
+            Err(_) => {
+                complete = false;
+                continue;
+            }
+        }
+        match old.get(account) {
+            Ok(Some(key)) => match new.set(account, &key) {
+                Ok(()) => copied.push((*account).to_string()),
+                Err(_) => complete = false,
+            },
+            Ok(None) => {}
+            Err(_) => complete = false,
+        }
+    }
+    (copied, complete)
 }
 
 /// Keys held in memory only, forgotten when the app quits: tests, the screenshot tool, and hosts
@@ -54,21 +88,41 @@ impl KeyStore for MemoryKeys {
 
 /// The system keychain, where `keyring` has a native store (macOS, Windows, Linux). Elsewhere
 /// (the BSDs, the browser) [`KeyStore::supported`] is false and nothing is stored.
-#[derive(Default)]
-pub struct SystemKeys;
+pub struct SystemKeys {
+    service: &'static str,
+}
+
+impl Default for SystemKeys {
+    /// The app's own service, [`SERVICE`].
+    fn default() -> Self {
+        SystemKeys { service: SERVICE }
+    }
+}
+
+impl SystemKeys {
+    /// The keys stored under Margin's service, [`LEGACY_SERVICE`] (read by [`migrate`]).
+    pub fn legacy() -> Self {
+        SystemKeys { service: LEGACY_SERVICE }
+    }
+
+    /// The keychain service this store uses.
+    pub fn service(&self) -> &'static str {
+        self.service
+    }
+}
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 mod system {
     use super::*;
 
-    fn entry(account: &str) -> Result<keyring::Entry, AssistantError> {
-        keyring::Entry::new(SERVICE, account).map_err(fail)
+    fn entry(service: &str, account: &str) -> Result<keyring::Entry, AssistantError> {
+        keyring::Entry::new(service, account).map_err(fail)
     }
 
     // The keyring error never carries the secret; it is still kept short.
     fn fail(e: keyring::Error) -> AssistantError {
         let why = match e {
-            keyring::Error::NoStorageAccess(_) => "the keychain is locked or Margin was not allowed to use it".to_string(),
+            keyring::Error::NoStorageAccess(_) => "the keychain is locked or Optimo was not allowed to use it".to_string(),
             keyring::Error::PlatformFailure(_) => "the keychain reported an error".to_string(),
             other => crate::wire::scrub(&other.to_string(), None),
         };
@@ -80,17 +134,17 @@ mod system {
             true
         }
         fn get(&self, account: &str) -> Result<Option<String>, AssistantError> {
-            match entry(account)?.get_password() {
+            match entry(self.service, account)?.get_password() {
                 Ok(k) => Ok(Some(k)),
                 Err(keyring::Error::NoEntry) => Ok(None),
                 Err(e) => Err(fail(e)),
             }
         }
         fn set(&self, account: &str, key: &str) -> Result<(), AssistantError> {
-            entry(account)?.set_password(key).map_err(fail)
+            entry(self.service, account)?.set_password(key).map_err(fail)
         }
         fn remove(&self, account: &str) -> Result<(), AssistantError> {
-            match entry(account)?.delete_credential() {
+            match entry(self.service, account)?.delete_credential() {
                 Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
                 Err(e) => Err(fail(e)),
             }
@@ -103,7 +157,7 @@ mod system {
     use super::*;
 
     fn none() -> AssistantError {
-        AssistantError::Unsupported("this system has no keychain Margin can use, so the key can't be stored".into())
+        AssistantError::Unsupported("this system has no keychain Optimo can use, so the key can't be stored".into())
     }
 
     impl KeyStore for SystemKeys {

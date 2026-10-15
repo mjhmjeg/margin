@@ -1,7 +1,7 @@
-//! Authorship of accepted assistant text (Margin's A5; design in `docs/authorship-storage.md`).
+//! Authorship of accepted assistant text (Optimo's A5; design in `docs/authorship-storage.md`).
 //!
 //! When the person accepts a suggestion an assistant made, the accepted text is wrapped in a
-//! hidden bookmark named `_MarginAI_<8 hex>` ([`BOOKMARK_PREFIX`]) and a [`Span`] records who
+//! hidden bookmark named `_OptimoAI_<8 hex>` ([`BOOKMARK_PREFIX`]) and a [`Span`] records who
 //! wrote it (author, model), when it was accepted and the text as accepted. The bookmarks are
 //! ordinary [`InlineObject::BookmarkStart`] / [`InlineObject::BookmarkEnd`] markers, so Word and
 //! every WordCraft keep them and shrink or grow them with the text; the spans travel in a custom
@@ -21,9 +21,14 @@ use crate::{Document, Paragraph, PartKind, Path, Pos, StoryRef};
 
 /// Bookmark names that mark assistant text. The leading `_` hides them from Word's Bookmark
 /// dialog (ECMA-376 §17.13.6 leaves the name free; Microsoft documents the convention).
-pub const BOOKMARK_PREFIX: &str = "_MarginAI_";
+pub const BOOKMARK_PREFIX: &str = "_OptimoAI_";
 /// The custom XML part's namespace.
-pub const NAMESPACE: &str = "urn:margin:authorship";
+pub const NAMESPACE: &str = "urn:optimo:authorship";
+/// The bookmark prefix files made while the app was called Margin use (until 2026-10-14): still
+/// read, renamed to [`BOOKMARK_PREFIX`] on load ([`upgrade_legacy`]) and so on the next save.
+pub const LEGACY_BOOKMARK_PREFIX: &str = "_MarginAI";
+/// The namespace of Margin's authorship part: still read, written as [`NAMESPACE`].
+pub const LEGACY_NAMESPACE: &str = "urn:margin:authorship";
 /// Longest accepted text kept in a span (characters); longer spans keep only their hash.
 pub const MAX_STORED_TEXT_CHARS: usize = 10_000;
 /// Most spans read from one file.
@@ -36,13 +41,46 @@ pub const MAX_DATE_CHARS: usize = 64;
 /// the person's as a whole.
 pub const MAX_DIFF_CHARS: usize = 400;
 
-/// Whether a bookmark name marks assistant text. Lenient on read: any `_MarginAI…` name counts
-/// (the spike's files used `_MarginAI1`); new marks are always `_MarginAI_<8 hex>`.
+/// Whether a bookmark name marks assistant text. Lenient on read: any `_OptimoAI…` name counts,
+/// and so does Margin's `_MarginAI…` (the spike's files used `_MarginAI1`); new marks are always
+/// `_OptimoAI_<8 hex>`.
 pub fn is_mark(name: &str) -> bool {
-    name.starts_with(BOOKMARK_PREFIX.trim_end_matches('_'))
+    name.starts_with(BOOKMARK_PREFIX.trim_end_matches('_')) || name.starts_with(LEGACY_BOOKMARK_PREFIX)
 }
 
-/// A mark name from a seed: `_MarginAI_` and eight hex digits.
+/// The current name for a mark made under Margin's prefix (`_MarginAI_1a2b3c4d` →
+/// `_OptimoAI_1a2b3c4d`, the spike's `_MarginAI1` → `_OptimoAI_1`); `None` for any other name.
+pub fn upgrade_name(name: &str) -> Option<String> {
+    let rest = name.strip_prefix(LEGACY_BOOKMARK_PREFIX)?;
+    Some(format!("{BOOKMARK_PREFIX}{}", rest.trim_start_matches('_')))
+}
+
+/// Rename Margin's marks to Optimo's in every story and in the spans (files made before
+/// 2026-10-14), so the next save writes only the new names. Returns the markers renamed.
+pub fn upgrade_legacy(doc: &mut Document) -> usize {
+    let mut n = 0;
+    for story in stories(doc) {
+        for path in doc.para_paths(story) {
+            let Ok(p) = doc.para_mut(story, &path) else { continue };
+            for o in &mut p.objects {
+                if let InlineObject::BookmarkStart { name } | InlineObject::BookmarkEnd { name } = o
+                    && let Some(new) = upgrade_name(name)
+                {
+                    *name = new;
+                    n += 1;
+                }
+            }
+        }
+    }
+    for s in &mut doc.authorship.spans {
+        if let Some(new) = upgrade_name(&s.name) {
+            s.name = cap(&new, MAX_NAME_CHARS);
+        }
+    }
+    n
+}
+
+/// A mark name from a seed: `_OptimoAI_` and eight hex digits.
 pub fn mark_name(seed: u64) -> String {
     format!("{BOOKMARK_PREFIX}{:08x}", (seed ^ (seed >> 32)) as u32)
 }
@@ -80,7 +118,7 @@ fn cap_author(s: &str) -> String {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Span {
-    /// The bookmark's name (`_MarginAI_…`).
+    /// The bookmark's name (`_OptimoAI_…`).
     pub name: String,
     /// The assistant's author name exactly as written on its tracked changes (never normalised:
     /// the name may be a model's display name).
@@ -196,7 +234,7 @@ pub fn stories(doc: &Document) -> Vec<StoryRef> {
     std::iter::once(StoryRef::Body).chain(doc.parts.keys().map(|k| StoryRef::Part(*k))).collect()
 }
 
-/// Find every `_MarginAI_` bookmark and pair its markers.
+/// Find every `_OptimoAI_` (or Margin's `_MarginAI_`) bookmark and pair its markers.
 pub fn scan(doc: &Document) -> MarkScan {
     let mut starts: BTreeMap<String, Vec<Pos>> = BTreeMap::new();
     let mut ends: BTreeMap<String, Vec<Pos>> = BTreeMap::new();
@@ -255,7 +293,7 @@ pub fn scan(doc: &Document) -> MarkScan {
     out
 }
 
-/// Remove the bookmark markers at `positions` (only `_MarginAI_` markers are touched).
+/// Remove the bookmark markers at `positions` (only assistant marks are touched).
 pub fn remove_markers(doc: &mut Document, mut positions: Vec<Pos>) {
     positions.sort();
     positions.dedup();
@@ -319,7 +357,7 @@ pub fn visible_text(para: &Paragraph, a: usize, b: usize) -> String {
 
 /// Make the spans and the bookmarks agree (`docs/authorship-storage.md` §6): a span whose
 /// bookmark is missing or empty is dropped; stray, duplicate and crossing markers go; a
-/// `_MarginAI_` bookmark no span describes is removed. Returns one line per repair.
+/// `_OptimoAI_` bookmark no span describes is removed. Returns one line per repair.
 pub fn reconcile(doc: &mut Document) -> Vec<String> {
     let scan = scan(doc);
     let mut log = scan.notes.clone();
@@ -659,16 +697,35 @@ mod tests {
         assert_eq!(storable("a\u{FFFC}b\tc\nd\u{B}e\r"), "ab\tc\nd\u{FFFD}e\u{FFFD}");
         assert_eq!(hash(""), "cbf29ce484222325");
         assert_eq!(hash("a"), "af63dc4c8601ec8c");
-        assert!(is_mark("_MarginAI_0000abcd") && is_mark("_MarginAI1") && !is_mark("_Ref123") && !is_mark("marginai") && !is_mark("MarginAI"));
+        assert!(is_mark("_OptimoAI_0000abcd") && is_mark("_OptimoAI1") && !is_mark("_Ref123") && !is_mark("optimoai") && !is_mark("OptimoAI"));
+        // Margin's marks (files made before the rename) still count.
+        assert!(is_mark("_MarginAI_0000abcd") && is_mark("_MarginAI1") && !is_mark("marginai") && !is_mark("MarginAI"));
         assert_eq!(mark_name(0x1234_5678).len(), BOOKMARK_PREFIX.len() + 8);
+    }
+
+    #[test]
+    fn margins_marks_are_renamed_to_optimos() {
+        assert_eq!(upgrade_name("_MarginAI_1a2b3c4d").as_deref(), Some("_OptimoAI_1a2b3c4d"));
+        assert_eq!(upgrade_name("_MarginAI1").as_deref(), Some("_OptimoAI_1"));
+        assert_eq!(upgrade_name("_OptimoAI_1a2b3c4d"), None);
+        assert_eq!(upgrade_name("_Ref123"), None);
+        let mut d = doc_with(&["Mist lifts off the river.", "Mine."]);
+        mark(&mut d, 0, 0, 4, "_MarginAI_00000001", "Claude");
+        assert_eq!(upgrade_legacy(&mut d), 2, "both markers");
+        assert_eq!(d.authorship.spans[0].name, "_OptimoAI_00000001");
+        let sc = scan(&d);
+        assert_eq!(sc.ranges.len(), 1);
+        assert_eq!(sc.ranges[0].name, "_OptimoAI_00000001");
+        assert!(reconcile(&mut d).is_empty(), "spans and marks agree after the rename");
+        assert_eq!(upgrade_legacy(&mut d), 0, "a second pass changes nothing");
     }
 
     #[test]
     fn a_long_span_keeps_only_its_hash() {
         let long = "x".repeat(MAX_STORED_TEXT_CHARS + 1);
-        let s = Span::new("_MarginAI_1", "Claude", "m", "t", &long);
+        let s = Span::new("_OptimoAI_1", "Claude", "m", "t", &long);
         assert!(s.text.is_none() && s.len == MAX_STORED_TEXT_CHARS + 1 && s.matches(&long) && !s.matches("y"));
-        let short = Span::new("_MarginAI_2", "Claude", "m", "t", "short");
+        let short = Span::new("_OptimoAI_2", "Claude", "m", "t", "short");
         assert_eq!(short.text.as_deref(), Some("short"));
     }
 
@@ -694,15 +751,15 @@ mod tests {
     #[test]
     fn scan_pairs_markers_and_finds_strays() {
         let mut d = doc_with(&["Hello wide world", "Second paragraph"]);
-        mark(&mut d, 0, 6, 10, "_MarginAI_00000001", "Claude");
+        mark(&mut d, 0, 6, 10, "_OptimoAI_00000001", "Claude");
         let sc = scan(&d);
         assert_eq!(sc.ranges.len(), 1);
         assert_eq!(span_text(&d, &sc.ranges[0]), "wide");
         assert!(sc.stray.is_empty() && sc.notes.is_empty());
         // An end without a start, and a start without an end.
         let p = d.para_mut(StoryRef::Body, &Path::top(1)).unwrap();
-        p.insert_object(0, InlineObject::BookmarkEnd { name: "_MarginAI_00000002".into() }, &CharProps::default()).unwrap();
-        p.insert_object(p.len(), InlineObject::BookmarkStart { name: "_MarginAI_00000003".into() }, &CharProps::default()).unwrap();
+        p.insert_object(0, InlineObject::BookmarkEnd { name: "_OptimoAI_00000002".into() }, &CharProps::default()).unwrap();
+        p.insert_object(p.len(), InlineObject::BookmarkStart { name: "_OptimoAI_00000003".into() }, &CharProps::default()).unwrap();
         let sc = scan(&d);
         assert_eq!(sc.ranges.len(), 1);
         assert_eq!(sc.stray.len(), 2);
@@ -712,25 +769,25 @@ mod tests {
     #[test]
     fn reconcile_drops_missing_collapsed_stale_duplicate_and_crossing_spans() {
         let mut d = doc_with(&["Hello wide world", "Second paragraph", "Third"]);
-        mark(&mut d, 0, 6, 10, "_MarginAI_00000001", "Claude");
+        mark(&mut d, 0, 6, 10, "_OptimoAI_00000001", "Claude");
         // Entry without a bookmark.
-        d.authorship.spans.push(Span::new("_MarginAI_000000aa", "Claude", "m", "t", "gone"));
+        d.authorship.spans.push(Span::new("_OptimoAI_000000aa", "Claude", "m", "t", "gone"));
         // Collapsed bookmark.
-        mark(&mut d, 1, 3, 3, "_MarginAI_00000002", "Claude");
+        mark(&mut d, 1, 3, 3, "_OptimoAI_00000002", "Claude");
         // Bookmark without an entry (stale).
         let p = d.para_mut(StoryRef::Body, &Path::top(2)).unwrap();
-        p.insert_object(5, InlineObject::BookmarkEnd { name: "_MarginAI_000000ff".into() }, &CharProps::default()).unwrap();
-        p.insert_object(0, InlineObject::BookmarkStart { name: "_MarginAI_000000ff".into() }, &CharProps::default()).unwrap();
+        p.insert_object(5, InlineObject::BookmarkEnd { name: "_OptimoAI_000000ff".into() }, &CharProps::default()).unwrap();
+        p.insert_object(0, InlineObject::BookmarkStart { name: "_OptimoAI_000000ff".into() }, &CharProps::default()).unwrap();
         // Same entry twice.
         let dup = d.authorship.spans[0].clone();
         d.authorship.spans.push(dup);
         // A second bookmark with the first's name (pasted copy) later in the document.
         let p = d.para_mut(StoryRef::Body, &Path::top(2)).unwrap();
         let n = p.len();
-        p.insert_object(n, InlineObject::BookmarkEnd { name: "_MarginAI_00000001".into() }, &CharProps::default()).unwrap();
-        p.insert_object(n, InlineObject::BookmarkStart { name: "_MarginAI_00000001".into() }, &CharProps::default()).unwrap();
+        p.insert_object(n, InlineObject::BookmarkEnd { name: "_OptimoAI_00000001".into() }, &CharProps::default()).unwrap();
+        p.insert_object(n, InlineObject::BookmarkStart { name: "_OptimoAI_00000001".into() }, &CharProps::default()).unwrap();
         let log = reconcile(&mut d);
-        assert_eq!(d.authorship.spans.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), ["_MarginAI_00000001"]);
+        assert_eq!(d.authorship.spans.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), ["_OptimoAI_00000001"]);
         let sc = scan(&d);
         assert_eq!(sc.ranges.len(), 1, "only the first pair of the kept span remains: {sc:?}");
         assert!(sc.stray.is_empty());
@@ -745,14 +802,14 @@ mod tests {
         t.body.push(para_block(Paragraph::new()));
         t.para_mut(StoryRef::Body, &Path::top(0))
             .unwrap()
-            .insert_object(0, InlineObject::BookmarkStart { name: "_MarginAI_00000009".into() }, &CharProps::default())
+            .insert_object(0, InlineObject::BookmarkStart { name: "_OptimoAI_00000009".into() }, &CharProps::default())
             .unwrap();
         let cell = Path(vec![1, 0, 0, 0]);
         t.para_mut(StoryRef::Body, &cell)
             .unwrap()
-            .insert_object(2, InlineObject::BookmarkEnd { name: "_MarginAI_00000009".into() }, &CharProps::default())
+            .insert_object(2, InlineObject::BookmarkEnd { name: "_OptimoAI_00000009".into() }, &CharProps::default())
             .unwrap();
-        t.authorship.spans.push(Span::new("_MarginAI_00000009", "Claude", "m", "t", "BeforeIn"));
+        t.authorship.spans.push(Span::new("_OptimoAI_00000009", "Claude", "m", "t", "BeforeIn"));
         let log = reconcile(&mut t);
         assert!(t.authorship.is_empty() && scan(&t).ranges.is_empty(), "{log:?}");
         assert!(log.iter().any(|l| l.contains("crosses")), "{log:?}");
@@ -761,7 +818,7 @@ mod tests {
     #[test]
     fn attribution_counts_ai_people_pending_and_edits() {
         let mut d = doc_with(&["Hello wide world", "Mine alone"]);
-        mark(&mut d, 0, 6, 10, "_MarginAI_00000001", "Claude");
+        mark(&mut d, 0, 6, 10, "_OptimoAI_00000001", "Claude");
         let a = attribution(&d, &|n| n == "Claude");
         assert_eq!((a.total_chars, a.ai_chars, a.pending_chars, a.people_chars()), (26, 4, 0, 22));
         let p0 = a.para(StoryRef::Body, &Path::top(0)).unwrap();
@@ -797,13 +854,13 @@ mod tests {
         let mut d = doc_with(&["abc", "def"]);
         d.para_mut(StoryRef::Body, &Path::top(0))
             .unwrap()
-            .insert_object(1, InlineObject::BookmarkStart { name: "_MarginAI_00000001".into() }, &CharProps::default())
+            .insert_object(1, InlineObject::BookmarkStart { name: "_OptimoAI_00000001".into() }, &CharProps::default())
             .unwrap();
         d.para_mut(StoryRef::Body, &Path::top(1))
             .unwrap()
-            .insert_object(2, InlineObject::BookmarkEnd { name: "_MarginAI_00000001".into() }, &CharProps::default())
+            .insert_object(2, InlineObject::BookmarkEnd { name: "_OptimoAI_00000001".into() }, &CharProps::default())
             .unwrap();
-        d.authorship.spans.push(Span::new("_MarginAI_00000001", "Claude", "m", "t", "bcde"));
+        d.authorship.spans.push(Span::new("_OptimoAI_00000001", "Claude", "m", "t", "bcde"));
         let a = attribution(&d, &|_| false);
         // The paragraph break counts as a person's character between (the stored text had none).
         assert_eq!(a.ai_chars, 4);
