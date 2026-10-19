@@ -257,7 +257,7 @@ The GitHub repo and the project folder are renamed separately (by the coordinato
   so the next save writes only the new names and a second save is byte-stable
   (`a_margin_file_keeps_its_spans_and_is_saved_in_optimos_format`, `margins_marks_are_renamed_to_optimos`).
   Outside assistants can't forge either prefix.
-- **Scripts:** `scripts/optimo-run.sh` (the old `scripts/margin-run.sh` is a two-line wrapper);
+- **Scripts:** `scripts/optimo-run.sh` (the old `scripts/margin-run.sh` wrapper was removed 2026-10-19);
   `packaging/macos/optimo-icon.sh`; the authorship spike harness writes the new names.
 - **Icon, concept A:** `assets/app-icon/optimo.svg` — Margin's blue tile (same shape, size, `#0A64D6`)
   with a white "O": left half a solid round-capped stroke, right half round dots ("solid you, dotted
