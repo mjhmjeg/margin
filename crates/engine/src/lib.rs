@@ -12,6 +12,7 @@ pub mod assistant_source;
 pub mod authorship;
 pub mod catalog;
 pub mod cmd;
+pub mod cowriter;
 pub mod file_access;
 pub mod io;
 mod io_ext;
