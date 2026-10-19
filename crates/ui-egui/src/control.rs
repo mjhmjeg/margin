@@ -294,13 +294,13 @@ const LOOKING: [&str; 7] = ["engine.commands", "document.inspect", "ui.inspect",
 ///   forced on under the configured assistant name; the person's tracking state and author come
 ///   back afterwards.
 /// * Files a command reads (`file.open`, `insert.picture`, …) must lie inside the folders of
-///   Settings › Assistant › "Read files in these folders" (none: no file is read): the MCP
+///   Settings › Co-writer › "Read files in these folders" (none: no file is read): the MCP
 ///   sandbox's read root, with the person's list ([`wordcraft_engine::file_access`]). What
 ///   commands write is as it was.
 /// * With "Add and reply to comments" off, `review.newComment` / `review.reply` are refused.
 pub fn handle_outside(app: &mut WordApp, ctx: &egui::Context, req: &ControlRequest) -> Outcome {
     if !app.ui.assistant.allow_outside {
-        return err("assistants outside Optimo are not allowed to connect: the person has turned this off in Settings › Assistant");
+        return err("assistants outside Optimo are not allowed to connect: the person has turned this off in Settings › Co-writer");
     }
     let name = app.ui.assistant.name();
     crate::assistant_link::sync_names(&app.ui.assistant);

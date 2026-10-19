@@ -92,7 +92,7 @@ fn pane_label(id: &str) -> &'static str {
         "language" => "Language",
         "accessibility" => "Accessibility",
         "advanced" => "Advanced",
-        "agents" if crate::skin::on() => "Assistant",
+        "agents" if crate::skin::on() => "Co-writer",
         "agents" => "Agents",
         _ => "General",
     }
@@ -439,7 +439,7 @@ fn agents(ui: &mut Ui) {
     ui.label(tl!("Every command is available to scripts and AI agents: run `wordcraft-cli mcp` for an MCP server, or start the app with `--control <port>` for the JSON control channel."));
 }
 
-/// Options › Assistant (Optimo, HANDOFF §9): the master switch (S1), provider and model (S2), the
+/// Options › Co-writer (Optimo, HANDOFF §9): the master switch (S1), provider and model (S2), the
 /// API key (S3), the name assistants write under (S4), the rule that their edits are always
 /// suggestions, comments and the folders they may read (S5), and whether assistants outside
 /// Optimo may connect (S6).
@@ -447,12 +447,12 @@ fn assistant(app: &mut WordApp, ui: &mut Ui) {
     use crate::mac_controls as mc;
     // The connected count changes on other threads: look again soon.
     ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
-    mc::section(ui, "Assistant", |ui| {
-        if mc::switch(ui, "Let an assistant work in Optimo", app.ui.assistant.enabled) {
+    mc::section(ui, "Co-writer", |ui| {
+        if mc::switch(ui, "Let a co-writer work in Optimo", app.ui.assistant.enabled) {
             let on = !app.ui.assistant.enabled;
             let _ = app.run("ui.assistant", json!({"enabled": on}));
         }
-        mc::hint(ui, "Off: nothing is sent anywhere, and the Assistant panel and the Ask rows are hidden. You bring the provider and its key.");
+        mc::hint(ui, "Off: nothing is sent anywhere, and ⌘Y has no Co-writer group or Ask row. You bring the provider and its key.");
     });
     assistant_provider(app, ui);
     assistant_key(app, ui);
@@ -492,11 +492,11 @@ fn assistant(app: &mut WordApp, ui: &mut Ui) {
             let on = !app.ui.assistant.comments;
             let _ = app.run("ui.assistant", json!({"comments": on}));
         }
-        mc::hint(ui, "Off: Optimo's assistant adds no comments, and assistants outside Optimo are refused new comments and replies.");
+        mc::hint(ui, "Off: the co-writer adds no notes, and assistants outside Optimo are refused new comments and replies.");
         ui.add_space(6.0);
         assistant_folders(app, ui);
     });
-    mc::section(ui, "Outside Margin", |ui| {
+    mc::section(ui, "Outside Optimo", |ui| {
         if mc::switch(ui, "Allow assistants outside Optimo to connect", app.ui.assistant.allow_outside) {
             let on = !app.ui.assistant.allow_outside;
             let _ = app.run("ui.assistant", json!({"allowOutside": on}));
@@ -572,7 +572,7 @@ fn assistant_folders(app: &mut WordApp, ui: &mut Ui) {
     });
     mc::hint(
         ui,
-        "Optimo's assistant can check facts against files in these folders, and assistants outside Optimo can read files only from them. Nothing is ever written, and links that lead out of a folder are not followed. No folders: no file access.",
+        "Optimo's co-writer can check facts against files in these folders, and assistants outside Optimo can read files only from them. Nothing is ever written, and links that lead out of a folder are not followed. No folders: no file access.",
     );
 }
 

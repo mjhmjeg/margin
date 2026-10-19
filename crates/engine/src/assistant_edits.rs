@@ -1078,7 +1078,7 @@ pub fn apply(s: &mut Session, name: &str, scope: &ScopeText, edits: &[Edit]) -> 
         edits
     } else {
         for e in edits.iter().filter(|e| e.kind == EditKind::Comment) {
-            out.log.push(format!("Skipped “{}”: comments by assistants are off in Settings › Assistant.", short(&e.quote)));
+            out.log.push(format!("Skipped “{}”: comments by assistants are off in Settings › Co-writer.", short(&e.quote)));
         }
         kept = edits.iter().filter(|e| e.kind != EditKind::Comment).cloned().collect();
         &kept

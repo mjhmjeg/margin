@@ -1,5 +1,5 @@
 //! A source file for "Check facts against a file…" (HANDOFF §6 K4, step A4): read-only text from
-//! a file inside the folders the person allowed in Settings › Assistant.
+//! a file inside the folders the person allowed in Settings › Co-writer.
 //!
 //! * **Folders.** The same check as the MCP sandbox's read root ([`crate::file_access`]), with
 //!   the person's list as the roots: the path is made absolute, its links are followed, and it
@@ -71,7 +71,7 @@ fn read_bytes(_roots: &std::sync::Arc<AutomationRoots>, path: &str) -> Result<Ve
 /// Read the file at `path`, which must lie inside `folders`.
 pub fn read(path: &str, folders: &[String]) -> Result<SourceText, String> {
     if folders.is_empty() {
-        return Err("no folders are allowed: add one in Settings › Assistant first".into());
+        return Err("no folders are allowed: add one in Settings › Co-writer first".into());
     }
     let ext = std::path::Path::new(path).extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).unwrap_or_default();
     if !EXTS.contains(&ext.as_str()) {

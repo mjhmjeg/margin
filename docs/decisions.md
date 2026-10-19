@@ -337,3 +337,68 @@ toolbar field (K) and the old Search Commands dialog.
 **Alternatives rejected.** Keeping the old dialog for Classic (two searches to maintain);
 dropping Repeat's key entirely (Martijn chose ⇧⌘Y).
 
+
+## 2026-10-19 — Optimo O3: co-writer engine (OPTIMO.md §0, §4)
+
+**Context.** O3 is the co-writer's infrastructure: one verb runner, guards that enforce the five
+product rules in code, Ask from ⌘Y, the margin-note component, presence, and the retirement of
+phase 8's Assistant panel (Martijn, 2026-10-18: retire the panel, keep its settings; the rules
+bind the in-app co-writer only, outside assistants over MCP keep their access). O4–O9 each add
+one verb in parallel sessions, so the plug-in point must be small and stable.
+
+**Decision.**
+- **Runner in the engine** (`crates/engine/src/cowriter/`): `Verb` (the seven verbs + Ask),
+  `Output` (Comment, Replacement, HeadingMove, HeadingInsert, Footnote, Quote, FirstLine,
+  FormatChange), `prompt(verb, call)` → the model prompt (or `None` without a model),
+  `run(verb, call, reply)` → guarded outputs, `apply(...)` → lands them through
+  `run_as_assistant`. The network stays in the UI's background job (`crates/assistant`, Mistral
+  via chat/completions); the engine never talks to a provider.
+- **One file per verb, all present now.** `alternatives.rs`, `check.rs`, `format.rs`, `read.rs`,
+  `research.rs`, `structure.rs`, `stuck.rs` are stubs (`AVAILABLE = false`, functions return
+  "arrives in a later version"). A phase replaces its own file and sets `AVAILABLE = true`; no
+  shared file changes (⌘Y lists `available()` verbs, the keys dispatch them, the runner calls the
+  file). Options are a JSON object the verb reads itself. `format::COMMANDS` (the commands a
+  format change may run) lives in the verb's file.
+- **Guards** (`guard`, run by both `run` and `apply`): the §4 output table per verb; new words —
+  none for Read/Check/Structure/Format, an alternative may not have more sentences than the
+  selected text (and no more than 2× its words + 8), a first line is one sentence ≤ 40 words, a
+  heading ≤ 12 words, a finding one sourced sentence ≤ 60 words (rule 4: title or address
+  required); at most 50 outputs. Format for me runs inside `keeping_words`: the body's words
+  before and after are compared after normalising typographic quotes, ellipses, dashes,
+  whitespace and list markers at line starts; a difference restores the edit snapshot (document,
+  selection, undo) and says how many words would have changed (rule 5). Every refusal is a line
+  in the run's report; nothing refused changes the document.
+- **Ask = notes only** (rule 1): a notes-only system prompt, at most 8 notes, the existing JSON
+  edit protocol and its defensive reader; rewrites and insertions the model sends anyway become
+  `Replacement`/`FirstLine` outputs that the guard refuses for Ask, so they are reported, not
+  dropped silently. Notes land as comments by the AI author, kind "Note".
+- **Shortcuts:** Alternatives ⌥⌘A; Read as a reader ⌥⌘R and Format for me ⌥⌘T on macOS only
+  (Registered / Trademark sign elsewhere); Structure **⌃⌥⌘S** (⌥⌘S is Split, Word's key);
+  Research **⇧⌥⌘F** (⌥⌘F is Footnote). A test keeps them clear of every registry command.
+- **Margin notes** (`margin_notes.rs`): AI comments in the right desk margin, 268 wide, dotted
+  rule, kind / text / Done · Remove, level with the anchor and pushed down on collisions; the
+  last run's summary first; a 320 pt sheet when the desk is too narrow. In the Optimo layout the
+  co-writer's notes never become balloons (they also no longer force the markup area open);
+  people's comments keep balloons or tags. The Co-writer toggle and the quiet markers open the
+  margin; a run that leaves notes opens it; Review stays closed. Opening the margin closes
+  Review and Format (one thing on the right).
+- **⌘Y:** the Co-writer group (landed verbs, then "Ask the co-writer…") above the chips; typed
+  text gets "Ask the co-writer: “…”", first when nothing matches or it reads as a sentence. The
+  scope chip now names what an ask is about: the selection, else "This section “…”" (the
+  2026-10-13 incident's default), instead of "Whole document". Quick asks and the Ask mode (⇥)
+  are gone: they asked for rewrites.
+- **Retired:** the Assistant panel (composer, work log, suggestion rows, accept/reject from the
+  panel, "Check facts against a file…" picker; `ui.assistant.suggestion` and `.facts`). Kept:
+  Settings, now **Settings › Co-writer** ("Let a co-writer work in Optimo"), the provider/key/
+  folders, `assistant_source` in the engine (O6's Check will use it), and Review's grouping of a
+  multi-piece AI replacement (now fed by the co-writer's runs, for O5). New control command
+  `ui.assistant.run {"verb": …}`; `ui.assistant.panel` toggles the margin view.
+- **Presence:** "Co-writer is reading… · Stop" in the bottom line; the page caret stays.
+
+**Alternatives rejected.** A trait object per verb registered in a list (one shared line per
+phase, merge conflicts between parallel sessions); provider tool-calling for structured output
+(differs per provider; the JSON protocol already survives Mistral's quirks); counting "new words"
+by diffing against the document (an alternative legitimately reuses the person's words, so
+sentences are the honest unit for rule 1); keeping the quick asks as notes (their names promise
+rewrites); dropping the scope chip's selection wording (the chip is now the ask's scope, so it
+must say the truth).

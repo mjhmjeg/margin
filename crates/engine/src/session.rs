@@ -304,7 +304,7 @@ pub struct Session {
     pub registry: Arc<Registry>,
     /// Author name for comments and tracked changes.
     pub author: String,
-    /// Settings › Assistant › "Add and reply to comments": when false, assistants (the built-in
+    /// Settings › Co-writer › "Add and reply to comments": when false, assistants (the built-in
     /// one and the ones outside the app) may not add comments or replies
     /// ([`crate::assistant::denied`]). The host sets it; the person's own commands ignore it.
     pub assistant_comments: bool,

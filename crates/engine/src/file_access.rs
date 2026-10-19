@@ -79,7 +79,7 @@ impl AutomationRoots {
         Ok(Some(Arc::new(Self { read, write, write_free: false, read_hint: "" })))
     }
 
-    /// The desktop app's roots for assistants outside it (Settings › Assistant › "Read files in
+    /// The desktop app's roots for assistants outside it (Settings › Co-writer › "Read files in
     /// these folders"): reads are confined to `folders` (none: nothing may be read), writes are
     /// left as they are. A folder that can't be opened (gone, not a folder) is skipped and named
     /// in the second part of the result.
@@ -100,7 +100,7 @@ impl AutomationRoots {
             read,
             write: None,
             write_free: true,
-            read_hint: " (the person allows folders in Settings › Assistant › Read files in these folders)",
+            read_hint: " (the person allows folders in Settings › Co-writer › Read files in these folders)",
         };
         (Arc::new(roots), skipped)
     }
@@ -412,7 +412,7 @@ mod tests {
         // No folders: nothing is read, and the refusal says where to allow some.
         let (none, _) = AutomationRoots::for_app(&[]);
         let e = none.check(&s(base.join("in/a.docx")), Access::Read).unwrap_err();
-        assert!(e.contains("read authority is absent") && e.contains("Settings › Assistant"), "{e}");
+        assert!(e.contains("read authority is absent") && e.contains("Settings › Co-writer"), "{e}");
         // The listing: files of the right type, not hidden.
         std::fs::write(base.join("in/.hidden.txt"), "x").unwrap();
         std::fs::write(base.join("in/b.txt"), "x").unwrap();

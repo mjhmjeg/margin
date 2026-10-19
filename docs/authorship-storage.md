@@ -166,7 +166,7 @@ stored** (hash only above 10,000 characters per span).
   on creation (Word or a person pressing Enter inside one can make them span two paragraphs
   later; that stays valid).
 - Who is an assistant is decided in **one place**: `Session::is_assistant_author`, over the list
-  `Session::assistant_authors` (the configured name, synced from Settings › Assistant, plus every
+  `Session::assistant_authors` (the configured name, synced from Settings › Co-writer, plus every
   name an assistant has written under in the session — `Session::enter_assistant` records it) with
   one rule, `authorship::name_matches` (trimmed, case-insensitive). The UI's
   `review_panel::is_assistant` uses the same rule over the same list. Changing how assistants
@@ -221,7 +221,7 @@ compared. A second save of an unchanged document writes identical bytes.
 time of acceptance and the accepted text (which is in the document anyway). Never a prompt, a
 key, a file path, the scope that was sent, or the work log. The model id is stored by default
 (it is not a secret; it says which model wrote the text); a person who does not want it leaves
-the model unset in Settings › Assistant, and an outside assistant's model is unknown anyway
+the model unset in Settings › Co-writer, and an outside assistant's model is unknown anyway
 (empty).
 
 **Other formats** (odt, rtf, md, html, txt, tex, pdf, png): authorship is dropped — the copy is

@@ -24,7 +24,6 @@ pub mod a11y;
 pub mod a11y_pane;
 pub mod assistant;
 pub mod assistant_link;
-pub mod assistant_panel;
 pub mod authorship_view;
 pub mod backstage;
 pub mod canvas;
@@ -34,6 +33,7 @@ pub mod colors;
 pub mod command_field;
 pub mod content_controls;
 pub mod control;
+pub mod cowriter;
 pub mod credits;
 pub mod desktop_theme;
 pub mod dialogs;
@@ -65,6 +65,7 @@ pub mod mac_controls;
 pub mod mac_home;
 pub mod mac_menu;
 pub mod mac_ui;
+pub mod margin_notes;
 pub mod mini_toolbar;
 pub mod objects;
 pub mod options;
@@ -265,7 +266,7 @@ pub struct UiState {
     pub update_fields_before_print: bool,
     /// The custom dictionary (File › Options › Proofing, Add to Dictionary), kept between runs.
     pub dictionary: Vec<String>,
-    /// File › Options › Assistant (Optimo): the assistant's author name and whether assistants
+    /// File › Options › Co-writer (Optimo): the assistant's author name and whether assistants
     /// outside Optimo may connect.
     pub assistant: assistant::AssistantPrefs,
 }
@@ -453,10 +454,10 @@ pub struct WordApp {
     pub(crate) outline_prev_tab: Option<String>,
     /// Zotero commands in flight (`ui.zotero.*`).
     pub zotero: zotero::ZoteroLink,
-    /// Settings › Assistant at work: keychain, model lists, connection tests (`ui.assistant.*`).
+    /// Settings › Co-writer at work: keychain, model lists, connection tests (`ui.assistant.*`).
     pub assistant_link: assistant_link::AssistantLink,
-    /// The Assistant panel and the built-in assistant's asks (`ui.assistant.ask` …).
-    pub assistant_panel: assistant_panel::AssistantPanel,
+    /// The in-app co-writer's runs and its margin view (`ui.assistant.ask` …).
+    pub cowriter: cowriter::CoWriter,
     /// The egui context, once the first frame has run (background work wakes the UI with it).
     pub(crate) ctx: Option<egui::Context>,
     /// Read Aloud: the start of the sentence the caret was last moved to, and the last error shown.
@@ -551,7 +552,7 @@ impl WordApp {
             outline_prev_tab: None,
             zotero: zotero::ZoteroLink::default(),
             assistant_link: assistant_link::AssistantLink::new(key_store),
-            assistant_panel: Default::default(),
+            cowriter: Default::default(),
             ctx: None,
             read_aloud_at: None,
             read_aloud_error: None,
@@ -1030,9 +1031,6 @@ impl WordApp {
             }
             "ui.commandField" => {
                 command_field::open(self, s("query").unwrap_or(""));
-                if p.get("ask").and_then(Value::as_bool) == Some(true) {
-                    self.command_field.mode = command_field::Mode::Ask;
-                }
                 json!({"open": self.command_field.open})
             }
             "ui.dialog" => {
@@ -1178,18 +1176,13 @@ impl WordApp {
                 }
                 json!({"caretAnimation": self.ui.caret_animation})
             }
-            // File › Options › Assistant (HANDOFF §9): see [`assistant_link::settings_command`]. The
+            // File › Options › Co-writer (HANDOFF §9): see [`assistant_link::settings_command`]. The
             // person's command: assistants themselves are refused it
             // (`wordcraft_engine::assistant::denied`). The key is write-only.
             "ui.assistant" => return Some(assistant_link::settings_command(self, p)),
             "ui.assistant.test" | "ui.assistant.models" => return assistant_link::command(self, id, p),
-            "ui.assistant.ask"
-            | "ui.assistant.facts"
-            | "ui.assistant.stop"
-            | "ui.assistant.panel"
-            | "ui.assistant.log"
-            | "ui.assistant.suggestion" => {
-                return assistant_panel::command(self, id, p);
+            "ui.assistant.ask" | "ui.assistant.run" | "ui.assistant.stop" | "ui.assistant.panel" | "ui.assistant.log" => {
+                return cowriter::command(self, id, p);
             }
             "ui.startScreen" => {
                 // File › Options › General › Start-up (#766): `value` true or false turns showing
@@ -1439,7 +1432,7 @@ impl WordApp {
         self.drain_control(ctx);
         zotero::poll(self, ctx);
         assistant_link::poll(self);
-        assistant_panel::poll(self);
+        cowriter::poll(self);
         read_aloud::poll(self, ctx);
         self.clear_stale_change_picture();
         let _ = self.poll_file_dialog();
@@ -1613,9 +1606,7 @@ impl WordApp {
                 let _legacy_icons = icons::Legacy::enter();
                 chrome::status_bar(self, ui);
             }
-            if mac && assistant_panel::visible(self) {
-                assistant_panel::show(self, ui);
-            } else if mac && self.ui.optimo.inspector && !self.session.view.comments_pane {
+            if mac && self.ui.optimo.inspector && !self.session.view.comments_pane {
                 mac_ui::inspector(self, ui);
             }
             panes::show(self, ui);
@@ -1629,7 +1620,6 @@ impl WordApp {
         command_field::show_box(self, &ctx);
         #[cfg(not(target_arch = "wasm32"))]
         file_browser::show(self, &ctx);
-        assistant_panel::show_file_picker(self, &ctx);
         colors::show(self, &ctx);
         zotero::show_alert(self, &ctx);
         read_aloud::show(self, &ctx);

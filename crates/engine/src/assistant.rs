@@ -24,11 +24,11 @@ pub fn denied(s: &Session, id: &str, params: &Value, assistant: &str) -> Option<
     match id {
         _ if id.starts_with("review.accept") || id.starts_with("review.reject") => no("only the person reviewing accepts or rejects changes"),
         "review.trackChanges" => no("changes by assistants are always tracked"),
-        "file.setAuthor" => no("the author of an assistant's changes is set in Settings › Assistant"),
+        "file.setAuthor" => no("the author of an assistant's changes is set in Settings › Co-writer"),
         "file.options" if params.get("author").is_some() || params.get("initials").is_some() => {
-            no("the author of an assistant's changes is set in Settings › Assistant")
+            no("the author of an assistant's changes is set in Settings › Co-writer")
         }
-        // Settings, provider, key, switch, connection tests and model lists (Settings › Assistant).
+        // Settings, provider, key, switch, connection tests and model lists (Settings › Co-writer).
         _ if id == "ui.assistant" || id.starts_with("ui.assistant.") || id.starts_with("assistant.") => {
             no("assistant settings, keys and connections belong to the person")
         }
@@ -41,9 +41,9 @@ pub fn denied(s: &Session, id: &str, params: &Value, assistant: &str) -> Option<
             no("authorship marks are written only when the person accepts a suggestion")
         }
         "review.newComment" | "review.reply" if !s.assistant_comments => {
-            no("the person has turned off comments by assistants in Settings › Assistant")
+            no("the person has turned off comments by assistants in Settings › Co-writer")
         }
-        "review.editComment" if !s.assistant_comments => no("the person has turned off comments by assistants in Settings › Assistant"),
+        "review.editComment" if !s.assistant_comments => no("the person has turned off comments by assistants in Settings › Co-writer"),
         "review.deleteComment" | "review.editComment" => {
             let own = params
                 .get("id")

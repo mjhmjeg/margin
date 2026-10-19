@@ -203,7 +203,7 @@ fn save_prefs(app: &WordApp) {
 /// through the system's PDF viewer (`print`, #15), the system clipboard's text, formatted copies,
 /// pictures and format names (`clipboard`, #45, #584, #687, #833), the system's animation setting
 /// (`animations`), making WordCraft the default app for Word documents (`default_apps`, #295),
-/// and the system keychain for assistant API keys (Settings › Assistant).
+/// and the system keychain for assistant API keys (Settings › Co-writer).
 fn services(file_dialog: file_dialogs::Hook, ctx: &egui::Context) -> Services {
     Services {
         file_dialog: Some(file_dialog),

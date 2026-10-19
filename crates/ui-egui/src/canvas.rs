@@ -286,11 +286,18 @@ pub fn markup_width(app: &WordApp) -> f32 {
     // Changes Options can put every revision inline (`Session::balloons_shown`).
     let s = &app.session;
     let m = &s.prefs.markup;
-    let comments = m.comments && !s.doc.comments.is_empty();
+    // In the Optimo layout the co-writer's notes live in the desk margin (O3), not in balloons.
+    let comments = m.comments && s.doc.comments.values().any(|c| !in_desk_margin(app, &c.author));
     let formats = m.formatting && wordcraft_engine::cmd::review::has_format_changes(&s.doc);
     let moves = m.insertions_deletions && wordcraft_engine::cmd::moves::has_moves(&s.doc);
     let deletions = s.revisions_in_balloons() && wordcraft_engine::cmd::review::has_deletions(&s.doc);
     if s.balloons_shown() && (comments || formats || moves || deletions) { 216.0 } else { 0.0 }
+}
+
+/// Whether a comment by `author` is drawn in the desk margin (a co-writer note in the Optimo
+/// layout: quiet marker or margin note) rather than as a balloon.
+fn in_desk_margin(app: &WordApp, author: &str) -> bool {
+    crate::mac_ui::active(app) && crate::review_panel::is_assistant(author)
 }
 
 /// A page dimension (points) safe to lay out: finite, at least 1 pt, at most `cap`.
@@ -1003,8 +1010,10 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         app.canvas.page_rects = rects.clone();
         balloons(app, ui, &painter, &rects, &layout, geo.scale);
         comment_tags(app, ui, &painter, &rects, &layout, geo.scale);
+        // O3: the co-writer's notes in the right desk margin while its margin view is open.
+        crate::margin_notes::paint(app, ui, &painter, &rects, &layout, geo.scale);
         // A5: where the built-in assistant is working (removed when it stops).
-        crate::assistant_panel::paint_presence(app, &painter, &rects, &layout, geo.scale);
+        crate::cowriter::paint_presence(app, &painter, &rects, &layout, geo.scale);
         // V1 + V3: the authorship pill and the chips beside paragraphs.
         crate::authorship_view::paint(app, ui, &painter, &rects, &layout, geo.scale);
         // Find › Reading Highlight.
@@ -1318,7 +1327,7 @@ fn balloons(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[Re
     let comments = if m.comments { wordcraft_engine::cmd::review::comment_list(&app.session) } else { Vec::new() };
     for (id, pos) in comments {
         let Some(pos) = pos else { continue };
-        if app.session.doc.comments.get(&id).is_some_and(is_reply) {
+        if app.session.doc.comments.get(&id).is_some_and(|c| is_reply(c) || in_desk_margin(app, &c.author)) {
             continue;
         }
         let Some(c) = layout.caret_on(&pos, app.session.page_hint) else { continue };
@@ -1480,9 +1489,11 @@ fn balloons(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[Re
 /// author's initial: filled for a person, outlined for the assistant. Shown where there are no
 /// balloons (the Review panel lists the comments); a click opens the panel on that comment.
 fn comment_tags(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[Rect], layout: &DocLayout, scale: f32) {
-    if !crate::mac_ui::active(app) || markup_width(app) > 0.0 || !app.session.prefs.markup.comments {
+    if !crate::mac_ui::active(app) || !app.session.prefs.markup.comments {
         return;
     }
+    // People's comments have balloons when the markup area shows; the co-writer's notes never do.
+    let balloons = markup_width(app) > 0.0;
     let people = crate::review_panel::authors(&app.session.doc);
     let clip = ui.clip_rect();
     // (page, y, id) of each top-level comment, top first. The co-writer's open notes are not
@@ -1508,9 +1519,13 @@ fn comment_tags(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: 
             }
             continue;
         }
-        tags.push((cp.page, cp.top + cp.height / 2.0, id));
+        if !balloons {
+            tags.push((cp.page, cp.top + cp.height / 2.0, id));
+        }
     }
-    quiet_markers(app, ui, painter, rects, layout, scale, &mut notes);
+    if !app.cowriter.margin {
+        quiet_markers(app, ui, painter, rects, layout, scale, &mut notes);
+    }
     tags.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
     let mut last: Option<(usize, f32)> = None;
     let mut clicked: Option<u32> = None;
@@ -1572,7 +1587,7 @@ struct Note {
 
 /// W3: beside each paragraph with co-writer notes, in the desk right of the page: a 14 pt dotted
 /// line in the assistant colour + "2 notes" in `text_dim`. Nothing else while you type; a click
-/// opens them.
+/// opens the margin view (O3).
 fn quiet_markers(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[Rect], layout: &DocLayout, scale: f32, notes: &mut [Note]) {
     let t = Tokens::get(ui.ctx());
     let m = crate::skin::OptimoTokens::get(ui.ctx());
@@ -1591,7 +1606,8 @@ fn quiet_markers(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects:
             cy = ly + 20.0;
         }
         last = Some((n.page, cy));
-        let x = pr.max.x + 20.0;
+        // Beside the balloons when people's comments have them.
+        let x = pr.max.x + markup_width(app) * scale + 20.0;
         let label = if n.count == 1 { tl!("1 note").to_string() } else { crate::i18n::fmt(tl!("{n} notes"), &[("n", &n.count.to_string())]) };
         let g = painter.layout_no_wrap(label.clone(), regular(crate::skin::UI_SIZE), t.text_dim);
         let r = Rect::from_min_size(pos2(x, cy - 9.0), vec2(8.0 + g.size().x, 18.0));
@@ -1606,8 +1622,8 @@ fn quiet_markers(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects:
             clicked = Some(n.first);
         }
     }
-    if let Some(id) = clicked {
-        crate::review_panel::open_on_comment(app, id);
+    if clicked.is_some() {
+        crate::mac_ui::set_margin(app, true);
     }
 }
 
@@ -2496,13 +2512,10 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
     item(ui, app, "Paragraph…", "ui.dialog", json!({"name": "paragraph"}));
     item(ui, app, "Link…", "ui.dialog", json!({"name": "link"}));
     item(ui, app, "New Comment", "review.newComment", json!({}));
-    // K4: the command field in Ask mode, scoped to the selection. Hidden until an assistant is on.
-    if crate::review_panel::assistant_enabled() && crate::mac_ui::active(app) {
-        let label = crate::i18n::fmt(tl!("Ask {name}…"), &[("name", &crate::review_panel::shown_assistant_name())]);
-        if ui.button(label).clicked() {
-            crate::command_field::open_ask(app);
-            ui.close();
-        }
+    // O3: ⌘Y, scoped to the selection, for an ask (notes in the margin). Hidden until a co-writer is on.
+    if crate::review_panel::assistant_enabled() && crate::mac_ui::active(app) && ui.button(tl!("Ask the co-writer…")).clicked() {
+        crate::command_field::open_ask(app);
+        ui.close();
     }
     if !wordcraft_engine::cmd::fields::selected(&app.session).is_empty() {
         ui.separator();
