@@ -178,6 +178,7 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `docs/design-handoff/phase-O2/anything-typed-light.png` | Optimo fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Optimo O2 ⌘Y Anything (2026-10-15) |
 | `docs/design-handoff/phase-O3/anything-ask-dark.png` | Optimo fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Optimo O3 co-writer (2026-10-19) |
 | `docs/design-handoff/phase-O3/anything-ask-light.png` | Optimo fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Optimo O3 co-writer (2026-10-19) |
+| `docs/design-handoff/phase-O3/live-mistral-light.png` | Optimo fork contributors | screenshot of this app's own interface, rendered by `ui_shot` (live Mistral Large 4 notes) | MIT OR Apache-2.0 | Optimo O3 co-writer (2026-10-19) |
 | `docs/design-handoff/phase-O3/anything-cowriter-dark.png` | Optimo fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Optimo O3 co-writer (2026-10-19) |
 | `docs/design-handoff/phase-O3/anything-cowriter-light.png` | Optimo fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Optimo O3 co-writer (2026-10-19) |
 | `docs/design-handoff/phase-O3/margin-notes-dark.png` | Optimo fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Optimo O3 co-writer (2026-10-19) |

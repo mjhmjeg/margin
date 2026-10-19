@@ -42,7 +42,11 @@ fn instruction(c: &Call) -> Result<String, String> {
 
 pub(super) fn prompt(c: &Call) -> Result<Option<Prompt>, String> {
     let instruction = instruction(c)?;
-    Ok(Some(Prompt { system: system(c.name), user: edits::user_message(&instruction, c.scope, &edits::nonce()), max_tokens: 4096 }))
+    Ok(Some(Prompt {
+        system: system(c.name),
+        user: edits::user_message(&instruction, c.scope, &edits::nonce()),
+        max_tokens: edits::output_budget(c.scope.text.chars().count()),
+    }))
 }
 
 pub(super) fn read(_c: &Call, reply: Option<Reply>) -> Result<Ran, String> {

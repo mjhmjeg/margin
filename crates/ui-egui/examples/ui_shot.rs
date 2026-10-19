@@ -9,6 +9,7 @@
 //! background work such as a Zotero session). The window is 1440×900 pt at 2× and opens the sample
 //! document unless the first line is `{"empty": true}`; `{"empty": true, "startScreen": true}`
 //! starts the way the desktop app does with nothing to open (File › Home, #766).
+//! `{"keychain": true}` reads assistant keys from the system keychain, for a live co-writer run.
 
 use wordcraft_engine::Session;
 use wordcraft_ui_egui::{ControlRequest, Services, WordApp};
@@ -26,7 +27,13 @@ fn main() {
     } else {
         wordcraft_engine::sample::sample_document()
     };
-    let mut app = WordApp::new(Session::new(doc), Services::default()).with_control(rx);
+    // `{"keychain": true}` on any line: assistant keys from the system keychain (live co-writer
+    // runs; macOS asks the person once), else an empty in-memory store.
+    let mut services = Services::default();
+    if lines.iter().any(|l| l.get("keychain").and_then(|v| v.as_bool()) == Some(true)) {
+        services.key_store = Some(std::sync::Arc::new(wordcraft_assistant::keys::SystemKeys::default()));
+    }
+    let mut app = WordApp::new(Session::new(doc), services).with_control(rx);
     app.integrated_titlebar = true;
     if lines.first().is_some_and(|l| l.get("startScreen").is_some()) {
         app.start_screen();
