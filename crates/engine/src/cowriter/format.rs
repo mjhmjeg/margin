@@ -131,7 +131,9 @@ pub(super) fn read(c: &Call, reply: Option<Reply>) -> Result<Ran, String> {
     if !why.is_empty() {
         report = format!("{why} · {report}");
     }
-    Ok(Ran { report, outputs: found.outputs, lines: found.checks })
+    let mut outputs = found.outputs;
+    outputs.extend(found.checks);
+    Ok(Ran { report, outputs, lines: Vec::new() })
 }
 
 /// Land one FormatChange: its command once per target (a selection), or once where it is, as
@@ -189,10 +191,10 @@ pub struct Options {
     pub number_headings: bool,
 }
 
-/// What [`detect`] found: the outputs in landing order, and "Check:" lines.
+/// What [`detect`] found: the format changes in landing order, and "Check" notes.
 pub struct Found {
     pub outputs: Vec<Output>,
-    pub checks: Vec<String>,
+    pub checks: Vec<Output>,
 }
 
 /// One top-level paragraph of the scope, as the rules see it.
@@ -636,9 +638,6 @@ pub fn detect(s: &Session, scope: &ScopeText, look: &Look, o: &Options) -> Found
             typo.push(json!({"from": pos(l.i, a), "to": pos(l.i, b), "with": w}));
         }
         check_words(l, &mut checks);
-        if (heading_ks.contains(&k) || Some(k) == title) && l.text.trim_end().ends_with('.') && checks.len() < MAX_CHECKS {
-            checks.push(format!("Check: the heading “{}” ends with a full stop.", clip(&l.text)));
-        }
     }
     for (k, l) in lines.iter().enumerate() {
         // A line that would be a heading but for its full stop.
@@ -650,7 +649,7 @@ pub fn detect(s: &Session, scope: &ScopeText, look: &Look, o: &Options) -> Found
             && !in_table(k)
             && checks.len() < MAX_CHECKS
         {
-            checks.push(format!("Check: “{}” looks like a heading, but ends with a full stop.", clip(&l.text)));
+            checks.push(check(l.text.trim(), "It looks like a heading, but ends with a full stop: remove it and Format for me can make it one."));
         }
     }
     if !typo.is_empty() {
@@ -757,23 +756,27 @@ fn mark_first(outputs: &mut [Output]) {
     }
 }
 
-fn clip(s: &str) -> String {
-    let t = s.trim();
-    let c: String = t.chars().take(50).collect();
-    if t.chars().count() > 50 { format!("{c}…") } else { c }
+/// A "Check" note on `quote` (an exact quote of the document): what would change words is
+/// pointed at, never done.
+fn check(quote: &str, text: &str) -> Output {
+    Output::Comment { anchor: quote.to_string(), kind: "Check".into(), text: text.into(), options: Vec::new() }
 }
 
-/// A doubled word ("the the"): a Check line, never a change.
-fn check_words(l: &Line, checks: &mut Vec<String>) {
-    let w: Vec<String> = l.text.split_whitespace().map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase()).collect();
+/// A doubled word ("the the"): a Check note on the two words as written.
+fn check_words(l: &Line, checks: &mut Vec<Output>) {
+    let base = l.text.as_ptr() as usize;
+    // Each word with its byte offset in the line (split_whitespace gives subslices of it).
+    let w: Vec<(usize, &str)> = l.text.split_whitespace().map(|w| (w.as_ptr() as usize - base, w)).collect();
+    let bare = |w: &str| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
     for pair in w.windows(2) {
-        if let [a, b] = pair
-            && !a.is_empty()
-            && a == b
-            && a.chars().any(char::is_alphabetic)
+        if let [(a, x), (b, y)] = pair
             && checks.len() < MAX_CHECKS
+            && !bare(x).is_empty()
+            && bare(x) == bare(y)
+            && bare(x).chars().any(char::is_alphabetic)
+            && let Some(quote) = l.text.get(*a..b + y.len())
         {
-            checks.push(format!("Check: “{a} {b}” in “{}” — a doubled word? Format for me never changes words.", clip(&l.text)));
+            checks.push(check(quote, "A doubled word? Format for me never changes words."));
         }
     }
 }

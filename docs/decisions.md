@@ -422,14 +422,15 @@ Martijn's decisions: preset looks plus looks people save; Mistral is the model; 
   de-CH/fr/it-CH/rm, „ “ for de/cs/sk/pl, “ ” otherwise; ’ for apostrophes), `...` → `…`,
   ` - ` → ` – `, double spaces → one; title in the header and a page number in the footer
   (whole document, when it has neither). A doubled word or a would-be heading ending in a full
-  stop is a "Check:" line in the run's summary, never a change.
+  stop is a "Check" note (a comment by the AI author on the exact quote), never a change: the
+  coordinator allowed Comment outputs for Format for me (`Verb::allows`, the second mod.rs line).
 - **Landing.** One output per rule, each one whitelisted command over a list of `targets`, run
   with `run_as_assistant` (tracked, AI author); all joined into **one undo step**
   (`join_next_undo`). Two new engine commands keep text changes inside rule 5:
   `format.typography` (character swaps; refuses any edit whose `same_words` differ, and joins a
   paragraph only to an *empty* next one, so words can't run together after accepting) and
   `format.clearFonts`. `text.insert`/`text.delete` stay off the whitelist.
-- **Identity check** (the one mod.rs change, coordinator-approved): `keeping_words` compares the
+- **Identity check** (coordinator-approved): `keeping_words` compares the
   body as it reads with every tracked change accepted (`final_body`: tracked deletions out), so a
   tracked typographic swap passes and a tracked word change still fails; someone's pending
   deletion from before the run counts the same before and after.
@@ -450,7 +451,7 @@ Martijn's decisions: preset looks plus looks people save; Mistral is the model; 
   only, name ≤ 40 characters, sizes and spacing clamped); written via a temporary file.
 - **View** (`crates/ui-egui/src/format_view.rs`): right margin — "Formatted by your co-writer",
   the lock row "Your words: 0 changed · N kept", the Look switcher and saved looks, What changed
-  with Show (selects the first spot, flashes them all), the three options, Check lines, Undo all
+  with Show (selects the first spot, flashes them all), the three options, Undo all
   · One by one (opens Review) as links and Keep as the button (three buttons don't fit 256 pt).
   The co-writer's formatting changes no longer get balloons in the Optimo layout (like its notes):
   the view sums them up and Review lists them. Left desk margin — the 264 wide Before thumbnail of the page
@@ -465,8 +466,7 @@ step, and Undo all covers it). The converted table keeps the borders `table.from
 it, so the Look Table's colour and bold header row don't show yet. The live Mistral look guess
 was not exercised from the build session: the control channel is an outside assistant and may not
 start the co-writer (O3), so it needs a person's ⌥⌘T; the guess is tested against a mock provider. The Look switcher's style-table changes are undo steps, not tracked
-changes (as in Word). Check notes are summary lines, not anchored comments, because §4's table
-gives Format for me only formatting outputs (asked the coordinator; can become comments later).
+changes (as in Word).
 
 **Alternatives rejected.** Whitelisting `text.insert` for typography (any text could pass the
 command guard; only the end-of-run check would stop it); one output per change (the runner caps a

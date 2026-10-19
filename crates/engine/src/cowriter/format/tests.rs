@@ -313,10 +313,22 @@ fn the_model_only_guesses_the_look() {
 fn word_changes_become_check_lines() {
     let mut s = session(&["Notes", "Book the the kiln early.", "Costs.", "Members pay monthly."]);
     fmt(&mut s, 2, "format.bold", json!({"value": true}));
-    let (ran, _) = format_run(&mut s, ScopeKind::Document, json!({"look": "clean"}));
-    assert!(ran.lines.iter().any(|l| l.contains("“the the”")), "{:?}", ran.lines);
-    assert!(ran.lines.iter().any(|l| l.contains("Costs.")), "{:?}", ran.lines);
+    let (ran, landed) = format_run(&mut s, ScopeKind::Document, json!({"look": "clean"}));
+    let notes: Vec<(&str, &str)> = ran
+        .outputs
+        .iter()
+        .filter_map(|o| match o {
+            Output::Comment { anchor, kind, .. } => Some((anchor.as_str(), kind.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(notes, [("the the", "Check"), ("Costs.", "Check")]);
+    assert_eq!(landed.notes.len(), 2, "{:?}", landed.lines);
+    assert!(landed.notes.iter().all(|(_, k)| k == "Check"));
+    let c = s.doc.comments.values().map(|c| c.author.clone()).collect::<Vec<_>>();
+    assert_eq!(c, [NAME, NAME], "notes by the AI author");
     assert_eq!(para(&s, 1).final_text(), "Book the the kiln early.", "never fixed");
+    assert_eq!(landed.words.map(|w| w.1), Some(0));
 }
 
 #[test]

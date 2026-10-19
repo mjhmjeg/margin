@@ -138,7 +138,7 @@ impl Verb {
             Verb::Structure => matches!(kind, K::HeadingMove | K::HeadingInsert | K::Comment),
             Verb::Research => matches!(kind, K::Footnote | K::Quote | K::Comment),
             Verb::Stuck => matches!(kind, K::Comment | K::FirstLine),
-            Verb::FormatForMe => kind == K::FormatChange,
+            Verb::FormatForMe => matches!(kind, K::FormatChange | K::Comment),
         }
     }
 }

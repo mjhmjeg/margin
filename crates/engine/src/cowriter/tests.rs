@@ -64,7 +64,7 @@ fn every_verb_gives_only_the_outputs_its_row_allows() {
         (Verb::Structure, &[K::Comment, K::HeadingMove, K::HeadingInsert]),
         (Verb::Research, &[K::Comment, K::Footnote, K::Quote]),
         (Verb::Stuck, &[K::Comment, K::FirstLine]),
-        (Verb::FormatForMe, &[K::FormatChange]),
+        (Verb::FormatForMe, &[K::Comment, K::FormatChange]),
         (Verb::Ask, &[K::Comment]),
     ];
     for (verb, allowed) in table {
