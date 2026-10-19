@@ -144,6 +144,8 @@ fn load_user_dictionary(app: &mut WordApp) {
         wordcraft_proof::load_user_dictionary(&p);
         app.session.user_dict_path = Some(p);
     }
+    // O4: Format for me's saved looks, next to ui.json.
+    app.cowriter.looks_file = wordcraft_control_key::settings_dir().map(|b| b.join("looks.json"));
 }
 
 /// Runs without preferences (`WORDCRAFT_NO_PREFS`, agents' test runs) neither read nor write them.

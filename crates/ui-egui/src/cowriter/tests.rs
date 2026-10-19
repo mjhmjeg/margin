@@ -347,7 +347,7 @@ fn a_long_document_is_trimmed_and_the_log_says_so() {
 #[test]
 fn hostile_params_never_panic() {
     let mut a = app_with(&DOC);
-    for id in ["ui.assistant.ask", "ui.assistant.run", "ui.assistant.stop", "ui.assistant.panel", "ui.assistant.log"] {
+    for id in ["ui.assistant.ask", "ui.assistant.run", "ui.assistant.stop", "ui.assistant.panel", "ui.assistant.log", "ui.assistant.formatView"] {
         for p in [
             json!(null),
             json!(1),
@@ -372,7 +372,7 @@ fn verbs_that_have_not_landed_refuse_to_run() {
     let m = mock(&answer(json!([])), 1, Duration::ZERO);
     let mut a = app_with(&DOC);
     connect(&mut a, &m);
-    for v in wordcraft_engine::cowriter::Verb::GROUP {
+    for v in wordcraft_engine::cowriter::Verb::GROUP.into_iter().filter(|v| !v.available()) {
         let e = a.run("ui.assistant.run", json!({"verb": v.id()})).unwrap_err();
         assert!(e.contains("later version"), "{e}");
     }
@@ -757,4 +757,38 @@ fn detection_works_on_another_mac_and_for_legacy_plain_names() {
     assert!(crate::review_panel::is_assistant("Mistral") && crate::review_panel::is_assistant("claude"), "legacy names, and the old default");
     assert!(!crate::review_panel::is_assistant("Aiko"));
     assert_eq!(crate::review_panel::initial("AI · mistral"), 'M');
+}
+
+/// O4: the model only guesses the look; the formatting is the rules'.
+#[test]
+fn format_for_me_asks_the_model_for_the_look_only() {
+    let m = mock(r#"{"look": "report", "reads_like": "Reads like a handbook"}"#, 2, Duration::ZERO);
+    let mut a = app_with(&["Studio rules", "THE KILN", "Book it a week ahead.", "- Clay", "- Glaze"]);
+    connect(&mut a, &m);
+    a.run("ui.assistant.run", json!({"verb": "format"})).unwrap();
+    wait(&mut a);
+    assert_eq!(m.hits(), 1);
+    let body = m.body();
+    assert!(body["max_tokens"].as_u64().is_some_and(|n| n <= 100), "{body}");
+    let v = a.run("ui.assistant.formatView", json!({})).unwrap();
+    assert_eq!((v["look"].as_str(), v["guess"].as_str()), (Some("report"), Some("Reads like a handbook")));
+    assert_eq!(v["words"]["changed"], 0);
+    // Switching the look sends nothing.
+    a.run("ui.assistant.run", json!({"verb": "format", "look": "letter", "lookOnly": true})).unwrap();
+    assert_eq!(m.hits(), 1);
+}
+
+/// O4: no answer about the look still formats, with Clean, and says why.
+#[test]
+fn format_for_me_without_an_answer_uses_clean() {
+    let mut a = app_with(&["Studio rules", "THE KILN", "Book it a week ahead."]);
+    a.run("ui.assistant", json!({"provider": "other", "baseUrl": "http://127.0.0.1:9/v1", "model": "mock-1", "enabled": true})).unwrap();
+    crate::assistant_link::poll(&mut a);
+    a.run("ui.assistant.run", json!({"verb": "format"})).unwrap();
+    wait(&mut a);
+    let v = a.run("ui.assistant.formatView", json!({})).unwrap();
+    assert_eq!(v["look"], "clean");
+    let log = log(&mut a);
+    let lines = log["entries"][0]["lines"].to_string();
+    assert!(lines.contains("Clean"), "{lines}");
 }

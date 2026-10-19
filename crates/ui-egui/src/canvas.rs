@@ -288,7 +288,10 @@ pub fn markup_width(app: &WordApp) -> f32 {
     let m = &s.prefs.markup;
     // In the Optimo layout the co-writer's notes live in the desk margin (O3), not in balloons.
     let comments = m.comments && s.doc.comments.values().any(|c| !in_desk_margin(app, &c.author));
-    let formats = m.formatting && wordcraft_engine::cmd::review::has_format_changes(&s.doc);
+    // Like its notes, the co-writer's formatting is summed up in the desk margin (O4), not in balloons.
+    let formats = m.formatting
+        && wordcraft_engine::cmd::review::has_format_changes(&s.doc)
+        && wordcraft_engine::cmd::review::format_changes(s).iter().any(|(_, author, _)| !in_desk_margin(app, author));
     let moves = m.insertions_deletions && wordcraft_engine::cmd::moves::has_moves(&s.doc);
     let deletions = s.revisions_in_balloons() && wordcraft_engine::cmd::review::has_deletions(&s.doc);
     if s.balloons_shown() && (comments || formats || moves || deletions) { 216.0 } else { 0.0 }
@@ -1334,7 +1337,7 @@ fn balloons(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[Re
         by_page.entry(c.page).or_default().push((c.x, c.top + c.height, Balloon::Comment(id), pos));
     }
     let formats = if m.formatting { wordcraft_engine::cmd::review::format_changes(&app.session) } else { Vec::new() };
-    for (pos, author, props) in formats.into_iter().take(500) {
+    for (pos, author, props) in formats.into_iter().filter(|(_, a, _)| !in_desk_margin(app, a)).take(500) {
         let Some(c) = layout.caret_on(&pos, app.session.page_hint) else { continue };
         let what = crate::panes::describe_props(&props).join(", ");
         let text = if what.is_empty() { tl!("Formatted").to_string() } else { format!("{}: {what}", tl!("Formatted")) };
