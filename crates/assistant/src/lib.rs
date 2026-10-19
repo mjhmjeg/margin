@@ -41,7 +41,7 @@ pub enum Connector {
     OpenAi,
 }
 
-/// The providers offered in Settings › Assistant, in the order shown (S2).
+/// The providers offered in Settings › Co-writer, in the order shown (S2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ProviderId {
     Mistral,

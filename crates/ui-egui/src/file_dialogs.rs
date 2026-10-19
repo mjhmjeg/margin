@@ -25,7 +25,7 @@ pub enum FileDialogRequest {
     Open { purpose: String },
     /// Pick a path to save to, given a suggested file name.
     Save { name: String },
-    /// Pick a folder (Settings › Assistant › Read files in these folders).
+    /// Pick a folder (Settings › Co-writer › Read files in these folders).
     Folder,
 }
 

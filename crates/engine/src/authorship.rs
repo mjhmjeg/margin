@@ -5,7 +5,7 @@
 //! * **Who is an assistant.** An author name starting with [`AI_PREFIX`] ("AI · "): every
 //!   assistant writes under one ([`with_ai_prefix`]), so this holds on any computer and in other
 //!   word processors. Older suggestions written without the prefix are recognised by the legacy
-//!   list, [`Session::assistant_authors`]: names the host syncs (Settings › Assistant's earlier
+//!   list, [`Session::assistant_authors`]: names the host syncs (Settings › Co-writer's earlier
 //!   names, persisted on this Mac) plus every name an assistant has written under in this
 //!   session, compared by [`name_matches`]. Every decision goes through
 //!   [`Session::is_assistant_author`] ([`is_assistant_name`]); nothing compares names elsewhere.
@@ -25,7 +25,7 @@ use wordcraft_doc::{Document, Path, Pos, StoryRef};
 
 use crate::{CmdError, Session};
 
-/// The assistant's author name while the host has set none (Settings › Assistant S4).
+/// The assistant's author name while the host has set none (Settings › Co-writer S4).
 pub const DEFAULT_ASSISTANT_NAME: &str = "Claude";
 
 /// The prefix every assistant author name carries: "AI", a space, a middle dot, a space.

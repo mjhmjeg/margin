@@ -30,7 +30,7 @@ Whatever an assistant sends to a running app over the control port (`wordcraft-c
 or a raw client) arrives as a suggestion, enforced in the app and not in the client:
 
 - A command that changes the document runs with track changes forced on and the author set to the
-  assistant name from Options › Assistant ("Claude" by default); comments it adds carry that name
+  assistant name from Options › Co-writer ("Claude" by default); comments it adds carry that name
   too. Your own tracking state and name come back afterwards.
 - An assistant cannot accept or reject changes (`review.accept*`, `review.reject*`), turn tracking
   off, change the author or the assistant settings (`review.trackChanges`, `file.setAuthor`,
@@ -41,7 +41,7 @@ or a raw client) arrives as a suggestion, enforced in the app and not in the cli
   `ui.key`, `ui.menu`, …) and `app.quit` are refused too, since they could press Accept. Looking
   (`document.inspect`, `ui.inspect`, `ui.screenshot`, `ui.render`, `engine.commands`) and read-only
   commands are allowed.
-- Options › Assistant › "Allow assistants outside Optimo to connect" (on by default; the port only
+- Options › Co-writer › "Allow assistants outside Optimo to connect" (on by default; the port only
   exists when the app was started with `--control`) refuses every request while off and drops the
   connected assistants; "Disconnect" drops them without turning it off.
 - The headless `wordcraft-cli mcp` (no app) edits its own session and files directly and is not
@@ -89,7 +89,7 @@ config works across the suite) keep the agent to the folders you give it:
 The flags confine the headless server; `--connect` with them is an error, since the server would
 otherwise talk to an app that isn't confined. The desktop app has no flags: a running app
 (`wordcraft --control`, reached through `wordcraft-cli mcp --connect`) confines what assistants
-*read* to the folders listed in Settings › Assistant › "Read files in these folders" (the same
+*read* to the folders listed in Settings › Co-writer › "Read files in these folders" (the same
 check as the read root, with that list: several folders, none by default, so no file can be read
 until one is added; a refused path says so). What commands write is not limited by that list. The
 person's own commands are never held to it, and assistants cannot change the list (`ui.assistant`

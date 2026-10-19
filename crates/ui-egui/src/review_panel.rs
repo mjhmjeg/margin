@@ -23,12 +23,12 @@ use crate::theme::Tokens;
 /// Every right-hand panel (Format, Review, later Assistant) is this wide.
 pub const PANEL_W: f32 = 320.0;
 
-/// The name an assistant's changes and comments are written under when Settings › Assistant has
+/// The name an assistant's changes and comments are written under when Settings › Co-writer has
 /// none.
 pub const DEFAULT_ASSISTANT_NAME: &str = crate::assistant::DEFAULT_NAME;
 
 thread_local! {
-    // The configured name (Settings › Assistant, S4), copied from the settings each frame and when
+    // The configured name (Settings › Co-writer, S4), copied from the settings each frame and when
     // they change, so code without the app can read it.
     static ASSISTANT_NAME: std::cell::RefCell<String> = std::cell::RefCell::new(DEFAULT_ASSISTANT_NAME.to_string());
 }
@@ -43,14 +43,14 @@ pub fn set_assistant_name(name: &str) {
     });
 }
 
-/// The configured assistant author name (Settings › Assistant, S4): the one place the Review
+/// The configured assistant author name (Settings › Co-writer, S4): the one place the Review
 /// panel's marks and the command field read it.
 pub fn assistant_author_name() -> String {
     ASSISTANT_NAME.with(|n| n.borrow().clone())
 }
 
 thread_local! {
-    // Settings › Assistant S1 and a usable provider, copied each frame by `assistant_link::poll`.
+    // Settings › Co-writer S1 and a usable provider, copied each frame by `assistant_link::poll`.
     static ASSISTANT_ON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
@@ -59,7 +59,7 @@ pub fn set_assistant_enabled(on: bool) {
     ASSISTANT_ON.set(on);
 }
 
-/// Whether an assistant is switched on (Settings › Assistant, S1) with a provider it can use (a
+/// Whether an assistant is switched on (Settings › Co-writer, S1) with a provider it can use (a
 /// key where one is needed). While false, the command field hides its Ask rows and the context
 /// menu its "Ask…".
 pub fn assistant_enabled() -> bool {
@@ -67,7 +67,7 @@ pub fn assistant_enabled() -> bool {
 }
 
 thread_local! {
-    // Names assistants wrote under without the "AI · " prefix (Settings › Assistant's legacy
+    // Names assistants wrote under without the "AI · " prefix (Settings › Co-writer's legacy
     // list, persisted on this Mac), copied with the configured name.
     static LEGACY_NAMES: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(vec![DEFAULT_ASSISTANT_NAME.to_string()]);
 }
@@ -397,10 +397,10 @@ fn build_items(app: &mut WordApp) -> Vec<Item> {
 
 /// Review shows an assistant edit made of several word-level pieces as one row (what the edit
 /// replaced → what it put there), accepted and rejected together. The pieces are found the way
-/// the Assistant panel finds them; after a restart (the panel's log is per session) they show
+/// the co-writer finds them; after a restart (its runs are kept per session) they show
 /// one row each.
 fn group_assistant_edits(app: &WordApp, items: Vec<Item>) -> Vec<Item> {
-    let groups = crate::assistant_panel::pending_groups(app);
+    let groups = crate::cowriter::pending_groups(app);
     if groups.is_empty() {
         return items;
     }
@@ -416,7 +416,7 @@ fn group_assistant_edits(app: &WordApp, items: Vec<Item>) -> Vec<Item> {
                 _ => None,
             })
             .collect();
-        let Some((i, j)) = crate::assistant_panel::find_group(&list, &parts) else { continue };
+        let Some((i, j)) = crate::cowriter::find_group(&list, &parts) else { continue };
         let (Some(&first), Some(&last)) = (idx.get(i), idx.get(j)) else { continue };
         let end = match items.get(last) {
             Some(Item::Change(c)) => c.b.clone(),
@@ -435,19 +435,6 @@ fn group_assistant_edits(app: &WordApp, items: Vec<Item>) -> Vec<Item> {
         }
     }
     items
-}
-
-/// The change rows Review shows, as (deleted, inserted).
-#[cfg(test)]
-pub(crate) fn shown_change_rows(app: &mut WordApp) -> Vec<(String, String)> {
-    let items = build_items(app);
-    group_assistant_edits(app, items)
-        .into_iter()
-        .filter_map(|it| match it {
-            Item::Change(c) => Some((c.deleted, c.inserted)),
-            Item::Comment(_) => None,
-        })
-        .collect()
 }
 
 /// The items, recounted when the document changes.
@@ -517,28 +504,6 @@ fn resolve_change(app: &mut WordApp, c: &ChangeRow, accept: bool) {
     let _ = app.run("select.range", json!({"anchor": c.a, "focus": c.b}));
     let _ = app.run(if accept { "review.accept" } else { "review.reject" }, json!({}));
     app.canvas.want_focus = true;
-}
-
-/// The pending changes by `author` (a replacement counts as one), in document order:
-/// (deleted, inserted, start, end). The Assistant panel's suggestions find their change on the
-/// page this way, so edits made since don't lose track of it.
-pub(crate) fn changes_by(app: &mut WordApp, author: &str) -> Vec<(String, String, Pos, Pos)> {
-    build_items(app)
-        .into_iter()
-        .filter_map(|it| match it {
-            Item::Change(c) if c.author == author => Some((c.deleted, c.inserted, c.a, c.b)),
-            _ => None,
-        })
-        .collect()
-}
-
-/// Accept or reject the change `a..b` the way the Review panel's buttons do (the person's own
-/// action, never an assistant's).
-pub(crate) fn resolve_range(app: &mut WordApp, a: &Pos, b: &Pos, accept: bool) -> Result<(), String> {
-    app.run("select.range", json!({"anchor": a, "focus": b}))?;
-    app.run(if accept { "review.accept" } else { "review.reject" }, json!({}))?;
-    app.canvas.want_focus = true;
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------------------------

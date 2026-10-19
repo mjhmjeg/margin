@@ -1,4 +1,4 @@
-//! Settings › Assistant S1–S3 at work: the master switch, the provider and its model list, and
+//! Settings › Co-writer S1–S3 at work: the master switch, the provider and its model list, and
 //! the API key (HANDOFF §9).
 //!
 //! * Keys live in the system keychain ([`Services::key_store`](crate::Services::key_store); in
@@ -182,7 +182,7 @@ fn finish(app: &mut WordApp, answer: Answer) {
 /// Start listing the chosen provider's models (also "Test connection").
 pub fn start(app: &mut WordApp) -> Result<Value, String> {
     if !app.ui.assistant.enabled {
-        return Err("turn on “Let an assistant work in Optimo” first: nothing is sent anywhere while it is off".into());
+        return Err("turn on “Let a co-writer work in Optimo” first: nothing is sent anywhere while it is off".into());
     }
     let p = app.ui.assistant.provider_id();
     if app.assistant_link.busy() {
@@ -444,7 +444,7 @@ pub fn settings_json(app: &mut WordApp) -> Value {
     app.ui.assistant.to_json(has_key, usable)
 }
 
-/// Settings › Assistant: store what is in the key field (the "Save" button and Enter).
+/// Settings › Co-writer: store what is in the key field (the "Save" button and Enter).
 pub fn save_draft_key(app: &mut WordApp) {
     let draft = std::mem::take(&mut app.assistant_link.key_draft);
     match settings_command(app, &json!({"apiKey": draft})) {
@@ -635,7 +635,7 @@ mod tests {
         let mut a = app();
         a.run("ui.assistant", json!({"provider": "other", "baseUrl": base, "apiKey": KEY})).unwrap();
         let e = a.run("ui.assistant.test", json!({})).unwrap_err();
-        assert!(e.contains("Let an assistant work in Optimo"), "{e}");
+        assert!(e.contains("Let a co-writer work in Optimo"), "{e}");
         assert!(a.run("ui.assistant.models", json!({"refresh": true})).is_err());
         assert!(!a.assistant_link.busy());
         std::thread::sleep(std::time::Duration::from_millis(100));
@@ -818,7 +818,6 @@ mod tests {
             assert!(r["error"].as_str().unwrap_or_default().starts_with("not allowed for assistants: "), "{r}");
         }
         assert_eq!(a.ui.assistant, before);
-        assert!(a.assistant_panel.picker.is_none());
         let _ = std::fs::remove_dir_all(base);
     }
 

@@ -123,6 +123,22 @@ fn dispatch(app: &mut WordApp, key: Key, m: Modifiers) -> bool {
         return true;
     }
     let Some(name) = key_name(key) else { return false };
+    // O3: a co-writer verb that has landed, on its own key (`Verb::shortcut`).
+    let pressed = wordcraft_engine::keymap::normalize(&combo(m, name, true));
+    let verb = wordcraft_engine::cowriter::Verb::GROUP
+        .into_iter()
+        .find(|v| v.available() && !v.shortcut().is_empty() && wordcraft_engine::keymap::normalize(v.shortcut()) == pressed);
+    if let Some(v) = verb {
+        let kind = if app.session.sel.is_collapsed() {
+            wordcraft_engine::assistant_edits::ScopeKind::Section
+        } else {
+            wordcraft_engine::assistant_edits::ScopeKind::Selection
+        };
+        if let Err(e) = crate::cowriter::start(app, v, kind, json!({})) {
+            app.status(e);
+        }
+        return true;
+    }
     let reg = app.session.registry.clone();
     if let Some(spec) = app.session.keymap.resolve(&reg, &combo(m, name, true)) {
         let _ = app.run(spec.id, json!({}));

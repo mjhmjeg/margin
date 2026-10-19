@@ -1,11 +1,16 @@
 //! O2 (OPTIMO.md §3): ⌘Y Anything. A 640-wide box centred over the page: one input row with the
 //! scope chip, then — with nothing typed — Format the selection (chips) and Go to (headings), and
-//! once you type one ranked list across every registry command, the headings and recent files.
-//! It replaced phase 6's toolbar field and the old Search Commands dialog, in both layouts.
+//! once you type one ranked list across the co-writer's verbs, every registry command, the
+//! headings and recent files. It replaced phase 6's toolbar field and the old Search Commands
+//! dialog, in both layouts.
+//!
+//! O3: with a co-writer set up, the empty box starts with the Co-writer group (only the verbs
+//! that have landed, `Verb::available`), and typed text gets the "Ask the co-writer: “…”" row —
+//! on top when nothing matches or the text reads like a sentence. An ask comes back as notes in
+//! the margin, never as inserted text (rule 1).
 //!
 //! Everything the box lists is a row ([`Row`]), built by pure functions ([`search`], [`rows`],
-//! [`results`]) so the ranking is tested without a window. The co-writer rows (Ask, quick asks,
-//! the Commands / Ask toggle) stay hidden until O3 brings them back as margin notes.
+//! [`results`]) so the ranking is tested without a window.
 
 use std::collections::BTreeMap;
 
@@ -33,21 +38,6 @@ const MAX_COUNTED: usize = 300;
 /// ⌘Y is the key labelled Y (not Undo's position, which is Z there). This constant, the Help
 /// menu's accelerator and `mac_ui::shortcuts` are all that name it.
 pub const SHORTCUT_LABEL: &str = "⌘Y";
-
-/// The ask the quick-ask rows send; the label is what the row shows.
-pub const QUICK_ASKS: [(&str, &str); 4] = [
-    ("Shorten", "Shorten this."),
-    ("Fix grammar and spelling", "Fix grammar and spelling."),
-    ("Make it plainer", "Make this plainer."),
-    ("Check facts against a file…", "Check the facts in this against a file."),
-];
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Mode {
-    #[default]
-    Commands,
-    Ask,
-}
 
 /// What an ask is about: the selection captured when the field opened (with its word count),
 /// else the section where the caret is ("This section"). Never the whole document by default.
@@ -77,7 +67,8 @@ pub fn sentences(text: &str) -> usize {
     text.split_terminator(['.', '!', '?', '…']).filter(|s| s.chars().any(char::is_alphanumeric)).count().max(1)
 }
 
-/// Y1: the scope chip: "Selection: 1 sentence" or "Whole document".
+/// The selection's part of the scope chip: "Selection: 1 sentence" (else "Whole document", for
+/// callers without a section).
 pub fn scope_label(scope: Option<&Scope>) -> String {
     match scope {
         Some(s) if s.sentences == 1 => tl!("Selection: 1 sentence").to_string(),
@@ -93,7 +84,6 @@ pub struct CommandField {
     pub open: bool,
     /// Take keyboard focus (and select the text) on the next frame.
     pub focus: bool,
-    pub mode: Mode,
     /// Index of the highlighted row.
     pub sel: usize,
     /// The selection the ask is scoped to, captured when the field opened.
@@ -114,10 +104,10 @@ pub enum Row {
         label: &'static str,
         location: &'static str,
     },
-    /// "Ask Claude “…”" with the typed text.
+    /// "Ask the co-writer: “…”" with the typed text.
     Ask(String),
-    /// A quick ask: label, instruction.
-    Quick(&'static str, &'static str),
+    /// A co-writer verb (O3).
+    Verb(wordcraft_engine::cowriter::Verb),
     /// Go to a heading; `empty`: no text before the next heading.
     Heading {
         path: wordcraft_doc::Path,
@@ -212,47 +202,48 @@ pub fn sentence_like(query: &str) -> bool {
     q.ends_with('?') || q.split_whitespace().count() >= 4
 }
 
-/// The popover's rows. Without the assistant: the matching commands. With it: the "Ask Claude"
-/// row last, or first when nothing matches or the query reads as a sentence; in Ask mode the
-/// quick asks and the ask row only; `files`: a folder is allowed, so "Check facts against a file…" shows.
-pub fn rows(hits: &[&CommandSpec], query: &str, mode: Mode, assistant: bool, files: bool) -> Vec<Row> {
-    let command_rows = hits.iter().map(|c| Row::Command { id: c.id, label: c.label, location: c.location });
-    if !assistant {
-        return command_rows.collect();
-    }
-    let q = query.trim();
-    let ask = (!q.is_empty()).then(|| Row::Ask(q.to_string()));
-    match mode {
-        // What the person typed comes first: ↩ sends it, not a quick ask.
-        Mode::Ask => ask.into_iter().chain(QUICK_ASKS.iter().filter(|(l, _)| files || *l != NEEDS_FILES).map(|(l, i)| Row::Quick(l, i))).collect(),
-        Mode::Commands => {
-            let first = ask.is_some() && (hits.is_empty() || sentence_like(q));
-            let mut out: Vec<Row> = Vec::new();
-            if first {
-                out.extend(ask.clone());
-            }
-            out.extend(command_rows);
-            if !first {
-                out.extend(ask);
-            }
-            out
-        }
-    }
+/// The co-writer's verbs that have landed, in Y2's order.
+pub fn verbs() -> Vec<wordcraft_engine::cowriter::Verb> {
+    wordcraft_engine::cowriter::Verb::GROUP.into_iter().filter(|v| v.available()).collect()
 }
 
-/// Y2 / typing: what the box lists. Nothing typed: the headings (Go to). Typed: the matching
-/// commands (recent and frequent first, as [`search`] ranks them), then matching headings, then
-/// matching recent files.
-// ponytail: three groups in a fixed order, not one score; mix them when people miss headings.
-pub fn results(hits: &[&CommandSpec], query: &str, headings: &[Row], recent: &[String]) -> Vec<Row> {
+/// Typed: the matching verbs, then `rest` (the other matches). With a co-writer (`assistant`),
+/// the "Ask the co-writer" row comes last, or first when nothing else matches or the query reads
+/// as a sentence.
+pub fn rows(verbs: &[wordcraft_engine::cowriter::Verb], query: &str, rest: Vec<Row>, assistant: bool) -> Vec<Row> {
+    let q = query.trim();
+    let lq = crate::i18n::lowercase(q);
+    let mut out: Vec<Row> = verbs
+        .iter()
+        .filter(|v| !lq.is_empty() && (crate::i18n::lowercase(tl!(v.label())).contains(&lq) || v.label().to_lowercase().contains(&q.to_lowercase())))
+        .map(|v| Row::Verb(*v))
+        .collect();
+    out.extend(rest);
+    if !assistant || q.is_empty() {
+        return out;
+    }
+    let ask = Row::Ask(q.to_string());
+    if out.is_empty() || sentence_like(q) {
+        out.insert(0, ask);
+    } else {
+        out.push(ask);
+    }
+    out
+}
+
+/// Y2 / typing: what the box lists. Nothing typed: the headings (Go to; the Co-writer group is
+/// drawn above them). Typed: matching verbs, the matching commands (recent and frequent first, as
+/// [`search`] ranks them), then matching headings, then matching recent files, and the ask row.
+// ponytail: groups in a fixed order, not one score; mix them when people miss headings.
+pub fn results(hits: &[&CommandSpec], query: &str, headings: &[Row], recent: &[String], assistant: bool) -> Vec<Row> {
     let q = crate::i18n::lowercase(query.trim());
     if q.is_empty() {
         return headings.to_vec();
     }
-    let mut out = rows(hits, query, Mode::Commands, false, false);
-    out.extend(headings.iter().filter(|h| matches!(h, Row::Heading { text, .. } if crate::i18n::lowercase(text).contains(&q))).cloned());
-    out.extend(recent.iter().filter(|p| crate::i18n::lowercase(file_name(p)).contains(&q)).map(|p| Row::File(p.clone())));
-    out
+    let mut rest: Vec<Row> = hits.iter().map(|c| Row::Command { id: c.id, label: c.label, location: c.location }).collect();
+    rest.extend(headings.iter().filter(|h| matches!(h, Row::Heading { text, .. } if crate::i18n::lowercase(text).contains(&q))).cloned());
+    rest.extend(recent.iter().filter(|p| crate::i18n::lowercase(file_name(p)).contains(&q)).map(|p| Row::File(p.clone())));
+    rows(&if assistant { verbs() } else { Vec::new() }, query, rest, assistant)
 }
 
 fn file_name(path: &str) -> &str {
@@ -280,14 +271,20 @@ pub fn heading_rows(app: &WordApp) -> Vec<Row> {
     out
 }
 
-/// Quick asks that need folder access (Settings › Assistant S5) stay hidden until a folder is allowed.
-pub const NEEDS_FILES: &str = "Check facts against a file…";
-
-/// Send an ask to the assistant: the Assistant panel opens and shows it working. Scoped to the
-/// selection when the field was opened on one, else the whole document.
+/// Send an ask to the co-writer: notes in the margin. Scoped to the selection when the field was
+/// opened on one, else the section at the caret.
 pub fn submit_ask(app: &mut WordApp, instruction: &str, scope: &Scope) -> Result<(), String> {
     let kind = scope_kind(app, scope);
-    crate::assistant_panel::ask(app, instruction, kind).map(|_| ())
+    crate::cowriter::ask(app, instruction, kind).map(|_| ())
+}
+
+/// What an ask from the box is about, as its row says: "Selection: 1 sentence" or "This section “…”".
+pub fn ask_scope_label(f: &CommandField) -> String {
+    match &f.scope {
+        Some(_) => scope_label(f.scope.as_ref()),
+        None if f.section.is_empty() => tl!("This section").to_string(),
+        None => f.section.clone(),
+    }
 }
 
 /// Selection when one was captured (put back as the live selection first), else This section.
@@ -323,7 +320,6 @@ pub fn open(app: &mut WordApp, query: &str) {
     f.query = query.to_string();
     f.open = true;
     f.focus = true;
-    f.mode = Mode::Commands;
     f.sel = 0;
     f.scroll_y = 0.0;
     capture_scope(app);
@@ -335,10 +331,9 @@ fn capture_scope(app: &mut WordApp) {
     app.command_field.section = if app.command_field.scope.is_none() { section_label(app) } else { String::new() };
 }
 
-/// The context menu's "Ask …": the Co-writer panel, scoped to the selection (⌘Y's ask row
-/// returns in O3, as margin notes).
+/// The context menu's "Ask …": ⌘Y, scoped to the selection, ready for the question.
 pub fn open_ask(app: &mut WordApp) {
-    crate::assistant_panel::set_open(app, true);
+    open(app, "");
 }
 
 fn close(app: &mut WordApp, ctx: &egui::Context) {
@@ -346,7 +341,6 @@ fn close(app: &mut WordApp, ctx: &egui::Context) {
     f.open = false;
     f.focus = false;
     f.query.clear();
-    f.mode = Mode::Commands;
     f.scope = None;
     ctx.memory_mut(|m| m.surrender_focus(egui::Id::new("command_field_edit")));
     app.canvas.want_focus = true;
@@ -359,15 +353,13 @@ fn run_row(app: &mut WordApp, ctx: &egui::Context, row: &Row) {
             let _ = app.run(id, json!({}));
         }
         Row::Ask(text) => ask(app, text),
-        Row::Quick(label, _) if *label == NEEDS_FILES => {
-            // Opens the list of allowed files; the ask is sent when one is picked.
+        Row::Verb(v) => {
             let scope = app.command_field.scope.clone().unwrap_or_default();
             let kind = scope_kind(app, &scope);
-            if let Err(e) = crate::assistant_panel::open_file_picker(app, kind) {
+            if let Err(e) = crate::cowriter::start(app, *v, kind, json!({})) {
                 app.status(e);
             }
         }
-        Row::Quick(_, instruction) => ask(app, instruction),
         Row::Heading { path, .. } => {
             let _ = app.run("caret.set", json!({"pos": wordcraft_doc::Pos { story: wordcraft_doc::StoryRef::Body, path: path.clone(), off: 0 }}));
             app.canvas.nav_to_caret = true;
@@ -407,6 +399,9 @@ enum Pick {
     Row(usize),
     Chip(usize),
     MoreFormat,
+    Verb(wordcraft_engine::cowriter::Verb),
+    /// Back to the field (the Ask row of the group: type the question there).
+    Focus,
 }
 
 /// The ⌘Y box while it is open: centred over the window, 92 below its top (Y1).
@@ -416,8 +411,7 @@ pub fn show_box(app: &mut WordApp, ctx: &egui::Context) {
     }
     let t = Tokens::get(ctx);
     let m = OptimoTokens::get(ctx);
-    // ponytail: the co-writer rows wait for O3 (OPTIMO.md §11: "ask row hidden until O3").
-    let assistant = false;
+    let assistant = crate::review_panel::assistant_enabled();
     let edit_id = egui::Id::new("command_field_edit");
 
     // Keys first, so the text field doesn't also act on them.
@@ -425,7 +419,7 @@ pub fn show_box(app: &mut WordApp, ctx: &egui::Context) {
     let pending = if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         Some(Key::Escape)
     } else if focused {
-        take_keys(ctx, assistant)
+        take_keys(ctx)
     } else {
         None
     };
@@ -442,7 +436,7 @@ pub fn show_box(app: &mut WordApp, ctx: &egui::Context) {
     let typed = !app.command_field.query.trim().is_empty();
     let hits = if typed { search(&reg, &app.command_field.query, usage) } else { Vec::new() };
     let headings = heading_rows(app);
-    let list = results(&hits, &app.command_field.query, &headings, &app.ui.recent);
+    let list = results(&hits, &app.command_field.query, &headings, &app.ui.recent, assistant);
     let f = &mut app.command_field;
     if f.sel >= list.len() {
         f.sel = list.len().saturating_sub(1);
@@ -484,6 +478,9 @@ pub fn show_box(app: &mut WordApp, ctx: &egui::Context) {
                     ui.painter().hline(r.x_range(), r.min.y, Stroke::new(1.0, t.border));
                     egui::Frame::NONE.inner_margin(egui::Margin::symmetric(8, 6)).show(ui, |ui| {
                         if !typed {
+                            if assistant && let Some(p) = cowriter_group(ui, &t) {
+                                pick = Some(p);
+                            }
                             if let Some(p) = format_chips(ui, &t, &m) {
                                 pick = Some(p);
                             }
@@ -511,6 +508,10 @@ pub fn show_box(app: &mut WordApp, ctx: &egui::Context) {
             }
             close(app, ctx);
         }
+        Some(Pick::Verb(v)) => {
+            run_row(app, ctx, &Row::Verb(v));
+        }
+        Some(Pick::Focus) => app.command_field.focus = true,
         Some(Pick::MoreFormat) => {
             close(app, ctx);
             if !app.ui.optimo.inspector {
@@ -527,7 +528,8 @@ fn input_row(app: &mut WordApp, ui: &mut Ui, w: f32, t: &Tokens, edit_id: egui::
     let (r, _) = ui.allocate_exact_size(vec2(w, INPUT_H), Sense::hover());
     let font = mc::font();
     crate::icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 22.0, r.center().y), vec2(17.0, 17.0)), "search", t.text_dim, t.text_dim);
-    let chip = scope_label(app.command_field.scope.as_ref());
+    // What an ask from here is about: the selection, else the section at the caret (O3).
+    let chip = ask_scope_label(&app.command_field);
     let g = ui.painter().layout_no_wrap(chip.clone(), font.clone(), t.text_dim);
     let chip_r = Rect::from_min_max(pos2(r.max.x - 14.0 - g.size().x - 20.0, r.center().y - 11.0), pos2(r.max.x - 14.0, r.center().y + 11.0));
     ui.painter().rect_filled(chip_r, 10.0, t.checked);
@@ -563,6 +565,50 @@ fn input_row(app: &mut WordApp, ui: &mut Ui, w: f32, t: &Tokens, edit_id: egui::
 fn group_title(ui: &mut Ui, title: &str, t: &Tokens) {
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::hover());
     ui.painter().text(pos2(r.min.x + 8.0, r.center().y), Align2::LEFT_CENTER, title, mc::font(), t.text_dim);
+}
+
+/// Y2 "Co-writer": the verbs that have landed, then Ask (type above). Rows 32 high: the name
+/// (168 wide), a one-line description in `text_dim`, the shortcut on the right.
+fn cowriter_group(ui: &mut Ui, t: &Tokens) -> Option<Pick> {
+    use wordcraft_engine::cowriter::Verb;
+    group_title(ui, tl!("Co-writer"), t);
+    let mut pick = None;
+    for v in verbs().into_iter().chain([Verb::Ask]) {
+        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::click());
+        if resp.hovered() {
+            ui.painter().rect_filled(r, 6.0, t.checked);
+        }
+        let font = mc::font();
+        let m = crate::skin::OptimoTokens::get(ui.ctx());
+        crate::icons::paint(
+            ui.painter(),
+            Rect::from_center_size(pos2(r.min.x + 18.0, r.center().y), vec2(15.0, 15.0)),
+            "assistant",
+            m.assistant,
+            m.assistant,
+        );
+        let name = if v == Verb::Ask { tl!("Ask the co-writer…") } else { tl!(v.label()) };
+        let mut job = egui::text::LayoutJob::simple_singleline(name.to_string(), font.clone(), t.text);
+        job.wrap = egui::text::TextWrapping::truncate_at_width(168.0 - 34.0);
+        let g = ui.painter().layout_job(job);
+        ui.painter().galley(pos2(r.min.x + 34.0, r.center().y - g.size().y / 2.0), g, t.text);
+        let desc = if v == Verb::Ask { tl!("Type your question above · notes in the margin") } else { tl!(v.description()) };
+        let shortcut = crate::widgets::key_text(v.shortcut());
+        let sc_w = if shortcut.is_empty() { 0.0 } else { ui.painter().layout_no_wrap(shortcut.clone(), font.clone(), t.text_dim).size().x + 12.0 };
+        if !shortcut.is_empty() {
+            ui.painter().text(pos2(r.max.x - 10.0, r.center().y), Align2::RIGHT_CENTER, &shortcut, font.clone(), t.text_dim);
+        }
+        let mut job = egui::text::LayoutJob::simple_singleline(desc.to_string(), font, t.text_dim);
+        job.wrap = egui::text::TextWrapping::truncate_at_width((r.width() - 178.0 - sc_w).max(40.0));
+        let g = ui.painter().layout_job(job);
+        ui.painter().galley(pos2(r.min.x + 178.0, r.center().y - g.size().y / 2.0), g, t.text_dim);
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, name));
+        if resp.clicked() {
+            pick = Some(if v == Verb::Ask { Pick::Focus } else { Pick::Verb(v) });
+        }
+    }
+    ui.add_space(4.0);
+    pick
 }
 
 /// Y2 "Format the selection": chips 26 high, radius 6, `field_bg`, `border_strong`.
@@ -668,8 +714,10 @@ fn paint_row(app: &WordApp, ui: &mut Ui, row: &Row, highlighted: bool, t: &Token
             (format!("{indent}{text}"), kind.to_string(), String::new(), true)
         }
         Row::File(path) => (file_name(path).to_string(), tl!("Recent file").to_string(), String::new(), true),
-        Row::Ask(text) => (text.clone(), String::new(), String::new(), true),
-        Row::Quick(label, _) => (tl!(label).to_string(), String::new(), String::new(), true),
+        Row::Ask(text) => {
+            (crate::i18n::fmt(tl!("Ask the co-writer: “{text}”"), &[("text", text)]), tl!("Notes in the margin").to_string(), String::new(), true)
+        }
+        Row::Verb(v) => (tl!(v.label()).to_string(), tl!(v.description()).to_string(), crate::widgets::key_text(v.shortcut()), true),
     };
     let ink = if enabled { t.text } else { t.text_dim };
     let sc_w = if shortcut.is_empty() { 0.0 } else { ui.painter().layout_no_wrap(shortcut.clone(), font.clone(), t.text_dim).size().x + 12.0 };
@@ -697,12 +745,11 @@ enum Key {
     Up,
     Down,
     Enter,
-    Tab,
     Escape,
 }
 
 /// Take the box's navigation keys out of this frame's input.
-fn take_keys(ctx: &egui::Context, assistant: bool) -> Option<Key> {
+fn take_keys(ctx: &egui::Context) -> Option<Key> {
     ctx.input_mut(|i| {
         let none = egui::Modifiers::NONE;
         if i.consume_key(none, egui::Key::ArrowDown) {
@@ -711,8 +758,6 @@ fn take_keys(ctx: &egui::Context, assistant: bool) -> Option<Key> {
             Some(Key::Up)
         } else if i.consume_key(none, egui::Key::Enter) {
             Some(Key::Enter)
-        } else if assistant && i.consume_key(none, egui::Key::Tab) {
-            Some(Key::Tab)
         } else {
             None
         }
@@ -793,50 +838,38 @@ mod tests {
         assert!(p.command_counts.len() <= MAX_COUNTED && p.command_recent.len() <= MAX_RECENT);
     }
 
-    /// The assistant rows: absent while it is off; present, ordered, and toggled when on.
+    /// The ask row: absent while no co-writer is set up; last, or first when nothing matches or
+    /// the query reads as a sentence. Only verbs that have landed are listed.
     #[test]
-    fn ask_rows_follow_the_assistant_switch() {
+    fn the_ask_row_follows_the_co_writer_switch() {
         let s = session();
         let bold = search(&s.registry, "bold", NO_USE);
-        assert!(!crate::review_panel::assistant_enabled(), "off until Settings › Assistant");
-        let off = rows(&bold, "bold", Mode::Commands, false, false);
+        let cmds = |h: &[&CommandSpec]| h.iter().map(|c| Row::Command { id: c.id, label: c.label, location: c.location }).collect::<Vec<_>>();
+        assert!(!crate::review_panel::assistant_enabled(), "off until Settings › Co-writer");
+        let off = rows(&[], "bold", cmds(&bold), false);
         assert!(off.iter().all(|r| matches!(r, Row::Command { .. })), "no ask row while off");
-        assert!(rows(&bold, "bold", Mode::Ask, false, false).iter().all(|r| matches!(r, Row::Command { .. })), "no Ask mode while off");
-
-        let on = rows(&bold, "bold", Mode::Commands, true, false);
+        let on = rows(&[], "bold", cmds(&bold), true);
         assert!(matches!(on.last(), Some(Row::Ask(t)) if t == "bold"), "ask row is last");
-        let sentence = rows(&bold, "make the second paragraph shorter", Mode::Commands, true, false);
+        let sentence = rows(&[], "make the second paragraph shorter", cmds(&bold), true);
         assert!(matches!(sentence.first(), Some(Row::Ask(_))), "a sentence puts the ask row first");
-        let none = rows(&[], "zzz", Mode::Commands, true, false);
-        assert_eq!(none, [Row::Ask("zzz".into())], "nothing matches: only the ask row");
-        let ask_mode = rows(&bold, "tighten it", Mode::Ask, true, false);
-        assert!(matches!(ask_mode.first(), Some(Row::Ask(_))), "what was typed comes first: ↩ sends it");
-        assert!(matches!(ask_mode.get(1), Some(Row::Quick("Shorten", _))));
-        assert_eq!(ask_mode.iter().filter(|r| matches!(r, Row::Command { .. })).count(), 0);
+        assert_eq!(rows(&[], "zzz", Vec::new(), true), [Row::Ask("zzz".into())], "nothing matches: only the ask row");
+        assert!(rows(&[], "  ", Vec::new(), true).is_empty(), "nothing typed, no ask");
+        // A verb matches by its name, before the commands.
+        use wordcraft_engine::cowriter::Verb;
+        let v = rows(&[Verb::Alternatives, Verb::FormatForMe], "format", cmds(&bold), true);
+        assert_eq!(v.first(), Some(&Row::Verb(Verb::FormatForMe)));
+        assert!(verbs().iter().all(|v| v.available()), "only landed verbs");
+        assert!(verbs().is_empty(), "O3 lands none of the seven; each phase adds its own");
     }
 
     #[test]
-    fn asking_without_an_assistant_is_an_error_not_a_panic() {
+    fn asking_without_a_co_writer_is_an_error_not_a_panic() {
         let mut app = WordApp::new(session(), crate::Services::default());
         let r = submit_ask(&mut app, "Shorten this.", &Scope { words: 3, ..Default::default() });
-        assert!(r.as_ref().is_err_and(|e| e.contains("Let an assistant work in Optimo")), "{r:?}");
+        assert!(r.as_ref().is_err_and(|e| e.contains("Let a co-writer work in Optimo")), "{r:?}");
         ask(&mut app, "Shorten this.");
-        assert!(app.status_msg.as_ref().is_some_and(|(m, _)| m.contains("Let an assistant work in Optimo")));
-        assert!(!app.assistant_panel.working());
-    }
-
-    #[test]
-    fn the_file_quick_ask_waits_for_folder_access() {
-        let on = rows(&[], "", Mode::Ask, true, false);
-        assert!(on.iter().all(|r| !matches!(r, Row::Quick(l, _) if *l == NEEDS_FILES)), "{on:?}");
-        assert_eq!(on.len(), 3, "Shorten, Fix grammar and spelling, Make it plainer");
-        // With a folder allowed it shows, last of the quick asks (after the typed ask).
-        let with = rows(&[], "tighten it", Mode::Ask, true, true);
-        let labels: Vec<&str> = with.iter().filter_map(|r| if let Row::Quick(l, _) = r { Some(*l) } else { None }).collect();
-        assert_eq!(labels, ["Shorten", "Fix grammar and spelling", "Make it plainer", NEEDS_FILES]);
-        assert!(matches!(with.first(), Some(Row::Ask(_))));
-        // Never while the assistant itself is off.
-        assert!(rows(&[], "", Mode::Ask, false, true).is_empty());
+        assert!(app.status_msg.as_ref().is_some_and(|(m, _)| m.contains("Let a co-writer work in Optimo")));
+        assert!(!app.cowriter.working());
     }
 
     #[test]
@@ -977,6 +1010,7 @@ mod tests {
         h.run_steps(3);
         assert!(!crate::mini_toolbar::visible(h.state()), "the mini toolbar stays out of the box's way");
         assert_eq!(scope_label(h.state().command_field.scope.as_ref()), "Selection: 1 sentence");
+        assert_eq!(ask_scope_label(&h.state().command_field), "Selection: 1 sentence", "the chip");
         assert!(h.query_by_label("Why share a studio?").is_some(), "Go to lists the headings");
         h.get_by_label("Heading 2").click();
         h.run_steps(3);
@@ -993,12 +1027,12 @@ mod tests {
             Row::Heading { path: wordcraft_doc::Path::top(3), text: "Costs".into(), level: 1, empty: true },
         ];
         let recent = ["/tmp/Studio notes.docx".to_string(), "/tmp/other.docx".to_string()];
-        assert_eq!(results(&[], "", &heads, &recent), heads.to_vec(), "nothing typed: Go to");
+        assert_eq!(results(&[], "", &heads, &recent, true), heads.to_vec(), "nothing typed: Go to");
         let hits = search(&s.registry, "studio", NO_USE);
-        let out = results(&hits, "studio", &heads, &recent);
+        let out = results(&hits, "studio", &heads, &recent, false);
         assert!(matches!(out.get(out.len() - 2), Some(Row::Heading { text, .. }) if text == "Studio rules"), "{out:?}");
         assert_eq!(out.last(), Some(&Row::File("/tmp/Studio notes.docx".into())));
-        assert!(!out.iter().any(|r| matches!(r, Row::Ask(_))), "no ask row until O3");
+        assert!(!out.iter().any(|r| matches!(r, Row::Ask(_))), "no ask row without a co-writer");
         assert_eq!(sentences("One. Two! Three?"), 3);
         assert_eq!(sentences("no stop at the end"), 1);
         assert_eq!(sentences("Etc. …"), 1);

@@ -124,11 +124,11 @@ pub fn toolbar(app: &mut WordApp, ui: &mut Ui) {
 
         // Right to left: Co-writer, then the pill.
         let mut x = full.max.x - 12.0;
-        let open = crate::assistant_panel::visible(app);
+        let open = app.cowriter.margin;
         let toggle = cowriter_toggle(ui, pos2(x, cy), open);
         if toggle.clicked() {
-            if crate::review_panel::assistant_enabled() {
-                crate::assistant_panel::set_open(app, !open);
+            if open || crate::review_panel::assistant_enabled() || crate::margin_notes::has_notes(app) {
+                set_margin(app, !open);
             } else {
                 // No co-writer set up yet: Settings › Co-writer.
                 let _ = app.run("ui.dialog", json!({"name": "options", "pane": "agents"}));
@@ -287,6 +287,16 @@ fn consume_exact(i: &mut egui::InputState, m: egui::Modifiers, key: egui::Key) -
     hit
 }
 
+/// Open or close the co-writer's margin view (the Co-writer toggle, the quiet markers). One
+/// thing on the right at a time: opening it closes Review and the Format inspector.
+pub fn set_margin(app: &mut WordApp, on: bool) {
+    app.cowriter.margin = on;
+    if on {
+        app.session.view.comments_pane = false;
+        app.ui.optimo.inspector = false;
+    }
+}
+
 /// The panels that open only from ⌘Y, the menu bar or a shortcut (W2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Panel {
@@ -299,12 +309,12 @@ pub enum Panel {
 pub fn toggle_panel(app: &mut WordApp, panel: Panel) {
     match panel {
         Panel::Format => {
-            let open = app.ui.optimo.inspector && !app.session.view.comments_pane && !crate::assistant_panel::visible(app);
+            let open = app.ui.optimo.inspector && !app.session.view.comments_pane;
             app.ui.optimo.classic_ribbon = false;
             app.ui.optimo.inspector = !open;
             if !open {
                 app.session.view.comments_pane = false;
-                app.assistant_panel.open = false;
+                app.cowriter.margin = false;
             }
         }
         Panel::Review => {
@@ -312,7 +322,7 @@ pub fn toggle_panel(app: &mut WordApp, panel: Panel) {
             app.session.view.comments_pane = open;
             if open {
                 app.ui.optimo.inspector = false;
-                app.assistant_panel.open = false;
+                app.cowriter.margin = false;
             }
         }
         Panel::Outline => run_from_ribbon(app, "view.navigationPane", json!({})),
@@ -365,7 +375,18 @@ pub fn status_bar(app: &mut WordApp, ui: &mut Ui) {
                 let (bar, _) = ui.allocate_exact_size(vec2(48.0, 4.0), Sense::hover());
                 ui.painter().rect_filled(bar, 2.0, t.border_strong);
                 ui.painter().rect_filled(Rect::from_min_size(bar.min, vec2(48.0 * pct as f32 / 100.0, 4.0)), 2.0, t.text_dim);
-                if let Some((msg, at)) = &app.status_msg
+                // §4 presence: "Co-writer is reading… · Stop" while a run works.
+                if let Some(line) = crate::cowriter::presence_line(app) {
+                    dim(ui, "·");
+                    let m = crate::skin::OptimoTokens::get(ui.ctx());
+                    ui.label(egui::RichText::new(line).font(font()).color(m.assistant));
+                    dim(ui, "·");
+                    let stop = ui.add(egui::Label::new(egui::RichText::new(tl!("Stop")).font(font()).color(t.accent_text)).sense(Sense::click()));
+                    stop.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tl!("Stop")));
+                    if stop.clicked() {
+                        crate::cowriter::stop(app);
+                    }
+                } else if let Some((msg, at)) = &app.status_msg
                     && crate::now_ms() - at < 6000.0
                 {
                     dim(ui, "·");

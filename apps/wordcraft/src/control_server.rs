@@ -231,7 +231,7 @@ fn serve(stream: TcpStream, tx: Sender<ControlRequest>, ctx: egui::Context, key:
         if !authorised {
             authorised = true;
             reader.get_mut().set_deadline(None);
-            // Counts as a connected assistant (Settings › Assistant) until the connection ends;
+            // Counts as a connected assistant (Settings › Co-writer) until the connection ends;
             // "Disconnect" there shuts the socket, which ends this loop.
             if let Some(closer) = closer.take() {
                 _registration = Some(wordcraft_ui_egui::assistant::outside::register(move || {

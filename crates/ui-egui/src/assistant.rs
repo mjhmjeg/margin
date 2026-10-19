@@ -1,4 +1,4 @@
-//! Settings › Assistant (HANDOFF §9): what the person decided about assistants, and the
+//! Settings › Co-writer (HANDOFF §9): what the person decided about assistants, and the
 //! bookkeeping for assistants that connect from outside Optimo (Claude Desktop, Claude Code, any
 //! MCP client through the control channel).
 //!
@@ -166,7 +166,7 @@ pub struct AssistantPrefs {
     /// S6: assistants outside Optimo may use the control channel (which only exists when the app
     /// was started with `--control`). On by default, as the channel itself is an opt-in.
     pub allow_outside: bool,
-    /// S1: "Let an assistant work in Optimo". Off by default; while off nothing is sent anywhere.
+    /// S1: "Let a co-writer work in Optimo". Off by default; while off nothing is sent anywhere.
     pub enabled: bool,
     /// S2: the provider id (`wordcraft_assistant::ProviderId::id`); Mistral until chosen.
     pub provider: String,
