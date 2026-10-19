@@ -1015,6 +1015,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         comment_tags(app, ui, &painter, &rects, &layout, geo.scale);
         // O3: the co-writer's notes in the right desk margin while its margin view is open.
         crate::margin_notes::paint(app, ui, &painter, &rects, &layout, geo.scale);
+        // O5: the Alternatives card under the selected sentence.
+        crate::alternatives_view::paint(app, ui, &rects, &layout, geo.scale);
         // A5: where the built-in assistant is working (removed when it stops).
         crate::cowriter::paint_presence(app, &painter, &rects, &layout, geo.scale);
         // V1 + V3: the authorship pill and the chips beside paragraphs.

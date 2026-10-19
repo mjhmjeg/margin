@@ -213,6 +213,10 @@ pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
     if app.ui.keytips != crate::keytips::Phase::Off {
         return;
     }
+    // O5: the Alternatives card takes 1–3, ⏎, ⇥, E, arrows and Esc while it is open.
+    if crate::alternatives_view::keys(app, ctx) {
+        return;
+    }
     let events = ctx.input(|i| i.events.clone());
     if app.session.view.read_mode {
         // Read Mode is for navigation and selection, not typing into the document. The ribbon's

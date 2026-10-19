@@ -22,6 +22,7 @@ macro_rules! tl {
 
 pub mod a11y;
 pub mod a11y_pane;
+pub mod alternatives_view;
 pub mod assistant;
 pub mod assistant_link;
 pub mod authorship_view;
@@ -1182,7 +1183,13 @@ impl WordApp {
             // (`wordcraft_engine::assistant::denied`). The key is write-only.
             "ui.assistant" => return Some(assistant_link::settings_command(self, p)),
             "ui.assistant.test" | "ui.assistant.models" => return assistant_link::command(self, id, p),
-            "ui.assistant.ask" | "ui.assistant.run" | "ui.assistant.stop" | "ui.assistant.panel" | "ui.assistant.log" | "ui.assistant.formatView" => {
+            "ui.assistant.ask"
+            | "ui.assistant.run"
+            | "ui.assistant.stop"
+            | "ui.assistant.panel"
+            | "ui.assistant.log"
+            | "ui.assistant.formatView"
+            | "ui.assistant.alternatives" => {
                 return cowriter::command(self, id, p);
             }
             "ui.startScreen" => {
