@@ -394,6 +394,11 @@ one verb in parallel sessions, so the plug-in point must be small and stable.
   multi-piece AI replacement (now fed by the co-writer's runs, for O5). New control command
   `ui.assistant.run {"verb": …}`; `ui.assistant.panel` toggles the margin view.
 - **Presence:** "Co-writer is reading… · Stop" in the bottom line; the page caret stays.
+- **Live check (Mistral Large 4, 2026-10-19):** with a 4096-token cap the reasoning model ran out
+  before any text; Ask now uses `output_budget` (8–16k) like the old panel. Then: a one-line
+  summary and notes on four quotes, no word of the document changed (`live-mistral-light.png`).
+  The control port can't start an ask (it is an outside assistant); `ui_shot`'s
+  `{"keychain": true}` runs one in-process.
 
 **Alternatives rejected.** A trait object per verb registered in a list (one shared line per
 phase, merge conflicts between parallel sessions); provider tool-calling for structured output
