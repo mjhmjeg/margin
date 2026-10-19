@@ -859,7 +859,6 @@ mod tests {
         let v = rows(&[Verb::Alternatives, Verb::FormatForMe], "format", cmds(&bold), true);
         assert_eq!(v.first(), Some(&Row::Verb(Verb::FormatForMe)));
         assert!(verbs().iter().all(|v| v.available()), "only landed verbs");
-        assert!(verbs().is_empty(), "O3 lands none of the seven; each phase adds its own");
     }
 
     #[test]

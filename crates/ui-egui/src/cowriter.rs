@@ -98,6 +98,12 @@ pub struct CoWriter {
     job: Option<Job>,
     /// Providers whose server refused JSON mode this session: not asked for it again.
     json_refused: HashSet<wordcraft_assistant::ProviderId>,
+    /// O4: the view of the document's last Format for me run (`format_view`).
+    pub format: Option<crate::format_view::FormatView>,
+    /// O4: the saved looks, read once from `looks_file`.
+    pub saved_looks: Option<Vec<wordcraft_engine::looks::Look>>,
+    /// O4: `looks.json` in the settings folder (set by the desktop app; none on the web).
+    pub looks_file: Option<std::path::PathBuf>,
 }
 
 fn now_hm() -> String {
@@ -139,16 +145,37 @@ pub fn ask(app: &mut WordApp, instruction: &str, kind: ScopeKind) -> Result<Valu
 
 /// Start `verb` on `kind` with its `options`. Verbs that need a model run in the background
 /// ([`poll`]); the others land at once.
-pub fn start(app: &mut WordApp, verb: Verb, kind: ScopeKind, options: Value) -> Result<Value, String> {
-    if let Some(why) = refusal(app) {
+pub fn start(app: &mut WordApp, verb: Verb, kind: ScopeKind, mut options: Value) -> Result<Value, String> {
+    let p = app.ui.assistant.provider_id();
+    let model = app.ui.assistant.model(p).map(str::to_string);
+    let mut kind = kind;
+    if verb == Verb::FormatForMe {
+        // O4: the selection, else the whole document; rule-based, so it works without a model
+        // (and sends nothing): then the look is Clean.
+        if kind == ScopeKind::Section {
+            kind = ScopeKind::Document;
+        }
+        let given = options.get("look").is_some_and(|l| !l.is_null());
+        if !given && (refusal(app).is_some() || model.is_none()) {
+            match options.as_object_mut() {
+                Some(m) => {
+                    m.insert("look".into(), json!("clean"));
+                }
+                None => options = json!({"look": "clean"}),
+            }
+        }
+    }
+    let needs_model = !(verb == Verb::FormatForMe && options.get("look").is_some_and(|l| !l.is_null()));
+    if needs_model && let Some(why) = refusal(app) {
         return Err(why);
     }
     if app.cowriter.job.is_some() {
         return Err(tl!("Still working on the last request: wait, or Stop it first.").into());
     }
-    let p = app.ui.assistant.provider_id();
-    let Some(model) = app.ui.assistant.model(p).map(str::to_string) else {
-        return Err(tl!("Choose a model in Settings › Co-writer first.").into());
+    let model = match model {
+        Some(m) => m,
+        None if !needs_model => String::new(),
+        None => return Err(tl!("Choose a model in Settings › Co-writer first.").into()),
     };
     let scope = edits::scope(&app.session, kind).map_err(|e| capitalise(&e))?;
     let name = app.ui.assistant.name();
@@ -178,7 +205,7 @@ pub fn start(app: &mut WordApp, verb: Verb, kind: ScopeKind, options: Value) -> 
         push_run(app, doc, run);
         let index = app.cowriter.runs(doc).len().saturating_sub(1);
         let job_less = cowriter::run(verb, &Call { session: &app.session, scope: &scope, options: &options, name: &name }, None);
-        land(app, doc, index, verb, &scope, &name, job_less, None);
+        land(app, doc, index, verb, &scope, &name, job_less, None, &options);
         return Ok(json!({"started": true, "done": true, "scope": kind.id()}));
     };
     let request = wordcraft_assistant::ChatRequest {
@@ -349,7 +376,21 @@ fn finish(app: &mut WordApp, r: Result<ChatReply, AssistantError>) {
             }
             let call = Call { session: &app.session, scope: &job.scope, options: &job.options, name: &job.name };
             let ran = cowriter::run(job.verb, &call, Some(Reply { text: &reply.text, stop_reason: reply.stop_reason.as_deref() }));
-            land(app, job.doc, job.run, job.verb, &job.scope, &job.name, ran, Some(reply.text));
+            land(app, job.doc, job.run, job.verb, &job.scope, &job.name, ran, Some(reply.text), &job.options);
+        }
+        Err(e) if job.verb == Verb::FormatForMe && !matches!(e, AssistantError::Stopped) => {
+            // O4: the look guess failed; the formatting itself needs no model: Clean.
+            log::warn!("co-writer: look guess: {e}");
+            let mut options = job.options.clone();
+            if let Some(m) = options.as_object_mut() {
+                m.insert("look".into(), json!("clean"));
+            }
+            let call = Call { session: &app.session, scope: &job.scope, options: &options, name: &job.name };
+            let ran = cowriter::run(job.verb, &call, None).map(|mut r| {
+                r.lines.insert(0, format!("{} {}", tl!("Couldn’t ask the co-writer for a look, so it is Clean:"), e));
+                r
+            });
+            land(app, job.doc, job.run, job.verb, &job.scope, &job.name, ran, None, &options);
         }
         Err(e) => {
             let stopped = matches!(e, AssistantError::Stopped);
@@ -369,11 +410,27 @@ fn finish(app: &mut WordApp, r: Result<ChatReply, AssistantError>) {
 
 /// Land a read answer in the document and record it in run `i`. Notes open the margin view.
 #[allow(clippy::too_many_arguments)]
-fn land(app: &mut WordApp, doc: u64, i: usize, verb: Verb, scope: &ScopeText, name: &str, ran: Result<cowriter::Ran, String>, raw: Option<String>) {
+fn land(
+    app: &mut WordApp,
+    doc: u64,
+    i: usize,
+    verb: Verb,
+    scope: &ScopeText,
+    name: &str,
+    ran: Result<cowriter::Ran, String>,
+    raw: Option<String>,
+    options: &Value,
+) {
     crate::assistant_link::sync_policy(app);
+    // O4: Format for me keeps the document as it was, for Before and ⌥ compare.
+    let before = (verb == Verb::FormatForMe).then(|| app.session.doc.clone());
     let (status, report, mut lines, notes, applied, answer) = match ran {
         Ok(ran) => {
+            let outputs = if before.is_some() { ran.outputs.clone() } else { Vec::new() };
             let landed = cowriter::apply(&mut app.session, name, verb, scope, ran.outputs);
+            if let Some(b) = before {
+                crate::format_view::landed(app, &outputs, &ran.report, ran.lines.clone(), landed.words, b, options, scope.kind);
+            }
             let mut lines = ran.lines;
             lines.extend(landed.lines);
             if landed.applied.is_empty() && ran.report.trim().is_empty() {
@@ -484,6 +541,9 @@ fn run_json(app: &WordApp, r: &Run) -> Value {
 ///   (default: the selection when there is one, else the section at the caret): notes only;
 /// * `ui.assistant.run` `{"verb": "format" | …, "scope"?, …options}`: an available verb;
 /// * `ui.assistant.stop`;
+/// * `ui.assistant.formatView` `{"compare"?: bool, "show"?: what, "action"?: "keep" | "undoAll" |
+///   "oneByOne", "option"?: "keepColours" | "toc" | "numberHeadings", "value"?: bool}`: Format
+///   for me's view (O4);
 /// * `ui.assistant.panel` `{"value"?: bool}`: the margin view (toggles without a value);
 /// * `ui.assistant.log`: this document's runs and whether one is working.
 pub fn command(app: &mut WordApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
@@ -506,6 +566,7 @@ pub fn command(app: &mut WordApp, id: &str, p: &Value) -> Option<Result<Value, S
             }
         }
         "ui.assistant.stop" => Ok(json!({"stopped": stop(app)})),
+        "ui.assistant.formatView" => crate::format_view::control(app, p),
         "ui.assistant.panel" => {
             let on = match p.get("value") {
                 None | Some(Value::Null) => !app.cowriter.margin,

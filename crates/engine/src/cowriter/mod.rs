@@ -138,7 +138,7 @@ impl Verb {
             Verb::Structure => matches!(kind, K::HeadingMove | K::HeadingInsert | K::Comment),
             Verb::Research => matches!(kind, K::Footnote | K::Quote | K::Comment),
             Verb::Stuck => matches!(kind, K::Comment | K::FirstLine),
-            Verb::FormatForMe => kind == K::FormatChange,
+            Verb::FormatForMe => matches!(kind, K::FormatChange | K::Comment),
         }
     }
 }
@@ -556,16 +556,43 @@ fn land_rest(s: &mut Session, name: &str, scope: &ScopeText, outputs: &[Output],
 /// Rule 5 around `f`: run it, then compare the body's words before and after ([`same_words`]).
 /// The same: `Ok(words kept)`. Not: everything `f` did is taken back (document, selection, undo)
 /// and `Err((words kept, words changed))`. Only the body counts: a header with the title or page
-/// numbers in the footer are formatting.
+/// numbers in the footer are formatting. The body is read as it reads with every tracked change
+/// accepted ([`final_body`]): a tracked typographic swap holds the old and the new characters.
 pub fn keeping_words(s: &mut Session, f: impl FnOnce(&mut Session)) -> Result<usize, (usize, usize)> {
     let snap = s.edit_snapshot();
-    let before = s.doc.plain_text(wordcraft_doc::StoryRef::Body);
+    let before = final_body(&s.doc.body, 0);
     f(s);
-    let (same, kept, changed) = same_words(&before, &s.doc.plain_text(wordcraft_doc::StoryRef::Body));
+    let (same, kept, changed) = same_words(&before, &final_body(&s.doc.body, 0));
     if same {
         Ok(kept)
     } else {
         s.restore(snap);
         Err((kept, changed))
     }
+}
+
+/// The body's text with tracked deletions dropped (insertions kept), one line per paragraph and
+/// table row, cells joined by tabs: `Document::plain_text` as it reads after accepting.
+fn final_body(blocks: &wordcraft_doc::Blocks, depth: usize) -> String {
+    let mut out = String::new();
+    if depth > 16 {
+        return out;
+    }
+    for b in blocks {
+        match &**b {
+            wordcraft_doc::Block::Para(p) => {
+                out.push_str(&p.final_text());
+                out.push('\n');
+            }
+            wordcraft_doc::Block::Table(t) => {
+                for row in &t.rows {
+                    let cells: Vec<String> =
+                        row.cells.iter().map(|c| final_body(&c.blocks, depth + 1).trim_end_matches('\n').replace('\n', " ")).collect();
+                    out.push_str(&cells.join("\t"));
+                    out.push('\n');
+                }
+            }
+        }
+    }
+    out
 }

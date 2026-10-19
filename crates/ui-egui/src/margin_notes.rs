@@ -72,6 +72,10 @@ pub fn paint(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[R
     if !app.cowriter.margin || !crate::mac_ui::active(app) {
         return;
     }
+    // O4: Format for me's Before thumbnail, ⌥ compare and Show's flash.
+    if crate::format_view::active(app) {
+        crate::format_view::paint_pages(app, ui, painter, rects, layout, scale);
+    }
     let t = Tokens::get(ui.ctx());
     let clip = ui.clip_rect();
     let mut list = notes(app);
@@ -107,11 +111,15 @@ pub fn paint(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[R
         (x, rects.first().map_or(clip.min.y, |r| r.min.y))
     };
     let mut actions: Vec<Action> = Vec::new();
-    if let Some(b) = summary {
+    if crate::format_view::active(app) {
+        // O4: Format for me's view takes the summary's place.
+        let top = if narrow { y_min } else { y_min.max(clip.min.y + 12.0) };
+        y_min = crate::format_view::paint_margin(app, ui, pos2(x, top), width) + GAP * 2.0;
+    } else if let Some(b) = summary {
         let top = if narrow { y_min } else { y_min.max(clip.min.y + 12.0) };
         y_min = block(ui, painter, pos2(x, top), width, &b, None, &[("Hide", Action::HideSummary)], &mut actions) + GAP * 2.0;
     }
-    if list.is_empty() && narrow {
+    if list.is_empty() && narrow && !crate::format_view::active(app) {
         painter.text(pos2(x, y_min), egui::Align2::LEFT_TOP, tl!("No notes yet."), mc::font(), t.text_dim);
     }
     for n in &list {

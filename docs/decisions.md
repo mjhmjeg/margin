@@ -407,3 +407,73 @@ by diffing against the document (an alternative legitimately reuses the person's
 sentences are the honest unit for rule 1); keeping the quick asks as notes (their names promise
 rewrites); dropping the scope chip's selection wording (the chip is now the ask's scope, so it
 must say the truth).
+
+## 2026-10-19 — Optimo O4: Format for me (OPTIMO.md §5, T1–T7)
+
+**Context.** The first verb on O3's runner. Mostly rule-based; the model only guesses the look.
+Martijn's decisions: preset looks plus looks people save; Mistral is the model; no stop points.
+
+**Decision.**
+- **Rules** (`crates/engine/src/cowriter/format.rs`, `detect`): over the scope's top-level
+  paragraphs (the selection, else the whole document — ⌥⌘T and ⌘Y turn a collapsed caret's
+  "section" into the whole document). First short line (≤ 12 words, no closing `.,;!?`) → Title,
+  a plain short line under it → Subtitle; short lines that are ALL-CAPS / bold / underlined and
+  followed by text → Heading 1/2/3 by the strengths present (caps above bold above underline);
+  `- * • –` and `1. 1) a)` lines → `para.bullets` / `para.numbering` (+ List Bullet / List Number
+  styles), the typed marker removed; 2+ consecutive lines with the same columns (tabs, or gaps of
+  2+ spaces) → a table in the look's table style with a header row; direct fonts → none (the
+  look's fonts), monospace kept, colours kept unless Keep my colours is off; empty paragraphs
+  between paragraphs → joined to the one before; `"` `'` → the language's quotes (« » for
+  de-CH/fr/it-CH/rm, „ “ for de/cs/sk/pl, “ ” otherwise; ’ for apostrophes), `...` → `…`,
+  ` - ` → ` – `, double spaces → one; title in the header and a page number in the footer
+  (whole document, when it has neither). A doubled word or a would-be heading ending in a full
+  stop is a "Check" note (a comment by the AI author on the exact quote), never a change: the
+  coordinator allowed Comment outputs for Format for me (`Verb::allows`, the second mod.rs line).
+- **Landing.** One output per rule, each one whitelisted command over a list of `targets`, run
+  with `run_as_assistant` (tracked, AI author); all joined into **one undo step**
+  (`join_next_undo`). Two new engine commands keep text changes inside rule 5:
+  `format.typography` (character swaps; refuses any edit whose `same_words` differ, and joins a
+  paragraph only to an *empty* next one, so words can't run together after accepting) and
+  `format.clearFonts`. `text.insert`/`text.delete` stay off the whitelist.
+- **Identity check** (coordinator-approved): `keeping_words` compares the
+  body as it reads with every tracked change accepted (`final_body`: tracked deletions out), so a
+  tracked typographic swap passes and a tracked word change still fails; someone's pending
+  deletion from before the run counts the same before and after.
+- **Looks** (`crates/engine/src/looks.rs`): Clean (Source Sans 3, teal headings), Classic
+  (Source Serif 4, centred title), Report (sans headings in deep blue over serif text), Letter
+  (quiet serif) — our colours, open fonts only. Each look sets the same fields of Normal, Title,
+  Subtitle, Heading 1–3, List Bullet, List Number, Quote, Header, Footer (so switching leaves no
+  trace of the last look) plus the "Look Table" table style, through `styles.modify` /
+  `styles.create` / `table.newStyle` / `table.modifyStyle`, into the .docx style table. Switching
+  (`{"look": …, "lookOnly": true}`) is one undo step and sends nothing.
+- **The model** guesses the look in one call (≤ 80 tokens, first 3 000 characters, document
+  marked untrusted): `{"look", "reads_like"}`. Without a model, with the co-writer off, or when
+  the look is given, nothing is sent and the look is Clean (or the one given); a failed call
+  formats with Clean and says so.
+- **Saved looks:** "Save as my look…" stores `Look::from_doc` (each style as it resolves) in
+  `looks.json` in the settings folder next to `ui.json` (the desktop app sets the path; the web
+  build keeps them for the session). Read once, ≤ 256 KB, ≤ 24 looks, each made sane (known styles
+  only, name ≤ 40 characters, sizes and spacing clamped); written via a temporary file.
+- **View** (`crates/ui-egui/src/format_view.rs`): right margin — "Formatted by your co-writer",
+  the lock row "Your words: 0 changed · N kept", the Look switcher and saved looks, What changed
+  with Show (selects the first spot, flashes them all), the three options, Undo all
+  · One by one (opens Review) as links and Keep as the button (three buttons don't fit 256 pt).
+  The co-writer's formatting changes no longer get balloons in the Optimo layout (like its notes):
+  the view sums them up and Review lists them. Left desk margin — the 264 wide Before thumbnail of the page
+  in view and "hold ⌥ to compare" (⌥ lays pictures of the old pages over the pages). The view
+  counts its undo steps (run, look switches, options, table of contents); Undo all undoes exactly
+  those, and refuses once the person has edited since. Control: `ui.assistant.formatView`.
+- **Table of contents** (T6, off): inserted after the identity check as its own step, before the
+  first heading — it repeats heading text, so it would otherwise fail rule 5.
+
+**Known limits.** Text → table conversion is not a tracked change in the engine (it is an undo
+step, and Undo all covers it). The converted table keeps the borders `table.fromText` gives
+it, so the Look Table's colour and bold header row don't show yet. The live Mistral look guess
+was not exercised from the build session: the control channel is an outside assistant and may not
+start the co-writer (O3), so it needs a person's ⌥⌘T; the guess is tested against a mock provider. The Look switcher's style-table changes are undo steps, not tracked
+changes (as in Word).
+
+**Alternatives rejected.** Whitelisting `text.insert` for typography (any text could pass the
+command guard; only the end-of-run check would stop it); one output per change (the runner caps a
+run at 50 outputs); a model pass for headings (the rules are deterministic and free); saving looks
+inside `ui.json` (a broken look file must never cost the person their window settings).

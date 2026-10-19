@@ -55,6 +55,7 @@ pub mod equation_tab;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod file_browser;
 pub mod file_dialogs;
+pub mod format_view;
 pub mod frame;
 pub mod i18n;
 pub mod icons;
@@ -1181,7 +1182,7 @@ impl WordApp {
             // (`wordcraft_engine::assistant::denied`). The key is write-only.
             "ui.assistant" => return Some(assistant_link::settings_command(self, p)),
             "ui.assistant.test" | "ui.assistant.models" => return assistant_link::command(self, id, p),
-            "ui.assistant.ask" | "ui.assistant.run" | "ui.assistant.stop" | "ui.assistant.panel" | "ui.assistant.log" => {
+            "ui.assistant.ask" | "ui.assistant.run" | "ui.assistant.stop" | "ui.assistant.panel" | "ui.assistant.log" | "ui.assistant.formatView" => {
                 return cowriter::command(self, id, p);
             }
             "ui.startScreen" => {
