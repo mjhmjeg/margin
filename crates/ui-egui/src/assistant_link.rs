@@ -46,6 +46,11 @@ pub struct AssistantLink {
     keys: Arc<dyn KeyStore>,
     /// Masked keys per provider, looked up once (`None` inside: no key stored).
     hints: HashMap<ProviderId, Option<String>>,
+    /// Keychain lookups still running: the keychain may block on its prompt, so it is never
+    /// asked on the UI thread.
+    lookups: HashMap<ProviderId, Receiver<Option<String>>>,
+    /// Wakes the window when a lookup answers (set by [`poll`]).
+    wake: Option<egui::Context>,
     /// Models listed per provider (filled live; "Refresh" lists again).
     pub models: HashMap<ProviderId, Vec<Model>>,
     job: Option<Job>,
@@ -69,6 +74,8 @@ impl AssistantLink {
         AssistantLink {
             keys,
             hints: HashMap::new(),
+            lookups: HashMap::new(),
+            wake: None,
             models: HashMap::new(),
             job: None,
             last: None,
@@ -88,20 +95,58 @@ impl AssistantLink {
         self.keys.supported()
     }
 
-    /// `••••abcd` for the stored key of `p`, if there is one (the keychain is asked once).
+    /// `••••abcd` for the stored key of `p`, if there is one. The keychain is asked once, on a
+    /// background thread; `None` until it answers (see [`AssistantLink::looking_up`]).
     pub fn hint(&mut self, p: ProviderId) -> Option<String> {
         if let Some(h) = self.hints.get(&p) {
             return h.clone();
         }
-        let h = match self.keys.get(p.id()) {
-            Ok(k) => k.map(|k| wordcraft_assistant::masked(&k)),
-            Err(e) => {
-                log::warn!("assistant: reading the {} key: {e}", p.id());
-                None
+        if let Some(rx) = self.lookups.get(&p) {
+            let h = match rx.try_recv() {
+                Ok(h) => h,
+                Err(std::sync::mpsc::TryRecvError::Empty) => return None,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => None,
+            };
+            self.lookups.remove(&p);
+            self.hints.insert(p, h.clone());
+            return h;
+        }
+        self.look_up(p);
+        None
+    }
+
+    /// The keychain hasn't answered for `p` yet.
+    pub fn looking_up(&self, p: ProviderId) -> bool {
+        self.lookups.contains_key(&p)
+    }
+
+    fn look_up(&mut self, p: ProviderId) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let keys = self.keys.clone();
+        let wake = self.wake.clone();
+        let read = move || {
+            let h = match keys.get(p.id()) {
+                Ok(k) => k.map(|k| wordcraft_assistant::masked(&k)),
+                Err(e) => {
+                    log::warn!("assistant: reading the {} key: {e}", p.id());
+                    None
+                }
+            };
+            let _ = tx.send(h);
+            if let Some(c) = &wake {
+                c.request_repaint();
             }
         };
-        self.hints.insert(p, h.clone());
-        h
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Err(e) = std::thread::Builder::new().name("assistant-key".into()).spawn(read) {
+            log::warn!("assistant: could not read the {} key: {e}", p.id());
+            self.hints.insert(p, None);
+            return;
+        }
+        // ponytail: wasm has no threads and no keychain (memory keys), so it reads inline.
+        #[cfg(target_arch = "wasm32")]
+        read();
+        self.lookups.insert(p, rx);
     }
 
     /// Whether a call to the chosen provider could be made (a key where one is needed, an
@@ -125,6 +170,7 @@ impl AssistantLink {
             return Err(AssistantError::Unsupported("this system has no keychain Optimo can use, so the key can't be stored".into()).to_string());
         }
         self.keys.set(p.id(), &key).map_err(|e| e.to_string())?;
+        self.lookups.remove(&p);
         self.hints.insert(p, Some(wordcraft_assistant::masked(&key)));
         self.models.remove(&p);
         if self.last.as_ref().is_some_and(|l| l.provider == p) {
@@ -135,6 +181,7 @@ impl AssistantLink {
 
     fn remove_key(&mut self, p: ProviderId) -> Result<(), String> {
         self.keys.remove(p.id()).map_err(|e| e.to_string())?;
+        self.lookups.remove(&p);
         self.hints.insert(p, None);
         self.models.remove(&p);
         if self.last.as_ref().is_some_and(|l| l.provider == p) {
@@ -147,6 +194,9 @@ impl AssistantLink {
 /// Copy whether an assistant can work where the command field and menus read it, and collect a
 /// finished listing. Every frame.
 pub fn poll(app: &mut WordApp) {
+    if app.assistant_link.wake.is_none() {
+        app.assistant_link.wake = app.ctx.clone();
+    }
     if let Some(job) = &app.assistant_link.job {
         match job.rx.try_recv() {
             Ok(answer) => finish(app, answer),
@@ -192,6 +242,9 @@ pub fn start(app: &mut WordApp) -> Result<Value, String> {
     // The address is checked here, so a mistake shows at once.
     Endpoint::new(p, Some(&url), None).map_err(|e| e.to_string())?;
     if p.preset().needs_key && app.assistant_link.hint(p).is_none() {
+        if app.assistant_link.looking_up(p) {
+            return Err("waiting for the keychain to hand over the key: answer its prompt, then try again".into());
+        }
         return Err(AssistantError::NoKey.to_string());
     }
     spawn(app, p, url)?;
@@ -497,6 +550,14 @@ mod tests {
         }
     }
 
+    /// Wait for the background keychain lookup of `p` to answer.
+    fn settle_keys(a: &mut WordApp, p: ProviderId) {
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while a.assistant_link.hint(p).is_none() && a.assistant_link.looking_up(p) && std::time::Instant::now() < end {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
     /// A listener that answers one model listing per connection and counts connections.
     fn mock_models() -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
         use std::io::{BufRead, BufReader, Write};
@@ -662,6 +723,7 @@ mod tests {
         assert!(last.result.as_ref().unwrap_err().contains("start Ollama or LM Studio"), "{last:?}");
         // A provider that needs a key says so before sending anything.
         a.run("ui.assistant", json!({"provider": "anthropic"})).unwrap();
+        settle_keys(&mut a, ProviderId::Anthropic);
         assert_eq!(a.run("ui.assistant.test", json!({})).unwrap_err(), "add an API key first");
     }
 
@@ -894,5 +956,55 @@ mod tests {
         assert_eq!(outside(&mut a, "engine.execute", json!({"command": "text.insert", "params": {"text": "!"}}))["ok"], true);
         a.run("ui.assistant", json!({"comments": true})).unwrap();
         assert_eq!(outside(&mut a, "engine.execute", json!({"command": "review.newComment", "params": {"text": "again"}}))["ok"], true);
+    }
+    /// A keychain that blocks like one showing its prompt, until the test answers it.
+    struct PromptingKeys(std::sync::Mutex<Receiver<()>>);
+    impl KeyStore for PromptingKeys {
+        fn supported(&self) -> bool {
+            true
+        }
+        fn get(&self, _account: &str) -> Result<Option<String>, AssistantError> {
+            if let Ok(rx) = self.0.lock() {
+                let _ = rx.recv_timeout(std::time::Duration::from_secs(20));
+            }
+            Ok(Some(KEY.into()))
+        }
+        fn set(&self, _account: &str, _key: &str) -> Result<(), AssistantError> {
+            Ok(())
+        }
+        fn remove(&self, _account: &str) -> Result<(), AssistantError> {
+            Ok(())
+        }
+    }
+
+    /// The window keeps drawing and answering while the keychain prompt is open (2026-10-19:
+    /// the main thread hung in SecKeychainFindGenericPassword at startup). Were the keychain read
+    /// on the UI thread, this would sit out the mock's 20 s.
+    #[test]
+    fn a_prompting_keychain_never_blocks_the_window() {
+        let (answer, rx) = std::sync::mpsc::channel();
+        let services = Services { key_store: Some(Arc::new(PromptingKeys(std::sync::Mutex::new(rx)))), ..Default::default() };
+        let mut a = WordApp::new(Session::new(wordcraft_doc::Document::new()), services);
+        a.ui.assistant.enabled = true;
+        let t = std::time::Instant::now();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1200.0, 800.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(4);
+        let a = h.state_mut();
+        assert_eq!(settings_json(a)["hasKey"], false, "not known yet");
+        assert!(a.assistant_link.looking_up(ProviderId::Mistral));
+        assert!(a.run("ui.assistant.test", json!({})).unwrap_err().contains("keychain"));
+        assert!(crate::cowriter::ask(a, "hi", wordcraft_engine::assistant_edits::ScopeKind::Document).unwrap_err().contains("keychain"));
+        assert!(t.elapsed() < std::time::Duration::from_secs(15), "the window waited for the keychain: {:?}", t.elapsed());
+        answer.send(()).unwrap();
+        settle_keys(a, ProviderId::Mistral);
+        assert_eq!(a.assistant_link.hint(ProviderId::Mistral).as_deref(), Some("••••abcd"));
+        assert_eq!(settings_json(a)["hasKey"], true);
     }
 }
