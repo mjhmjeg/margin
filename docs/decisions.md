@@ -477,3 +477,37 @@ changes (as in Word).
 command guard; only the end-of-run check would stop it); one output per change (the runner caps a
 run at 50 outputs); a model pass for headings (the rules are deterministic and free); saving looks
 inside `ui.json` (a broken look file must never cost the person their window settings).
+
+## 2026-10-19 — Optimo O5: Alternatives (OPTIMO.md §6, A1–A3)
+
+**Context.** Phase O5: three other ways to say the selected sentence, shown in a card under it;
+using one is one tracked replacement by the AI author (rules 1–3).
+
+**Decision.**
+- **Engine** (`cowriter/alternatives.rs`, `mod.rs` untouched): the model answers in the existing
+  edit protocol — three "replace" edits quoting the whole selection — so the defensive answer
+  reader is shared. Duplicates and copies of the original are dropped; anything that is not a
+  replacement of the selection (comments, insertions, other quotes) goes on to the guards and is
+  refused there. One paragraph only ("Select sentences within one paragraph"). Options:
+  `tone` (plainer, warmer, more formal, shorter) and `moreLike` (⇥). Landing is
+  `assistant_edits::apply`, so only the changed words become tracked changes.
+- **Card** (`alternatives_view.rs`): opens at once with "Looking for other ways…", under the
+  selection at page width, radius 10; rows Yours / Sharper / Plainer / Warmer (labels by position;
+  "Like it" after ⇥); changed words in the assistant colour with a dotted underline. Keys 1–3, ↑↓,
+  ⏎, ⇥, E (edit), Esc; typing or moving the caret closes it. An edited text lands through the same
+  guards. ⌥⌘A and ⌘Y both go through `cowriter::start` (no selection: `select.sentence` first).
+  `ui.assistant.alternatives {"pick"|"text"|"close"}` drives the open card (the person's, not
+  an outside assistant's).
+- **Live check** (Mistral Large, `mistral-large-latest`, key from the Keychain via `ui_shot`'s
+  `{"keychain": true}`): three alternatives in about 10 s; picking #2 left `Your words 56 %` and a
+  word-level tracked change by "AI · Mistral" (`picked-light.png`). The model rewrites more than the
+  prompt's "keep their words" asks; the card shows every changed word honestly.
+
+**Known gaps.** The rows use the interface font, not the document's font: document fonts are not
+egui font families (a face registered in `theme.rs` would fix it). The ✎ glyph is not in the
+interface font, so the footer reads "E edit before using". Streaming is not used (one call).
+
+**Alternatives rejected.** A new answer format for the verb (the edit protocol's reader already
+survives Mistral's quirks); landing all three as separate tracked changes to choose later
+(Review would hold three competing replacements of one sentence); labels carried by the model
+(the runner's `Output` has no label, and `mod.rs` stays as it is).

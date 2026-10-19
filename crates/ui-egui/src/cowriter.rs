@@ -104,6 +104,8 @@ pub struct CoWriter {
     pub saved_looks: Option<Vec<wordcraft_engine::looks::Look>>,
     /// O4: `looks.json` in the settings folder (set by the desktop app; none on the web).
     pub looks_file: Option<std::path::PathBuf>,
+    /// O5: the Alternatives card open under the selected sentence (`alternatives_view`).
+    pub alts: Option<crate::alternatives_view::Card>,
 }
 
 fn now_hm() -> String {
@@ -149,6 +151,13 @@ pub fn start(app: &mut WordApp, verb: Verb, kind: ScopeKind, mut options: Value)
     let p = app.ui.assistant.provider_id();
     let model = app.ui.assistant.model(p).map(str::to_string);
     let mut kind = kind;
+    if verb == Verb::Alternatives {
+        // O5: the selection, else the sentence at the caret.
+        kind = ScopeKind::Selection;
+        if app.session.sel.is_collapsed() {
+            let _ = app.session.run("select.sentence", &json!({}));
+        }
+    }
     if verb == Verb::FormatForMe {
         // O4: the selection, else the whole document; rule-based, so it works without a model
         // (and sends nothing): then the look is Clean.
@@ -180,6 +189,9 @@ pub fn start(app: &mut WordApp, verb: Verb, kind: ScopeKind, mut options: Value)
     let scope = edits::scope(&app.session, kind).map_err(|e| capitalise(&e))?;
     let name = app.ui.assistant.name();
     let prompt = cowriter::prompt(verb, &Call { session: &app.session, scope: &scope, options: &options, name: &name })?;
+    if verb == Verb::Alternatives {
+        crate::alternatives_view::begin(app, &scope, &options);
+    }
     let doc = app.session.document_id();
     let mut run = Run {
         time: now_hm(),
@@ -298,7 +310,7 @@ fn spawn(app: &mut WordApp, req: wordcraft_assistant::ChatRequest) -> Result<(Re
     }
 }
 
-fn run_mut(app: &mut WordApp, doc: u64, i: usize) -> Option<&mut Run> {
+pub(crate) fn run_mut(app: &mut WordApp, doc: u64, i: usize) -> Option<&mut Run> {
     app.cowriter.runs.get_mut(&doc).and_then(|l| l.get_mut(i))
 }
 
@@ -306,6 +318,7 @@ fn run_mut(app: &mut WordApp, doc: u64, i: usize) -> Option<&mut Run> {
 pub fn stop(app: &mut WordApp) -> bool {
     let Some(job) = app.cowriter.job.take() else { return false };
     job.stop.store(true, Ordering::Relaxed);
+    app.cowriter.alts = None;
     if let Some(r) = run_mut(app, job.doc, job.run) {
         r.status = Status::Stopped;
         r.report.clear();
@@ -369,6 +382,11 @@ pub fn poll(app: &mut WordApp) {
 
 fn finish(app: &mut WordApp, r: Result<ChatReply, AssistantError>) {
     let Some(job) = app.cowriter.job.take() else { return };
+    if job.verb == Verb::Alternatives {
+        // O5: the answer fills the card; nothing lands until a row is used.
+        crate::alternatives_view::arrived(app, job.doc, job.run, &job.scope, &job.options, &job.name, r);
+        return;
+    }
     match r {
         Ok(reply) => {
             if reply.json_refused {
@@ -544,6 +562,9 @@ fn run_json(app: &WordApp, r: &Run) -> Value {
 /// * `ui.assistant.formatView` `{"compare"?: bool, "show"?: what, "action"?: "keep" | "undoAll" |
 ///   "oneByOne", "option"?: "keepColours" | "toc" | "numberHeadings", "value"?: bool}`: Format
 ///   for me's view (O4);
+/// * `ui.assistant.alternatives` `{"pick"?: 1–3, "text"?: string, "close"?: bool}`: the open
+///   Alternatives card (O5): use row `pick` (or `text`, as if edited first), or close it; no
+///   argument reads its rows;
 /// * `ui.assistant.panel` `{"value"?: bool}`: the margin view (toggles without a value);
 /// * `ui.assistant.log`: this document's runs and whether one is working.
 pub fn command(app: &mut WordApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
@@ -567,6 +588,7 @@ pub fn command(app: &mut WordApp, id: &str, p: &Value) -> Option<Result<Value, S
         }
         "ui.assistant.stop" => Ok(json!({"stopped": stop(app)})),
         "ui.assistant.formatView" => crate::format_view::control(app, p),
+        "ui.assistant.alternatives" => crate::alternatives_view::control(app, p),
         "ui.assistant.panel" => {
             let on = match p.get("value") {
                 None | Some(Value::Null) => !app.cowriter.margin,
