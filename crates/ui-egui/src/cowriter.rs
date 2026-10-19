@@ -133,6 +133,9 @@ fn refusal(app: &mut WordApp) -> Option<String> {
         return Some(tl!("Turn on “Let a co-writer work in Optimo” in Settings › Co-writer first: nothing is sent anywhere while it is off.").into());
     }
     if !app.assistant_link.usable(&app.ui.assistant) {
+        if app.assistant_link.looking_up(app.ui.assistant.provider_id()) {
+            return Some(tl!("Waiting for the keychain to hand over the co-writer's key: answer its prompt, then try again.").into());
+        }
         return Some(tl!("Finish Settings › Co-writer first: choose a provider and add its key.").into());
     }
     None

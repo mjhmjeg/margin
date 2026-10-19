@@ -676,6 +676,8 @@ fn assistant_key(app: &mut WordApp, ui: &mut Ui) {
         let hint = app.assistant_link.hint(p);
         if !app.assistant_link.keys_supported() {
             mc::hint(ui, "This system has no keychain Optimo can use, so a key can't be stored here.");
+        } else if app.assistant_link.looking_up(p) {
+            mc::hint(ui, "Waiting for the keychain…");
         } else if let Some(h) = hint.as_ref().filter(|_| !app.assistant_link.changing_key) {
             mc::labelled_row(ui, "Key", |ui| {
                 ui.label(RichText::new(h).font(mc::font()).color(t.text));
