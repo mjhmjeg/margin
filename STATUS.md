@@ -1,6 +1,6 @@
 # STATUS — Optimo (was Margin; fork of storytold/wordcraft)
 
-Last updated: 2026-10-15
+Last updated: 2026-10-19
 
 Repo: https://github.com/mjhmjeg/margin (fork of storytold/wordcraft; remote `upstream`).
 
@@ -45,6 +45,7 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - Product name: Optimo (2026-10-14, replaces Margin). No formal trademark search done.
 
 ## Known bugs
+- 2026-10-19 Incident: disk full (117 MB free), project build cache had grown to 56 GB; target/debug (52 GB) deleted, 52 GB free. Parallel sessions must keep their own target dirs small and delete them when done.
 - Adding a comment opens the Review panel (engine behaviour); for co-writer notes that defeats O1's quiet markers — fix in O3.
 - 2026-10-14 Incident: upstream WordCraft (in /Applications) rewrote the shared ui.json and wiped Margin's assistant settings (key in Keychain unaffected). Fixed: Margin uses Application Support/Margin, copies the old file once (test + verified on this Mac).
 - 2026-10-13 Incident: whole-document ask with Mistral failed ("no JSON object"): 4096-token cap cut the answer; Mistral reasoning chunks dropped. Fixed with tests (salvage, JSON mode, budget 8–16k). ⌘Y ask ignored the selection (⇥ moved focus) — fixed with key-event tests.
@@ -62,4 +63,4 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - Upstream warning: contributors/people.toml TOML parse error at line 71 (theirs).
 - Toolbar sits in the 28 pt traffic-light band (AppKit fixes the lights; moving them needs unsafe code, forbidden upstream) — slimmer than the 52 pt mockup.
 - Pageless and the inspector settings are app-wide, not saved per document.
-- 2026-10-12 Incident (twice): app binary not rebuilt after code changes, Martijn saw the old app. Fix: always launch via scripts/margin-run.sh (rebuilds, refuses stale binary); verify the live window via the control channel before reporting.
+- 2026-10-12 Incident (twice): app binary not rebuilt after code changes, Martijn saw the old app. Fix: always launch via scripts/optimo-run.sh (rebuilds, refuses stale binary); verify the live window via the control channel before reporting.
