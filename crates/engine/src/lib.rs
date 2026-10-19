@@ -17,6 +17,7 @@ pub mod file_access;
 pub mod io;
 mod io_ext;
 pub mod keymap;
+pub mod looks;
 pub mod math_gallery;
 pub mod print;
 pub mod ribbon;

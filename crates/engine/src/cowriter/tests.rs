@@ -307,10 +307,12 @@ fn verbs_not_built_yet_are_unavailable_and_refuse_to_run() {
     let sc = scope(&s, ScopeKind::Document).unwrap();
     let opts = json!({});
     let call = Call { session: &s, scope: &sc, options: &opts, name: NAME };
+    // Each phase flips its own verb's AVAILABLE; the ones still to come refuse to run.
     for v in Verb::GROUP {
-        assert!(!v.available(), "{v:?} lands in its own phase");
-        assert!(prompt(v, &call).is_err() && run(v, &call, None).is_err());
         assert_eq!(Verb::from_id(v.id()), Some(v));
+        if !v.available() {
+            assert!(prompt(v, &call).is_err() && run(v, &call, None).is_err(), "{v:?}");
+        }
     }
     assert!(Verb::Ask.available());
     assert!(prompt(Verb::Ask, &call).is_err(), "an ask without words is an error");
@@ -344,4 +346,54 @@ fn sentence_counting() {
     assert_eq!(sentences("Wait… what?"), 2);
     assert_eq!(sentences("“Go.” He went."), 2);
     assert_eq!(sentences("..."), 0);
+}
+
+/// Rule 5 reads the body as it reads with the changes accepted: a tracked typographic swap
+/// (old and new characters both in the text until accepted) keeps the words.
+#[test]
+fn a_tracked_typography_swap_keeps_the_words() {
+    let mut s = session(&["Wait... it's \"done\""]);
+    let r = keeping_words(&mut s, |s| {
+        s.doc.settings.track_changes = true;
+        // Last first: a tracked replacement leaves the old characters before the new.
+        for (a, b, w) in [(18, 19, "”"), (13, 14, "“"), (10, 11, "’"), (4, 7, "…")] {
+            let at = |o| wordcraft_doc::Pos { story: StoryRef::Body, path: wordcraft_doc::Path::top(0), off: o };
+            s.sel = crate::Selection { anchor: at(a), focus: at(b) };
+            s.run("text.insert", &json!({"text": w, "raw": true})).unwrap();
+        }
+    });
+    assert_eq!(r, Ok(3), "{}", text(&s));
+    assert!(text(&s).contains("...") && text(&s).contains("…"), "both are in the text until accepted: {}", text(&s));
+}
+
+/// A tracked delete and insert that changes a real word still fails, and is taken back.
+#[test]
+fn a_tracked_word_change_still_fails() {
+    let mut s = session(&["Book the kiln a week ahead."]);
+    let before = text(&s);
+    let r = keeping_words(&mut s, |s| {
+        s.doc.settings.track_changes = true;
+        let at = |o| wordcraft_doc::Pos { story: StoryRef::Body, path: wordcraft_doc::Path::top(0), off: o };
+        s.sel = crate::Selection { anchor: at(9), focus: at(13) };
+        s.run("text.insert", &json!({"text": "oven", "raw": true})).unwrap();
+    });
+    assert_eq!(r, Err((5, 1)));
+    assert_eq!(text(&s), before);
+}
+
+/// Someone else's pending deletion from before the run is the same before and after: it passes.
+#[test]
+fn a_pending_deletion_from_before_the_run_passes() {
+    let mut s = session(&["Book the kiln a week ahead."]);
+    s.doc.settings.track_changes = true;
+    let at = |o| wordcraft_doc::Pos { story: StoryRef::Body, path: wordcraft_doc::Path::top(0), off: o };
+    s.sel = crate::Selection { anchor: at(14), focus: at(21) };
+    s.run("text.delete", &json!({})).unwrap();
+    s.doc.settings.track_changes = false;
+    let r = keeping_words(&mut s, |s| {
+        s.sel = crate::Selection::caret(at(0));
+        s.run_as_assistant(NAME, "para.style", &json!({"style": "Heading1"})).unwrap();
+    });
+    assert_eq!(r, Ok(4), "the deleted words don't count, before or after");
+    assert!(text(&s).contains("a week"), "Martijn's deletion is still pending");
 }
