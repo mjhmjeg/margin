@@ -112,6 +112,8 @@ pub struct CoWriter {
     pub stuck_at: Option<wordcraft_engine::doc::Path>,
     /// O6: Read as a reader's chooser and Check's one-click options (`reader_view`).
     pub reader: crate::reader_view::State,
+    /// O7: Structure's Shape in the left desk margin (`structure_view`).
+    pub structure: Option<crate::structure_view::StructureView>,
 }
 
 fn now_hm() -> String {
@@ -187,6 +189,10 @@ pub fn start(app: &mut WordApp, verb: Verb, kind: ScopeKind, mut options: Value)
             }
         }
     }
+    if verb == Verb::Structure {
+        // O7: the shape is the whole document's.
+        kind = ScopeKind::Document;
+    }
     let needs_model = !(verb == Verb::FormatForMe && options.get("look").is_some_and(|l| !l.is_null()));
     if needs_model && let Some(why) = refusal(app) {
         return Err(why);
@@ -209,6 +215,9 @@ pub fn start(app: &mut WordApp, verb: Verb, kind: ScopeKind, mut options: Value)
     let prompt = cowriter::prompt(verb, &Call { session: &app.session, scope: &scope, options: &options, name: &name })?;
     if verb == Verb::Alternatives {
         crate::alternatives_view::begin(app, &scope, &options);
+    }
+    if verb == Verb::Structure {
+        crate::structure_view::begin(app, &scope);
     }
     let doc = app.session.document_id();
     let mut run = Run {
@@ -356,6 +365,39 @@ pub(crate) fn remember_note(app: &mut WordApp, id: u32, kind: &str) {
     );
 }
 
+/// O7: land `answer` as if the model had sent it for `verb` on `kind`, through the real reader,
+/// guards and landing, without a provider (the control hooks for tests and screenshots).
+pub(crate) fn run_with_answer(app: &mut WordApp, verb: Verb, kind: ScopeKind, answer: &str) -> Result<(), String> {
+    let scope = edits::scope(&app.session, kind).map_err(|e| capitalise(&e))?;
+    if verb == Verb::Structure {
+        crate::structure_view::begin(app, &scope);
+    }
+    let (doc, name) = (app.session.document_id(), app.ui.assistant.name());
+    let run = Run {
+        time: now_hm(),
+        verb,
+        instruction: String::new(),
+        scope: scope_label(&scope),
+        author: name.clone(),
+        status: Status::Working,
+        report: String::new(),
+        lines: Vec::new(),
+        notes: Vec::new(),
+        applied: Vec::new(),
+        answer: None,
+    };
+    push_run(app, doc, run);
+    let index = app.cowriter.runs(doc).len().saturating_sub(1);
+    let options = json!({});
+    let ran = cowriter::run(
+        verb,
+        &Call { session: &app.session, scope: &scope, options: &options, name: &name },
+        Some(Reply { text: answer, stop_reason: Some("stop") }),
+    );
+    land(app, doc, index, verb, &scope, &name, ran, Some(answer.to_string()), &options);
+    Ok(())
+}
+
 pub(crate) fn run_mut(app: &mut WordApp, doc: u64, i: usize) -> Option<&mut Run> {
     app.cowriter.runs.get_mut(&doc).and_then(|l| l.get_mut(i))
 }
@@ -489,6 +531,8 @@ fn land(
     crate::assistant_link::sync_policy(app);
     // O9: I'm stuck keeps its questions and first line in the margin view, landing none of them.
     let ran = if verb == Verb::Stuck { ran.map(|r| crate::stuck_view::take(app, r)) } else { ran };
+    // O7: Structure keeps its moves and new headings as suggestions; observations land as notes.
+    let ran = if verb == Verb::Structure { ran.map(|r| crate::structure_view::take(app, r, raw.as_deref())) } else { ran };
     // O4: Format for me keeps the document as it was, for Before and ⌥ compare.
     let before = (verb == Verb::FormatForMe).then(|| app.session.doc.clone());
     let (status, report, mut lines, notes, applied, answer) = match ran {
@@ -640,6 +684,7 @@ pub fn command(app: &mut WordApp, id: &str, p: &Value) -> Option<Result<Value, S
         "ui.assistant.formatView" => crate::format_view::control(app, p),
         "ui.assistant.alternatives" => crate::alternatives_view::control(app, p),
         "ui.assistant.stuckView" => crate::stuck_view::control(app, p),
+        "ui.assistant.structureView" => crate::structure_view::control(app, p),
         "ui.assistant.panel" => {
             let on = match p.get("value") {
                 None | Some(Value::Null) => !app.cowriter.margin,
