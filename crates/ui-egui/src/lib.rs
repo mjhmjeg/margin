@@ -80,6 +80,7 @@ pub mod review_panel;
 pub mod ribbon;
 pub mod scroll;
 pub mod skin;
+pub mod stuck_view;
 pub mod system_clipboard;
 pub mod table_pen;
 pub mod table_resize;
@@ -1189,7 +1190,8 @@ impl WordApp {
             | "ui.assistant.panel"
             | "ui.assistant.log"
             | "ui.assistant.formatView"
-            | "ui.assistant.alternatives" => {
+            | "ui.assistant.alternatives"
+            | "ui.assistant.stuckView" => {
                 return cowriter::command(self, id, p);
             }
             "ui.startScreen" => {
