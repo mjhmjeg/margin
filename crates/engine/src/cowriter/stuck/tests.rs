@@ -110,6 +110,16 @@ fn prepare_uses_a_blank_paragraph_and_adds_one_otherwise() {
 }
 
 #[test]
+fn prepare_after_a_list_makes_a_plain_paragraph() {
+    let mut s = Session::new(Document::new());
+    s.run("text.insert", &json!({"text": "One", "raw": true})).unwrap();
+    s.run("para.numbering", &json!({})).unwrap();
+    let at = crate::stuck::prepare(&mut s, None).unwrap();
+    assert!(crate::stuck::is_blank(&s, &at));
+    assert!(s.doc.para_at(&at).unwrap().props.numbering.is_none_or(|n| n.num == 0));
+}
+
+#[test]
 fn clicking_a_question_pins_it_as_a_comment_by_the_ai_author_at_the_caret() {
     let (mut s, at) = stuck_session();
     let before = text(&s);
