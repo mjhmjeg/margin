@@ -188,3 +188,9 @@ fn addresses_sites_and_years() {
     assert_eq!(r::year("2024-06-01"), "2024");
     assert_eq!(r::year("12024"), "");
 }
+
+#[test]
+fn the_prompt_asks_for_metric_units_first() {
+    let p = super::system("Claude", true, false);
+    assert!(p.contains("metric/SI units first") && p.contains("imperial units in brackets"));
+}
