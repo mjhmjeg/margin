@@ -292,7 +292,10 @@ pub fn markup_width(app: &WordApp) -> f32 {
     let formats = m.formatting
         && wordcraft_engine::cmd::review::has_format_changes(&s.doc)
         && wordcraft_engine::cmd::review::format_changes(s).iter().any(|(_, author, _)| !in_desk_margin(app, author));
-    let moves = m.insertions_deletions && wordcraft_engine::cmd::moves::has_moves(&s.doc);
+    // O7: and so are its tracked heading moves (Structure's Shape shows them).
+    let moves = m.insertions_deletions
+        && wordcraft_engine::cmd::moves::has_moves(&s.doc)
+        && wordcraft_engine::cmd::review::move_changes(s).iter().any(|(_, author, _)| !in_desk_margin(app, author));
     let deletions = s.revisions_in_balloons() && wordcraft_engine::cmd::review::has_deletions(&s.doc);
     if s.balloons_shown() && (comments || formats || moves || deletions) { 216.0 } else { 0.0 }
 }
@@ -1348,7 +1351,7 @@ fn balloons(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[Re
     }
     // Each end of a tracked move.
     let moves = if m.insertions_deletions { wordcraft_engine::cmd::review::move_changes(&app.session) } else { Vec::new() };
-    for (pos, author, from) in moves.into_iter().take(500) {
+    for (pos, author, from) in moves.into_iter().filter(|(_, a, _)| !in_desk_margin(app, a)).take(500) {
         let Some(c) = layout.caret_on(&pos, app.session.page_hint) else { continue };
         let text = if from { tl!("Moved from") } else { tl!("Moved to") }.to_string();
         by_page.entry(c.page).or_default().push((c.x, c.top + c.height, Balloon::Format(author, text), pos));

@@ -602,3 +602,68 @@ prefix travels inside the note text and survives repairs); anchoring Check notes
 number (often not unique, so `locate` refuses it); hidden encodings in option strings (the
 visible "Use"/"Keep" labels carry exactly what the fix needs); running Read straight away with
 the last reader (OPTIMO R1 asks who the reader is first).
+
+## 2026-10-20 — Optimo O7: Structure (OPTIMO.md §8, S1–S4)
+
+**Context.** Phase O7: the document's shape, what is out of order and what is missing. Rule 1
+holds: Structure adds no body text, only heading text when the person accepts a missing heading.
+Martijn's decisions: Mistral is the model; no stop points. `mod.rs` untouched.
+
+**Decision.**
+- **Engine** (`crates/engine/src/cowriter/structure.rs` + new `crates/engine/src/structure.rs`).
+  `outline` = one section per top-level heading paragraph (outline level, deleted text left out)
+  with its own words; a section moves with its subsections. One model call over the whole
+  document (⌃⌥⌘S and ⌘Y force the Document scope) with the outline in the request; the answer is
+  one JSON object `{"report", "purposes", "moves", "missing", "notes"}`, anything else is an error
+  and changes nothing. `read` checks it against the document: a move or a place naming a heading
+  the document doesn't have is refused with a line, a move that is already in place is skipped,
+  a "heading" ending in `. ! : ; ,`, over 12 words or on two lines is refused (rule 1, on top of
+  the runner's guard), a heading the document already has is skipped, a note whose quote isn't in
+  the text is skipped. At most 5 moves, 4 missing headings, 6 notes. Notes land as comments of
+  kind "Structure" in the right margin.
+- **Moves keep every word.** `move_section` is `edit.cut` + `edit.paste` under the AI author, so
+  the engine records a real tracked move (`w:moveFrom`/`w:moveTo`, accepting or rejecting one end
+  resolves both), joined into one undo step, inside a check that the body's words (every change
+  accepted, sorted) are the same before and after — else everything is restored (document,
+  selection, undo, the person's clipboard). `cowriter::keeping_words` compares order, so a move
+  would always fail it; the bag-of-words check is the equivalent the brief allowed. Two engine
+  quirks worked around: a paste gives the heading it lands before the look of the paragraph after
+  the cut (its own props are put back), and a pasted range that starts with a paragraph mark
+  rejects into a merged paragraph — so the last section first gets a tracked empty paragraph after
+  it (accepted, the document ends in an empty paragraph).
+- **Missing headings** land as one tracked insert (new paragraph + the heading text + the Heading
+  N style) by the AI author, one undo step, with the same word check allowing only the heading's
+  words.
+- **Shape** (`crates/ui-egui/src/structure_view.rs`), left desk margin, 264 wide: "5 sections ·
+  156 words" · Close; per heading the text, the model's purpose (`text_dim`), a 3 pt bar by words;
+  the caret's section in `checked`; click goes to the heading; dragging a block onto another is the
+  person's own tracked move (tracking forced on for it, the person's author). S2 moves sit before
+  the heading they go before, under a dotted rule, "Move “…” here? <why>" · Move it · Not now;
+  S4 missing headings are dashed 1.5 pt blocks with Add heading · Not needed; Accept all with two
+  or more open. S3: a section under 10 words says "Empty — get unstuck" / "Only N words — get
+  unstuck" and calls `stuck_view::enter(app, Some(last paragraph of the section))`. Nothing lands
+  until the person clicks.
+- **Shared-file hooks:** `cowriter.rs` (`structure` field, Document scope and `begin` in `start`,
+  `take` in `land`, `ui.assistant.structureView`, `run_with_answer` for the control hook),
+  `margin_notes.rs` (Shape painted when Format's view isn't; a note anchored at both ends of a
+  pending move is listed once), `canvas.rs` (the co-writer's tracked moves get no balloons in the
+  Optimo layout, like its formatting), `lib.rs` (module, control id), engine `lib.rs`
+  (`pub mod structure`).
+- **Control hook.** `ui.assistant.structureView {"answer": "<json>", "accept": i, "dismiss": i,
+  "acceptAll": true, "stuck": k, "close": true}` runs a scripted answer through the real reader,
+  guards and landing (tests, screenshots).
+- **Live check** (Mistral Large, `mistral-large-latest`, key from the Keychain via `ui_shot`'s
+  `{"keychain": true}`): on the synthetic studio document it suggested moving Membership before
+  Rules, four missing headings (Equipment list, Costs, Event types, Location) and three notes
+  (`live-mistral-light.png`). The first prompt's example reasons came back word for word,
+  so the prompt now describes the reasons without examples.
+
+**Known limits.** The Shape hides on a desk narrower than 160 pt left of the
+page (the notes still show). Purposes and reasons are matched to the guarded outputs by heading
+text from the raw answer (the runner's `Output` carries neither). Comments inside a moved section
+stay on both ends until the move is resolved. Live I'm stuck from an empty section answered in
+German for an English document (O9's prompt, `stuck-*.png`).
+
+**Alternatives rejected.** A move written at the document-model level (the cut/paste path already
+makes Word-compatible move revisions and their accept/reject); landing all suggestions at once
+(OPTIMO: each lands only when accepted); a person's drag as an AI move (the person moved it).

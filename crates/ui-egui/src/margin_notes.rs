@@ -46,9 +46,12 @@ pub fn has_notes(app: &WordApp) -> bool {
 /// The open notes in document order (top-level comments by an assistant, not resolved).
 fn notes(app: &WordApp) -> Vec<Note> {
     let doc = app.session.document_id();
+    // O7: a note inside a pending move is anchored at both ends; it shows once.
+    let mut seen = std::collections::HashSet::new();
     wordcraft_engine::cmd::review::comment_list(&app.session)
         .into_iter()
         .take(500)
+        .filter(|(id, _)| seen.insert(*id))
         .filter_map(|(id, pos)| {
             let c = app.session.doc.comments.get(&id)?;
             if c.parent.is_some() || c.resolved || !crate::review_panel::is_assistant(&c.author) {
@@ -75,6 +78,9 @@ pub fn paint(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[R
     // O4: Format for me's Before thumbnail, ⌥ compare and Show's flash.
     if crate::format_view::active(app) {
         crate::format_view::paint_pages(app, ui, painter, rects, layout, scale);
+    } else {
+        // O7: Structure's Shape left of the page.
+        crate::structure_view::paint(app, ui, painter, rects);
     }
     let t = Tokens::get(ui.ctx());
     let clip = ui.clip_rect();
