@@ -76,6 +76,10 @@ pub fn visible(app: &WordApp) -> bool {
     if app.canvas.context_menu_open {
         return false;
     }
+    // Never over the Alternatives card, which opens under this same selection.
+    if app.cowriter.alts.is_some() {
+        return false;
+    }
     // Never while a drag-select is in progress (Word shows it on mouse-up).
     if app.canvas.drag_selecting() {
         return false;

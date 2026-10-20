@@ -315,6 +315,8 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `docs/design-handoff/phase-O9/pinned-light.png` | Optimo fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Optimo O9 I'm stuck (2026-10-19) |
 | `docs/design-handoff/phase-O9/pinned-dark.png` | Optimo fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Optimo O9 I'm stuck (2026-10-19) |
 | `docs/design-handoff/phase-O9/placeholder-light.png` | Optimo fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Optimo O9 I'm stuck (2026-10-19) |
+| `docs/design-handoff/polish/alternatives-no-toolbar-light.png` | Optimo fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Optimo polish batch (2026-10-20) |
+| `docs/design-handoff/polish/stuck-comment-light.png` | Optimo fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Optimo polish batch (2026-10-20) |
 | `docs/design-handoff/phase-O9/placeholder-dark.png` | Optimo fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Optimo O9 I'm stuck (2026-10-19) |
 | `docs/design-handoff/phase-O7/outline-light.png` | Optimo fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Optimo O7 Structure (2026-10-20) |
 | `docs/design-handoff/phase-O7/outline-dark.png` | Optimo fork contributors | screenshot of this app's own interface, rendered by `ui_shot` | MIT OR Apache-2.0 | Optimo O7 Structure (2026-10-20) |

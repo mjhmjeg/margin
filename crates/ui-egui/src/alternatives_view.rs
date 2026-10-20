@@ -510,6 +510,23 @@ fn footer(ui: &mut Ui, card: &Card, t: &Tokens, acts: &mut Vec<Act>) {
 
 /// `ui.assistant.alternatives`: read the open card, use a row (or edited text), or close it.
 pub fn control(app: &mut WordApp, p: &serde_json::Value) -> Result<serde_json::Value, String> {
+    // `{"answer": "<json text>"}` (tests and screenshots, no model): open the card on the selection
+    // and read that text as the model's answer, through the real reader and guards.
+    if let Some(answer) = p.get("answer").and_then(|v| v.as_str()) {
+        let scope = edits::scope(&app.session, ScopeKind::Selection)?;
+        let name = app.ui.assistant.name();
+        begin(app, &scope, &json!({}));
+        let doc = app.session.document_id();
+        arrived(
+            app,
+            doc,
+            usize::MAX,
+            &scope,
+            &json!({}),
+            &name,
+            Ok(ChatReply { text: answer.to_string(), stop_reason: Some("stop".into()), ..Default::default() }),
+        );
+    }
     let Some(card) = app.cowriter.alts.as_ref() else { return Err("no Alternatives card is open".into()) };
     if p.get("close").and_then(|v| v.as_bool()) == Some(true) {
         app.cowriter.alts = None;
