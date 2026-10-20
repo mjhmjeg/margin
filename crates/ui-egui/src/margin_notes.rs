@@ -125,6 +125,10 @@ pub fn paint(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[R
             _ => top,
         };
         y_min = crate::stuck_view::paint_margin(app, ui, pos2(x, y_min), width) + GAP * 2.0;
+    } else if crate::reader_view::active(app) {
+        // O6: Read as a reader's chooser and counts take the summary's place.
+        let top = if narrow { y_min } else { y_min.max(clip.min.y + 12.0) };
+        y_min = crate::reader_view::paint_margin(app, ui, pos2(x, top), width) + GAP * 2.0;
     } else if let Some(b) = summary {
         let top = if narrow { y_min } else { y_min.max(clip.min.y + 12.0) };
         y_min = block(ui, painter, pos2(x, top), width, &b, None, &[("Hide", Action::HideSummary)], &mut actions) + GAP * 2.0;
@@ -136,8 +140,20 @@ pub fn paint(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[R
         let want = if narrow { y_min } else { n.y.unwrap_or(y_min) };
         let top = want.max(y_min);
         let b = Block { kind: tl!(n.kind.as_str()).to_string(), text: n.text.clone(), lines: Vec::new() };
-        let links = [("Done", Action::Done(n.id)), ("Remove", Action::Remove(n.id))];
+        // O6: the links follow the note's kind (Reply · Alternatives · Done, Thanks, Use … · Keep …).
+        let labels = crate::reader_view::links(app, &n.kind, &n.text);
+        let links: Vec<(&str, Action)> = labels
+            .iter()
+            .map(|l| match l.as_str() {
+                "Done" => ("Done", Action::Done(n.id)),
+                "Remove" => ("Remove", Action::Remove(n.id)),
+                other => (other, Action::Note(n.id, n.anchor.clone(), other.to_string())),
+            })
+            .collect();
         y_min = block(ui, painter, pos2(x, top), width, &b, Some((n.id, n.anchor.clone())), &links, &mut actions) + GAP;
+        if let Some(bottom) = crate::reader_view::paint_reply(app, ui, pos2(x, y_min), width, n.id) {
+            y_min = bottom + GAP;
+        }
     }
     for a in actions {
         match a {
@@ -148,6 +164,7 @@ pub fn paint(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[R
                 let _ = app.run("review.deleteComment", json!({"id": id}));
             }
             Action::HideSummary => app.cowriter.hide_summary = true,
+            Action::Note(id, anchor, label) => crate::reader_view::act(app, id, &anchor, &label),
             Action::Go(p) => {
                 app.session.sel = wordcraft_engine::Selection::caret(app.session.doc.clamp(&p));
                 app.canvas.want_focus = true;
@@ -162,6 +179,8 @@ enum Action {
     Remove(u32),
     HideSummary,
     Go(Pos),
+    /// O6: a kind's own action (`reader_view::act`).
+    Note(u32, Pos, String),
 }
 
 /// One block at `at`, `w` wide: the dotted rule, the kind, the text, dim lines, links. Returns

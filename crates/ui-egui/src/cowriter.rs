@@ -110,6 +110,8 @@ pub struct CoWriter {
     /// caller (Structure) asked it for.
     pub stuck: Option<crate::stuck_view::StuckView>,
     pub stuck_at: Option<wordcraft_engine::doc::Path>,
+    /// O6: Read as a reader's chooser and Check's one-click options (`reader_view`).
+    pub reader: crate::reader_view::State,
 }
 
 fn now_hm() -> String {
@@ -155,6 +157,10 @@ pub fn ask(app: &mut WordApp, instruction: &str, kind: ScopeKind) -> Result<Valu
 /// Start `verb` on `kind` with its `options`. Verbs that need a model run in the background
 /// ([`poll`]); the others land at once.
 pub fn start(app: &mut WordApp, verb: Verb, kind: ScopeKind, mut options: Value) -> Result<Value, String> {
+    // O6: Read asks who the reader is first; Check gets the allowed folders.
+    if let Some(r) = crate::reader_view::before_start(app, verb, kind, &mut options) {
+        return r;
+    }
     let p = app.ui.assistant.provider_id();
     let model = app.ui.assistant.model(p).map(str::to_string);
     let mut kind = kind;
@@ -488,6 +494,7 @@ fn land(
     let (status, report, mut lines, notes, applied, answer) = match ran {
         Ok(ran) => {
             let outputs = if before.is_some() { ran.outputs.clone() } else { Vec::new() };
+            crate::reader_view::remember(app, doc, &ran.outputs);
             let landed = cowriter::apply(&mut app.session, name, verb, scope, ran.outputs);
             if let Some(b) = before {
                 crate::format_view::landed(app, &outputs, &ran.report, ran.lines.clone(), landed.words, b, options, scope.kind);

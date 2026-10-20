@@ -792,3 +792,50 @@ fn format_for_me_without_an_answer_uses_clean() {
     let lines = log["entries"][0]["lines"].to_string();
     assert!(lines.contains("Clean"), "{lines}");
 }
+
+#[test]
+fn read_asks_for_a_reader_then_lands_kinds_and_check_offers_a_fix_that_lands_only_on_use() {
+    // O6: ⌥⌘R / ⌘Y without a reader opens the chooser and sends nothing.
+    let m = mock(
+        &answer(json!([
+            {"kind": "comment", "quote": "very big mat", "note": "Question: How big is very big?"},
+            {"kind": "comment", "quote": "happy there", "note": "Strong line: Short and warm."}
+        ])),
+        3,
+        Duration::ZERO,
+    );
+    let mut a = app_with(&DOC);
+    connect(&mut a, &m);
+    let r = a.run("ui.assistant.run", json!({"verb": "read", "scope": "document"})).unwrap();
+    assert_eq!(r["asking"], true);
+    assert_eq!(m.hits(), 0);
+    a.run("ui.assistant.run", json!({"verb": "read", "scope": "document", "reader": "A busy manager"})).unwrap();
+    wait(&mut a);
+    let sent = m.body().to_string();
+    assert!(sent.contains("A busy manager"), "{sent}");
+    let l = log(&mut a);
+    let kinds: Vec<&str> = l["entries"][0]["notes"].as_array().unwrap().iter().filter_map(|n| n["kind"].as_str()).collect();
+    assert_eq!(kinds, ["Question", "Strong line"], "{l}");
+    assert_eq!(text(&a), DOC.join("\n"));
+
+    // Check: a "Check" note with Use / Keep; nothing changes until Use.
+    let m = mock(
+        &answer(json!([{"kind": "comment", "quote": "The cat sat", "note": "The title says a dog.", "with": "The dog sat"}])),
+        2,
+        Duration::ZERO,
+    );
+    connect(&mut a, &m);
+    a.run("ui.assistant.run", json!({"verb": "check", "scope": "document"})).unwrap();
+    wait(&mut a);
+    let l = log(&mut a);
+    let note = &l["entries"][1]["notes"][0];
+    assert_eq!(note["kind"], "Check", "{l}");
+    let id = note["id"].as_u64().unwrap() as u32;
+    assert_eq!(crate::reader_view::links(&a, "Check", "The title says a dog."), ["Use dog", "Keep cat"]);
+    assert!(changes(&mut a).is_empty());
+    let pos = a.session.doc.start_of(wordcraft_doc::StoryRef::Body);
+    crate::reader_view::act(&mut a, id, &pos, "Use dog");
+    let c = changes(&mut a);
+    assert_eq!(c.len(), 2, "{c:?}");
+    assert!(c.iter().all(|(who, _, _)| who == "AI · Mock 1"), "{c:?}");
+}

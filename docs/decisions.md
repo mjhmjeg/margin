@@ -549,3 +549,56 @@ Martijn's decisions: Mistral is the model; no stop points.
 quiet start); a second model call for the first line (cost, and a second wait); anchoring
 questions on the heading (the note belongs where the person is writing); reading every linked
 file for U2.
+
+## 2026-10-20 — Optimo O6: Read as a reader and Check facts (OPTIMO.md §7, R1–R4)
+
+**Context.** Phase O6: two notes-only verbs on O3's runner. Read as a reader leaves notes where
+a chosen reader would stumble; Check facts and names compares numbers, dates and names with the
+document itself and the person's allowed files, and offers a one-click fix that lands only when
+clicked. `mod.rs` untouched.
+
+**Decision.**
+- **One answer format.** Both verbs use the edit protocol of `assistant_edits` (one JSON object,
+  the shared defensive reader). Read's kind travels in the note: `"note": "Question: …"` →
+  kind "Question" (also Unclear, Rhythm, Strong line; anything else is "Note"). Check's kind is
+  always "Check"; a finding may carry `"with"`, the quote as it reads corrected. When quote and
+  `with` differ in exactly one place (`word_diff`), the note gets "Use <new>" · "Keep <old>"
+  (OPTIMO's "Use 34" / "Keep thirty"); otherwise it is a doubt with Done · Remove.
+- **Guards.** Rewrites and insertions the model sends anyway go on to the runner's guards as
+  what they are and are refused with a line; a note whose quote is not in the text read is
+  refused in the verb ("it is not in the text that was read/checked"). Read keeps at most one
+  note per paragraph and 8 per run (the mentor is selective); Check at most 12.
+- **"Use …"** (`reader_view::choose`): one tracked replacement through `assistant_edits::apply`
+  under the note's own AI author, word-level, so only the number or name is the AI's; then the
+  note is done. "Keep …" only resolves the note. The options live in the UI per (document, note
+  text) for the session: the runner lands comments without their options, and `mod.rs` stays.
+- **Files.** Check reads only folders allowed in Settings › Co-writer; `cowriter::start` puts
+  `allowed_folders()` in the options and overwrites anything a caller passed. It opens up to 12
+  listed files, keeps the 4 that share the most of the document's numbers and capitalised words,
+  within `MAX_SOURCE_CHARS`, each as its own `BEGIN SOURCE <nonce> <name>` block marked untrusted.
+- **Reader chooser** (`reader_view.rs`): ⌥⌘R or ⌘Y without a reader opens "Read as" + a popup
+  (A first-time reader, A busy manager, An expert, A sceptic, A funder, Custom…) at the top of the
+  margin with Read · Not now; nothing is sent until Read. The last reader is kept per document for
+  the session. After a reading the header keeps the popup and shows "4 notes · 1 question ·
+  1 unclear · 1 rhythm · 1 strong line" and the report. `ui.assistant.run {"verb": "read",
+  "reader": …}` runs at once; `{"open": true}` opens the popup.
+- **Note links by kind:** Question/Unclear/Rhythm → Reply (a reply field under the note) ·
+  Alternatives (O5 on that sentence) · Done; Strong line → Thanks; Check → Use … · Keep … (or
+  Done · Remove); other notes keep Done · Remove.
+- **Shared-file hooks:** `cowriter.rs` (`reader` field; `before_start` at the top of `start`;
+  `remember` before `apply`), `margin_notes.rs` (the Read header branch, links by kind, the reply
+  field), `lib.rs` (`pub mod reader_view`), one test appended to `cowriter/tests.rs`.
+
+**Known limits.** The live Mistral run was not done: the Keychain did not hand the key to the
+newly built `ui_shot` within 30 s (a macOS prompt for the new binary); the screenshots use a
+local scripted provider (`phase-O6/*.png`), and the mock-provider test covers the full path. A
+quote that runs across another note's anchor is skipped by `locate` ("runs across a tracked
+change or an object"), so a Check after a Read can lose a finding on the same words. The last
+reader is kept for the session, not saved in the file. Check opens the files on the UI thread
+(12 files at most).
+
+**Alternatives rejected.** A label field per note (the shared reader drops unknown keys; the
+prefix travels inside the note text and survives repairs); anchoring Check notes on the bare
+number (often not unique, so `locate` refuses it); hidden encodings in option strings (the
+visible "Use"/"Keep" labels carry exactly what the fix needs); running Read straight away with
+the last reader (OPTIMO R1 asks who the reader is first).
