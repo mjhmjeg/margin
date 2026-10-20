@@ -12,8 +12,7 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - Phase 5: packaging works (Margin.app, ai.spert.margin, icon, README; package.sh takes APP_NAME/BUNDLE_ID/APP_ICNS/FILE_PREFIX/NOTARY_PROFILE). Waiting on Martijn: Developer ID identity name + notarytool keychain profile → signed universal build → draft GitHub release ✋
 
 ## Next
-- Live Mistral pass in the app over Read as a reader, Check facts, I'm stuck and Research (Martijn allows the Keychain prompt once; Sonnet, medium) ✋
-- Polish: selection toolbar overlaps the heading above the Alternatives card; a person's own comment shows as a Word-style balloon clipped beside the co-writer margin (Sonnet, medium)
+- Polish: I'm stuck at the end of a list turns the empty paragraph into a list item (should be a normal paragraph after the list); Research gives °F first (prefer °C); selection toolbar overlaps the heading above the Alternatives card; a person's own comment shows as a Word-style balloon clipped beside the co-writer margin (Sonnet, medium)
 - Martijn: try ⌥⌘T Format for me on a messy document (the live look guess is untested) ✋
 - Martijn: try ⌘Y in the running app (scripts/optimo-run.sh on branch rename/optimo) ✋
 - Martijn: try branch assistant/integrate in the running app (Mistral key, ⌘Y on a selection, Show Authorship, Home › Back); clear the Author name field to get "AI · <model>" ✋
@@ -25,6 +24,7 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - Weekly upstream merge (scheduled, Sonnet)
 
 ## Done
+- 2026-10-20 Live Mistral pass in the app (Mistral Large, Keychain key) over Read as a reader, Check facts, Research (web search) and I'm stuck: all four worked, notes only, "Your words 100 %" kept; Research findings all carried real web sources
 - 2026-10-20 Optimo O8: Research (ask in the margin, findings each with a source from your files or Mistral's own web search, store off; unsourced findings refused; Add as footnote / quote = one tracked change with the source); merged on rename/optimo, xtask ci green. Not built: "Claims in this document" list (Check facts covers it), sources list at the end (each footnote carries its source). All Optimo phases O0–O9 are now on rename/optimo
 - 2026-10-20 Optimo O7: Structure (outline in the left margin with section lengths, suggested heading moves and missing headings landing as tracked changes on accept, empty sections link to I'm stuck, impossible suggestions refused and reported; live Mistral checked); merged on rename/optimo, xtask ci green
 - 2026-10-20 Optimo O6: Read as a reader (reader chooser, notes where that reader stumbles, kinds Question/Unclear/Strong line) and Check facts and names (numbers, dates, names against the document and allowed folders; Check notes with "Use 12 / Keep 11" options landing as one tracked change on click); merged on rename/optimo, xtask ci green. Live Mistral run not done (Keychain prompt)
