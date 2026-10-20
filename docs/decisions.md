@@ -477,3 +477,41 @@ changes (as in Word).
 command guard; only the end-of-run check would stop it); one output per change (the runner caps a
 run at 50 outputs); a model pass for headings (the rules are deterministic and free); saving looks
 inside `ui.json` (a broken look file must never cost the person their window settings).
+
+## 2026-10-19 — Optimo O9: I'm stuck (OPTIMO.md §10, U1–U3)
+
+**Context.** The last small verb on O3's runner. The person is at an empty paragraph; the
+co-writer may ask, never write — except one opt-in line (rule 1's single exception).
+Martijn's decisions: Mistral is the model; no stop points.
+
+**Decision.**
+- **Engine** (`crates/engine/src/cowriter/stuck.rs` + new `crates/engine/src/stuck.rs`; `mod.rs`
+  untouched). One model call returns `{"report", "questions": [...], "first_line"}`. `read` keeps
+  only items that are one line ending in `?` (≤ 40 words; prose is skipped with a line), at most 5,
+  as `Comment` outputs of kind "Question"; `first_line` goes in raw as a `FirstLine` so the guard
+  in `mod.rs` refuses a second line, a second sentence or more than 40 words. Anything that isn't
+  JSON is an error and changes nothing. The first line is **held back**: the questions are not
+  landed by `apply` but kept in the window (`stuck_view`); each is pinned only when clicked.
+- **Pinning at the caret.** `stuck::pin` selects the collapsed caret in the empty paragraph and
+  runs `review.newComment` as the AI author (a comment on an empty point, shown in the margin
+  like any note); with comments by assistants off in Settings it says so and does nothing.
+  Comment marks don't make the paragraph non-empty (`stuck::is_blank`).
+- **First line** (U3). The click calls `cowriter::apply(Verb::Stuck, FirstLine)`: one tracked
+  insert at the caret by the AI author, only while the caret still rests in the empty paragraph.
+- **Entry for O7.** `stuck_view::enter(app, Some(paragraph path))` (or `None` for the caret's
+  section): the caret goes into that paragraph if it is blank, else a new blank one follows it
+  (as the person's own Enter), then the run starts. The same checks as ⌘Y apply (co-writer on, provider).
+- **Placeholder.** Painted over the page at the caret (grey italic, not document text); the view
+  ends when the paragraph gets any text or the caret leaves it (`stuck_view::tick`), so it goes with
+  the first keystroke. Unpinned questions go with it; pinned ones stay as notes.
+- **U2 "From your notes"** is rule-based and local (nothing extra is sent): other people's
+  comments in this document that share a word (4+ letters) with the section, and, with folders
+  allowed, the first matching line of up to 3 files in them whose *name* shares such a word.
+  Files are matched by name only so a run never reads a whole folder.
+- **Control hook.** `ui.assistant.stuckView {"answer": "<json>", "pin": i, "firstLine": true}`
+  feeds a model answer through the real reader and guards without a provider (tests, screenshots).
+
+**Alternatives rejected.** Landing all questions as comments at once (the person asked for a
+quiet start); a second model call for the first line (cost, and a second wait); anchoring
+questions on the heading (the note belongs where the person is writing); reading every linked
+file for U2.

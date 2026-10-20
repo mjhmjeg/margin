@@ -79,6 +79,7 @@ pub mod review_panel;
 pub mod ribbon;
 pub mod scroll;
 pub mod skin;
+pub mod stuck_view;
 pub mod system_clipboard;
 pub mod table_pen;
 pub mod table_resize;
@@ -1182,7 +1183,13 @@ impl WordApp {
             // (`wordcraft_engine::assistant::denied`). The key is write-only.
             "ui.assistant" => return Some(assistant_link::settings_command(self, p)),
             "ui.assistant.test" | "ui.assistant.models" => return assistant_link::command(self, id, p),
-            "ui.assistant.ask" | "ui.assistant.run" | "ui.assistant.stop" | "ui.assistant.panel" | "ui.assistant.log" | "ui.assistant.formatView" => {
+            "ui.assistant.ask"
+            | "ui.assistant.run"
+            | "ui.assistant.stop"
+            | "ui.assistant.panel"
+            | "ui.assistant.log"
+            | "ui.assistant.formatView"
+            | "ui.assistant.stuckView" => {
                 return cowriter::command(self, id, p);
             }
             "ui.startScreen" => {

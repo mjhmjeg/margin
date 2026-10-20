@@ -104,6 +104,10 @@ pub struct CoWriter {
     pub saved_looks: Option<Vec<wordcraft_engine::looks::Look>>,
     /// O4: `looks.json` in the settings folder (set by the desktop app; none on the web).
     pub looks_file: Option<std::path::PathBuf>,
+    /// O9: the view of the empty paragraph I'm stuck in (`stuck_view`), and the paragraph a
+    /// caller (Structure) asked it for.
+    pub stuck: Option<crate::stuck_view::StuckView>,
+    pub stuck_at: Option<wordcraft_engine::doc::Path>,
 }
 
 fn now_hm() -> String {
@@ -177,7 +181,12 @@ pub fn start(app: &mut WordApp, verb: Verb, kind: ScopeKind, mut options: Value)
         None if !needs_model => String::new(),
         None => return Err(tl!("Choose a model in Settings › Co-writer first.").into()),
     };
-    let scope = edits::scope(&app.session, kind).map_err(|e| capitalise(&e))?;
+    let scope = if verb == Verb::Stuck {
+        // O9: the caret goes into an empty paragraph first; an empty document is still a scope.
+        crate::stuck_view::begin(app)?
+    } else {
+        edits::scope(&app.session, kind).map_err(|e| capitalise(&e))?
+    };
     let name = app.ui.assistant.name();
     let prompt = cowriter::prompt(verb, &Call { session: &app.session, scope: &scope, options: &options, name: &name })?;
     let doc = app.session.document_id();
@@ -298,6 +307,34 @@ fn spawn(app: &mut WordApp, req: wordcraft_assistant::ChatRequest) -> Result<(Re
     }
 }
 
+/// Record the kind line ("Question") of a note made outside a run's landing.
+pub(crate) fn remember_note(app: &mut WordApp, id: u32, kind: &str) {
+    let doc = app.session.document_id();
+    if let Some(r) = app.cowriter.runs.get_mut(&doc).and_then(|l| l.iter_mut().rev().find(|r| r.verb == Verb::Stuck)) {
+        r.notes.push((id, kind.to_string()));
+        return;
+    }
+    // No run (the control hook): a quiet one holds the kind.
+    let author = app.ui.assistant.name();
+    push_run(
+        app,
+        doc,
+        Run {
+            time: now_hm(),
+            verb: Verb::Stuck,
+            instruction: String::new(),
+            scope: String::new(),
+            author,
+            status: Status::Done,
+            report: String::new(),
+            lines: Vec::new(),
+            notes: vec![(id, kind.to_string())],
+            applied: Vec::new(),
+            answer: None,
+        },
+    );
+}
+
 fn run_mut(app: &mut WordApp, doc: u64, i: usize) -> Option<&mut Run> {
     app.cowriter.runs.get_mut(&doc).and_then(|l| l.get_mut(i))
 }
@@ -316,6 +353,7 @@ pub fn stop(app: &mut WordApp) -> bool {
 
 /// Each frame: collect what the answer brought, and land it when complete.
 pub fn poll(app: &mut WordApp) {
+    crate::stuck_view::tick(app);
     let Some(job) = app.cowriter.job.as_mut() else { return };
     if job.doc != app.session.document_id() {
         let (doc, i) = (job.doc, job.run);
@@ -422,6 +460,8 @@ fn land(
     options: &Value,
 ) {
     crate::assistant_link::sync_policy(app);
+    // O9: I'm stuck keeps its questions and first line in the margin view, landing none of them.
+    let ran = if verb == Verb::Stuck { ran.map(|r| crate::stuck_view::take(app, r)) } else { ran };
     // O4: Format for me keeps the document as it was, for Before and ⌥ compare.
     let before = (verb == Verb::FormatForMe).then(|| app.session.doc.clone());
     let (status, report, mut lines, notes, applied, answer) = match ran {
@@ -567,6 +607,7 @@ pub fn command(app: &mut WordApp, id: &str, p: &Value) -> Option<Result<Value, S
         }
         "ui.assistant.stop" => Ok(json!({"stopped": stop(app)})),
         "ui.assistant.formatView" => crate::format_view::control(app, p),
+        "ui.assistant.stuckView" => crate::stuck_view::control(app, p),
         "ui.assistant.panel" => {
             let on = match p.get("value") {
                 None | Some(Value::Null) => !app.cowriter.margin,

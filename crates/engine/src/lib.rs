@@ -24,6 +24,7 @@ pub mod ribbon;
 pub mod sample;
 mod session;
 pub mod speech;
+pub mod stuck;
 
 use std::collections::HashMap;
 

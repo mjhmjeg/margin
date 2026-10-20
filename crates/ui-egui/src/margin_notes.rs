@@ -115,11 +115,21 @@ pub fn paint(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[R
         // O4: Format for me's view takes the summary's place.
         let top = if narrow { y_min } else { y_min.max(clip.min.y + 12.0) };
         y_min = crate::format_view::paint_margin(app, ui, pos2(x, top), width) + GAP * 2.0;
+    } else if crate::stuck_view::active(app) {
+        // O9: I'm stuck's questions and notes (the run's report, if any, first).
+        let top = if narrow { y_min } else { y_min.max(clip.min.y + 12.0) };
+        y_min = match summary {
+            Some(b) if !b.text.trim().is_empty() || !b.lines.is_empty() => {
+                block(ui, painter, pos2(x, top), width, &b, None, &[("Hide", Action::HideSummary)], &mut actions) + GAP * 2.0
+            }
+            _ => top,
+        };
+        y_min = crate::stuck_view::paint_margin(app, ui, pos2(x, y_min), width) + GAP * 2.0;
     } else if let Some(b) = summary {
         let top = if narrow { y_min } else { y_min.max(clip.min.y + 12.0) };
         y_min = block(ui, painter, pos2(x, top), width, &b, None, &[("Hide", Action::HideSummary)], &mut actions) + GAP * 2.0;
     }
-    if list.is_empty() && narrow && !crate::format_view::active(app) {
+    if list.is_empty() && narrow && !crate::format_view::active(app) && !crate::stuck_view::active(app) {
         painter.text(pos2(x, y_min), egui::Align2::LEFT_TOP, tl!("No notes yet."), mc::font(), t.text_dim);
     }
     for n in &list {
