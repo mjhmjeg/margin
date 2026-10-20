@@ -667,3 +667,75 @@ German for an English document (O9's prompt, `stuck-*.png`).
 **Alternatives rejected.** A move written at the document-model level (the cut/paste path already
 makes Word-compatible move revisions and their accept/reject); landing all suggestions at once
 (OPTIMO: each lands only when accepted); a person's drag as an AI move (the person moved it).
+
+## 2026-10-20 — Optimo O8: Research (OPTIMO.md §9, F1–F2, rule 4)
+
+**Context.** The last co-writer verb: look something up and bring back findings with their
+sources, each landing only as a footnote or a marked quote (rule 4: no uncited sentence). The
+open question was where findings come from: the person's own files, the model provider's own
+web search, or a separate search API (a new third-party service, Martijn's decision).
+
+**Decision.**
+- **Sources, in this order.** (1) The person's files in the folders allowed in Settings ›
+  Co-writer (`research::files`: up to 4 of the first 12 listed files that share the most words
+  with the question, sent with numbered lines). (2) The web through **Mistral's own
+  `web_search` tool**: the Conversations API (`POST /v1/conversations`, `model` + `tools:
+  [{"type": "web_search"}]`, `store: false`, no agent created), the same key and EU provider.
+  Checked live on 2026-10-20: one call returns the answer with `tool_reference` chunks
+  (title, url) where the model cited a page, and a `tool.execution` entry listing the pages the
+  search returned. No other search service or API was added. With any other provider only the
+  files are searched, and the scope line says "Web sources need a search provider: Settings ›
+  Co-writer". Note for Martijn: Mistral's tool results name `brave` and `wikipedia` as their
+  sources, so the search query reaches Brave through Mistral (Mistral's subprocessor, not ours).
+- **Connector** (`crates/assistant`): `wire::web_search_request` / `parse_web_search`,
+  `http::web_search` (Mistral only, one blocking call, 120 s), `WebReply` (text and reference
+  pieces in order, plus the searched pages). The UI thread turns it into the engine's
+  **envelope** (`research::envelope`): the text with a private-use marker where each reference
+  was, the references, and the searched pages. Private-use characters in the model's own text
+  are removed first, so the model can't forge a reference.
+- **Reading** (`cowriter/research.rs`, `mod.rs` untouched). The model answers in lines
+  ("Summary: …", then "- finding … source"). A finding is kept only with a real source: a
+  file cite `[name:line]` for a file that was sent, whose line (with its neighbours) holds the
+  finding's meaning words as whole words; or a reference the provider attached that is a real
+  http(s) address and one of the pages the search returned. A listed line without one is
+  refused ("it has no source (rule 4)"); so are fake, empty or non-web addresses and pages the
+  search never returned. Outside a web run, addresses or markers in the text are no source. The
+  runner's guards then refuse a finding of more than one sentence or 60 words. At most 6.
+- **Landing.** A finding is held in the margin; nothing lands until the person clicks. Add as
+  footnote: `references.footnote` as the AI author after the anchor (the end of the selection,
+  else of the caret's paragraph: the shortest unique tail), the footnote text = the finding +
+  "Title, site, year, address" (or "file, line N"). `references.footnote` is now a tracked
+  insertion while Track Changes is on (as in Word), so the note is one tracked change by the AI
+  author and one undo step. Add as quote: a new Quote-style paragraph after the anchor's
+  paragraph, "“finding” — citation", one tracked insert, one undo step.
+- **View** (`research_view.rs`): ⌘Y "Research…" or ⇧⌥⌘F opens the right margin with
+  "Research", the query field (prefilled from the selection), the scope line ("Web · your
+  folders"), Look up · Close; then the report, refusals in `text_dim`, and per finding the
+  sentence, "title · site · year" in `text_dim` (a click opens the page: four links don't fit
+  268 pt), and Add as footnote · Add as quote · Dismiss. Hooks in shared files: `cowriter.rs` (`research` field, `before_start`, no JSON mode
+  for Research, `spawn(…, web)`, `take` in `land`, `run_with_options`, the control id),
+  `margin_notes.rs` (the view's branch), `lib.rs` (module, control id), engine `lib.rs`
+  (`pub mod research`), `cmd/references.rs` (tracked footnote).
+- **Control hook.** `ui.assistant.researchView {"open", "answer", "query", "pages", "add", "as",
+  "dismiss", "close"}` runs a scripted answer (with `pages`, a web answer whose `⟦n⟧` marks
+  cite `pages[n]`) through the real reader, guards and landing.
+
+**Live check.** Mistral's web search, called with the Keychain key from the shell
+(`curl` to `/v1/conversations`, `mistral-medium-latest`, 2026-10-20): one search, 10 pages
+returned, the answer cited the Wikipedia page "Albula railway line" with a `tool_reference`;
+`parse_web_search` is tested on that shape. The in-app live run was not done: the Keychain did
+not hand the key to the newly built `ui_shot` within 30 s (a macOS prompt, as in O6). The
+screenshots (`phase-O8/*.png`) use a scripted web answer through the real reader, guards and
+landing (`ui.assistant.researchView {"answer", "pages"}`); its findings are illustrative.
+
+**Known limits.** F3 "Claims in this document" is not built (Check facts covers numbers, dates
+and names against files). The "sources list at the end" is not added: each footnote carries
+its full source. Files and web are one call with Mistral; a file finding is checked by words,
+not meaning. Markdown files are cited by the lines of their text as read (soft-wrapped lines
+join). A web search can't be stopped mid-call (Stop discards its answer).
+
+**Alternatives rejected.** A separate search API (Brave, Exa, Tavily…: a new third-party
+service and key, Martijn's call, and not needed while Mistral searches itself); trusting
+addresses the model writes (the reference must come from the provider's tool); asking for JSON
+in a web run (references arrive as chunks between the text, so lines with markers are the honest
+unit); landing findings at once (rule 2: options, never replacements).

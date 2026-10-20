@@ -8,7 +8,7 @@ use std::time::Duration;
 use ureq::Agent;
 
 use crate::wire::{self, Request};
-use crate::{AssistantError, ChatReply, ChatRequest, Endpoint, Model};
+use crate::{AssistantError, ChatReply, ChatRequest, Endpoint, Model, WebReply};
 
 /// Biggest answer read (a model list from OpenRouter is a few MB).
 const MAX_BODY: u64 = 32 * 1024 * 1024;
@@ -172,4 +172,21 @@ pub fn chat_stream_until(
     let mut reply = parser.finish();
     reply.json_refused = json_refused;
     Ok(reply)
+}
+
+/// A chat call with the provider's web search ([`wire::web_search_request`]; Mistral only),
+/// answered in one piece. Searching takes a while, so `timeout` covers the whole call. `stop` is
+/// checked before and after (a blocking call can't be cut short).
+pub fn web_search(ep: &Endpoint, req: &ChatRequest, timeout: Duration, stop: &AtomicBool) -> Result<WebReply, AssistantError> {
+    if !ep.provider.web_search() {
+        return Err(AssistantError::Unsupported("this provider doesn't search the web".into()));
+    }
+    if stop.load(Ordering::Relaxed) {
+        return Err(AssistantError::Stopped);
+    }
+    let body = exchange(&agent(timeout, false), &wire::web_search_request(ep, req), ep, timeout)?;
+    if stop.load(Ordering::Relaxed) {
+        return Err(AssistantError::Stopped);
+    }
+    wire::parse_web_search(&body)
 }

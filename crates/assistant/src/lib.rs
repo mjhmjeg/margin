@@ -122,6 +122,12 @@ impl ProviderId {
         ProviderId::Other,
     ];
 
+    /// The provider searches the web itself with the same key (Mistral's `web_search` tool,
+    /// through its Conversations API): no other search service is involved on our side.
+    pub fn web_search(self) -> bool {
+        self == ProviderId::Mistral
+    }
+
     /// The id stored in settings and used as the keychain account.
     pub fn id(self) -> &'static str {
         match self {
@@ -287,6 +293,39 @@ pub struct ChatReply {
     pub stop_reason: Option<String>,
     /// The server refused JSON mode (`ChatRequest::json`), so the call was made again without it.
     pub json_refused: bool,
+}
+
+/// A web page in a search answer: a reference the provider attached to its text, or a page its
+/// search tool returned.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct WebPage {
+    pub title: String,
+    pub url: String,
+    /// As the search gave it, or empty.
+    pub date: String,
+}
+
+/// A piece of a search answer, in order: text, or a reference to a page.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WebPiece {
+    Text(String),
+    Ref(WebPage),
+}
+
+/// What a call with the provider's web search tool brought back.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct WebReply {
+    pub pieces: Vec<WebPiece>,
+    /// The pages the search returned (what the references may point at).
+    pub searched: Vec<WebPage>,
+    pub model: String,
+}
+
+impl WebReply {
+    /// The answer's text without its references.
+    pub fn text(&self) -> String {
+        self.pieces.iter().filter_map(|p| if let WebPiece::Text(t) = p { Some(t.as_str()) } else { None }).collect()
+    }
 }
 
 /// Why a call failed, in words a person can act on. Never contains the key.

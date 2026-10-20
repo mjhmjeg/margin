@@ -20,6 +20,7 @@ pub mod keymap;
 pub mod looks;
 pub mod math_gallery;
 pub mod print;
+pub mod research;
 pub mod ribbon;
 pub mod sample;
 mod session;
