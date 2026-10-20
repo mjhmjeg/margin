@@ -12,7 +12,7 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - Phase 5: packaging works (Margin.app, ai.spert.margin, icon, README; package.sh takes APP_NAME/BUNDLE_ID/APP_ICNS/FILE_PREFIX/NOTARY_PROFILE). Waiting on Martijn: Developer ID identity name + notarytool keychain profile → signed universal build → draft GitHub release ✋
 
 ## Next
-- Optimo O9 I'm stuck (Sonnet, high, running), then O6 Reader + O7 Structure (Opus, high), then O8 Research (Opus, high): each its own worktree session from rename/optimo
+- Optimo O6 Read as a reader + Check facts (Opus, high): running in its own session; then O7 Structure, then O8 Research
 - Martijn: try ⌥⌘T Format for me on a messy document (the live look guess is untested) ✋
 - Martijn: try ⌘Y in the running app (scripts/optimo-run.sh on branch rename/optimo) ✋
 - Martijn: try branch assistant/integrate in the running app (Mistral key, ⌘Y on a selection, Show Authorship, Home › Back); clear the Author name field to get "AI · <model>" ✋
@@ -24,6 +24,7 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - Weekly upstream merge (scheduled, Sonnet)
 
 ## Done
+- 2026-10-20 Optimo O9: I'm stuck (grey placeholder in the empty paragraph, 3–5 questions in the margin pinned on click, "From your notes" from earlier comments, one opt-in rough first line as a tracked insert); merged on rename/optimo, xtask ci green. Live Mistral run not done yet. Polish: a person's own comment still shows as a Word-style balloon clipped beside the co-writer margin
 - 2026-10-19 Optimo O5: Alternatives (card under the sentence: Yours / Sharper / Plainer / Warmer, tone popup, changed words marked; picking one = one tracked replacement by the AI; live Mistral checked); plus keychain read moved off the UI thread (window no longer freezes behind the macOS prompt; not yet tried with a real prompt). Merged on rename/optimo, xtask ci green. Polish: the selection toolbar overlaps the heading above the card
 - 2026-10-19 Optimo O4: Format for me (rule-based headings, lists, tables, fonts, spacing, typography; Clean/Classic/Report/Letter looks + "Save as my look"; Before thumbnail, ⌥ compare; margin view with "Your words: 0 changed"; Check notes for word-level findings); merged on rename/optimo, xtask ci green. Limits: text→table is an undo step, not a tracked change; live look guess not yet run
 - 2026-10-19 Optimo O3: co-writer engine (verb runner + guards for the five rules in crates/engine/src/cowriter/, notes in the right margin, ⌘Y Co-writer group + Ask row, "Co-writer is reading… · Stop", old Assistant panel retired, Settings › Co-writer); live Mistral ask landed notes only; merged on rename/optimo, xtask ci green
@@ -45,7 +46,7 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 
 ## Open decisions
 - OPTIMO.md §13: (1) ⌘Y Repeat → ⇧⌘Y — decided 2026-10-15 (2) Look list Clean/Classic/Report/Letter, user-saved looks? (3) Research: provider web search or own search API key?
-- Branch rename/optimo (O0–O5, built on assistant/integrate) not merged to main or pushed yet.
+- Branch rename/optimo (O0–O5 + O9, built on assistant/integrate) not merged to main or pushed yet.
 - Product name: Optimo (2026-10-14, replaces Margin). No formal trademark search done.
 
 ## Known bugs
