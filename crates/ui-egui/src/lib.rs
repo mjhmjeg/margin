@@ -76,6 +76,7 @@ pub mod paste_picture;
 pub mod previews;
 pub mod print_page;
 pub mod read_aloud;
+pub mod reader_view;
 pub mod review_panel;
 pub mod ribbon;
 pub mod scroll;
