@@ -3,7 +3,7 @@
 
 use serde_json::{Value, json};
 
-use crate::{AssistantError, ChatReply, ChatRequest, Connector, Endpoint, Model, ProviderId, Role};
+use crate::{AssistantError, ChatReply, ChatRequest, Connector, Endpoint, Model, ProviderId, Role, WebPage, WebPiece, WebReply};
 
 /// The `anthropic-version` header value the Messages API is called with.
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";
@@ -162,6 +162,81 @@ pub fn parse_chat(connector: Connector, body: &str) -> Result<ChatReply, Assista
             Ok(ChatReply { text, model, stop_reason, json_refused: false })
         }
     }
+}
+
+/// Most pages one search answer keeps.
+pub const MAX_WEB_PAGES: usize = 40;
+
+/// A chat call that may search the web: Mistral's Conversations API with its built-in
+/// `web_search` tool, not stored on Mistral's side (`store: false`), answered in one piece.
+/// Source: https://docs.mistral.ai/agents/tools/built-in/websearch and
+/// https://docs.mistral.ai/api/endpoint/beta/conversations (checked 2026-10-20; the API takes
+/// `model` + `tools` without creating an agent).
+pub fn web_search_request(ep: &Endpoint, req: &ChatRequest) -> Request {
+    let inputs: Vec<Value> = req.messages.iter().map(|m| json!({"role": role(m.role), "content": m.content})).collect();
+    let mut b = json!({"model": req.model, "inputs": inputs, "tools": [{"type": "web_search"}], "store": false});
+    if let Some(s) = req.system.as_ref().filter(|s| !s.is_empty()) {
+        b["instructions"] = json!(s);
+    }
+    if let Some(n) = req.max_tokens {
+        b["completion_args"] = json!({"max_tokens": n});
+    }
+    Request { method: "POST", url: ep.url("conversations"), headers: headers(ep, true), body: Some(b.to_string()) }
+}
+
+fn page(v: &Value) -> WebPage {
+    let s = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or_default().chars().take(2048).collect::<String>();
+    WebPage { title: s("title"), url: s("url"), date: s("date") }
+}
+
+/// A Conversations answer: the text and its `tool_reference` chunks in order, and the pages the
+/// `web_search` executions returned (their `info.result` is a JSON string of pages by key).
+pub fn parse_web_search(body: &str) -> Result<WebReply, AssistantError> {
+    let v: Value = serde_json::from_str(body).map_err(|_| AssistantError::Protocol("the reply isn't JSON".into()))?;
+    let Some(outputs) = v.get("outputs").and_then(Value::as_array) else {
+        return Err(AssistantError::Protocol("the reply has no outputs".into()));
+    };
+    let mut out = WebReply::default();
+    for o in outputs {
+        match o.get("type").and_then(Value::as_str) {
+            Some("tool.execution") => {
+                let result = o.pointer("/info/result").and_then(Value::as_str).unwrap_or_default();
+                let pages: Value = serde_json::from_str(result).unwrap_or(Value::Null);
+                let list: Vec<&Value> = match &pages {
+                    Value::Object(m) => m.values().collect(),
+                    Value::Array(a) => a.iter().collect(),
+                    _ => Vec::new(),
+                };
+                for p in list {
+                    if out.searched.len() < MAX_WEB_PAGES {
+                        out.searched.push(page(p));
+                    }
+                }
+            }
+            Some("message.output") => {
+                if let Some(m) = o.get("model").and_then(Value::as_str) {
+                    out.model = m.to_string();
+                }
+                match o.get("content") {
+                    Some(Value::String(t)) => out.pieces.push(WebPiece::Text(t.clone())),
+                    Some(Value::Array(chunks)) => {
+                        for c in chunks {
+                            match c.get("type").and_then(Value::as_str) {
+                                Some("text") => {
+                                    out.pieces.push(WebPiece::Text(c.get("text").and_then(Value::as_str).unwrap_or_default().to_string()))
+                                }
+                                Some("tool_reference") if out.pieces.len() < 4 * MAX_WEB_PAGES => out.pieces.push(WebPiece::Ref(page(c))),
+                                _ => {}
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(out)
 }
 
 /// The answer text of an OpenAI-compatible `content`: a string, or (Mistral with reasoning, and

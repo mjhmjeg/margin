@@ -131,6 +131,10 @@ pub fn paint(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[R
             _ => top,
         };
         y_min = crate::stuck_view::paint_margin(app, ui, pos2(x, y_min), width) + GAP * 2.0;
+    } else if crate::research_view::active(app) {
+        // O8: Research's field and findings (its report and refusals inside the view).
+        let top = if narrow { y_min } else { y_min.max(clip.min.y + 12.0) };
+        y_min = crate::research_view::paint_margin(app, ui, pos2(x, top), width) + GAP * 2.0;
     } else if crate::reader_view::active(app) {
         // O6: Read as a reader's chooser and counts take the summary's place.
         let top = if narrow { y_min } else { y_min.max(clip.min.y + 12.0) };
@@ -139,7 +143,7 @@ pub fn paint(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[R
         let top = if narrow { y_min } else { y_min.max(clip.min.y + 12.0) };
         y_min = block(ui, painter, pos2(x, top), width, &b, None, &[("Hide", Action::HideSummary)], &mut actions) + GAP * 2.0;
     }
-    if list.is_empty() && narrow && !crate::format_view::active(app) && !crate::stuck_view::active(app) {
+    if list.is_empty() && narrow && !crate::format_view::active(app) && !crate::stuck_view::active(app) && !crate::research_view::active(app) {
         painter.text(pos2(x, y_min), egui::Align2::LEFT_TOP, tl!("No notes yet."), mc::font(), t.text_dim);
     }
     for n in &list {

@@ -77,6 +77,7 @@ pub mod previews;
 pub mod print_page;
 pub mod read_aloud;
 pub mod reader_view;
+pub mod research_view;
 pub mod review_panel;
 pub mod ribbon;
 pub mod scroll;
@@ -1194,7 +1195,8 @@ impl WordApp {
             | "ui.assistant.formatView"
             | "ui.assistant.alternatives"
             | "ui.assistant.stuckView"
-            | "ui.assistant.structureView" => {
+            | "ui.assistant.structureView"
+            | "ui.assistant.researchView" => {
                 return cowriter::command(self, id, p);
             }
             "ui.startScreen" => {

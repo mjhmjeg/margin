@@ -30,6 +30,9 @@ use crate::review_panel::mark_line;
 
 /// How long connecting and the first words of the answer may take (local models read slowly).
 const ASK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+/// A web search, with its reading and the answer, in one piece.
+#[cfg(not(target_arch = "wasm32"))]
+const WEB_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 /// Runs kept per document.
 const MAX_RUNS: usize = 100;
 
@@ -114,6 +117,8 @@ pub struct CoWriter {
     pub reader: crate::reader_view::State,
     /// O7: Structure's Shape in the left desk margin (`structure_view`).
     pub structure: Option<crate::structure_view::StructureView>,
+    /// O8: Research's query field and findings in the right margin (`research_view`).
+    pub research: Option<crate::research_view::ResearchView>,
 }
 
 fn now_hm() -> String {
@@ -161,6 +166,10 @@ pub fn ask(app: &mut WordApp, instruction: &str, kind: ScopeKind) -> Result<Valu
 pub fn start(app: &mut WordApp, verb: Verb, kind: ScopeKind, mut options: Value) -> Result<Value, String> {
     // O6: Read asks who the reader is first; Check gets the allowed folders.
     if let Some(r) = crate::reader_view::before_start(app, verb, kind, &mut options) {
+        return r;
+    }
+    // O8: Research asks what to look up first; then it gets the sources and the anchor.
+    if let Some(r) = crate::research_view::before_start(app, verb, kind, &mut options) {
         return r;
     }
     let p = app.ui.assistant.provider_id();
@@ -253,9 +262,10 @@ pub fn start(app: &mut WordApp, verb: Verb, kind: ScopeKind, mut options: Value)
         messages: vec![wordcraft_assistant::Message { role: wordcraft_assistant::Role::User, content: prompt.user }],
         max_tokens: Some(prompt.max_tokens),
         // JSON mode where the server takes it (Mistral, OpenAI, OpenRouter, Ollama…).
-        json: !app.cowriter.json_refused.contains(&p),
+        // O8: Research answers in lines, not JSON.
+        json: verb != Verb::Research && !app.cowriter.json_refused.contains(&p),
     };
-    let (rx, stop) = spawn(app, request)?;
+    let (rx, stop) = spawn(app, request, crate::research_view::uses_web(verb, &options))?;
     push_run(app, doc, run);
     let index = app.cowriter.runs(doc).len().saturating_sub(1);
     let presence = scope.start();
@@ -292,12 +302,12 @@ fn scope_label(s: &ScopeText) -> String {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn spawn(_app: &mut WordApp, _req: wordcraft_assistant::ChatRequest) -> Result<(Receiver<Event>, Arc<AtomicBool>), String> {
+fn spawn(_app: &mut WordApp, _req: wordcraft_assistant::ChatRequest, _web: bool) -> Result<(Receiver<Event>, Arc<AtomicBool>), String> {
     Err(tl!("The co-writer works in the Optimo desktop app.").into())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn spawn(app: &mut WordApp, req: wordcraft_assistant::ChatRequest) -> Result<(Receiver<Event>, Arc<AtomicBool>), String> {
+fn spawn(app: &mut WordApp, req: wordcraft_assistant::ChatRequest, web: bool) -> Result<(Receiver<Event>, Arc<AtomicBool>), String> {
     let (tx, rx) = std::sync::mpsc::channel();
     let stop = Arc::new(AtomicBool::new(false));
     let keys = app.assistant_link.key_store();
@@ -309,16 +319,26 @@ fn spawn(app: &mut WordApp, req: wordcraft_assistant::ChatRequest) -> Result<(Re
         // The key is read here, off the UI thread.
         let answer = keys.get(p.id()).and_then(|key| wordcraft_assistant::Endpoint::new(p, Some(&url), key)).and_then(|ep| {
             let key = ep.api_key.clone();
-            wordcraft_assistant::http::chat_stream_until(&ep, &req, ASK_TIMEOUT, &flag, &mut |t| {
-                // A send error means the run was let go (Stop): the flag ends the stream.
-                if tx.send(Event::Text(t.to_string())).is_err() {
-                    flag.store(true, Ordering::Relaxed);
-                }
-                if let Some(c) = &wake {
-                    c.request_repaint();
-                }
-            })
-            .map(|mut reply| {
+            // O8: a web search through the provider's own tool, read back as the engine's envelope.
+            let answer = if web {
+                wordcraft_assistant::http::web_search(&ep, &req, WEB_TIMEOUT, &flag).map(|w| ChatReply {
+                    text: crate::research_view::envelope(&w),
+                    model: w.model,
+                    stop_reason: Some("stop".into()),
+                    json_refused: false,
+                })
+            } else {
+                wordcraft_assistant::http::chat_stream_until(&ep, &req, ASK_TIMEOUT, &flag, &mut |t| {
+                    // A send error means the run was let go (Stop): the flag ends the stream.
+                    if tx.send(Event::Text(t.to_string())).is_err() {
+                        flag.store(true, Ordering::Relaxed);
+                    }
+                    if let Some(c) = &wake {
+                        c.request_repaint();
+                    }
+                })
+            };
+            answer.map(|mut reply| {
                 // The answer may be shown: never with the key in it.
                 if let Some(k) = key.as_deref().filter(|k| k.len() >= 4) {
                     reply.text = reply.text.replace(k, "••••");
@@ -368,6 +388,11 @@ pub(crate) fn remember_note(app: &mut WordApp, id: u32, kind: &str) {
 /// O7: land `answer` as if the model had sent it for `verb` on `kind`, through the real reader,
 /// guards and landing, without a provider (the control hooks for tests and screenshots).
 pub(crate) fn run_with_answer(app: &mut WordApp, verb: Verb, kind: ScopeKind, answer: &str) -> Result<(), String> {
+    run_with_options(app, verb, kind, answer, &json!({}))
+}
+
+/// [`run_with_answer`] with the verb's options (O8: Research's query, sources and anchor).
+pub(crate) fn run_with_options(app: &mut WordApp, verb: Verb, kind: ScopeKind, answer: &str, options: &Value) -> Result<(), String> {
     let scope = edits::scope(&app.session, kind).map_err(|e| capitalise(&e))?;
     if verb == Verb::Structure {
         crate::structure_view::begin(app, &scope);
@@ -388,13 +413,12 @@ pub(crate) fn run_with_answer(app: &mut WordApp, verb: Verb, kind: ScopeKind, an
     };
     push_run(app, doc, run);
     let index = app.cowriter.runs(doc).len().saturating_sub(1);
-    let options = json!({});
     let ran = cowriter::run(
         verb,
-        &Call { session: &app.session, scope: &scope, options: &options, name: &name },
+        &Call { session: &app.session, scope: &scope, options, name: &name },
         Some(Reply { text: answer, stop_reason: Some("stop") }),
     );
-    land(app, doc, index, verb, &scope, &name, ran, Some(answer.to_string()), &options);
+    land(app, doc, index, verb, &scope, &name, ran, Some(answer.to_string()), options);
     Ok(())
 }
 
@@ -533,6 +557,8 @@ fn land(
     let ran = if verb == Verb::Stuck { ran.map(|r| crate::stuck_view::take(app, r)) } else { ran };
     // O7: Structure keeps its moves and new headings as suggestions; observations land as notes.
     let ran = if verb == Verb::Structure { ran.map(|r| crate::structure_view::take(app, r, raw.as_deref())) } else { ran };
+    // O8: Research keeps its findings in the margin; each lands only when the person adds it.
+    let ran = if verb == Verb::Research { ran.map(|r| crate::research_view::take(app, r)) } else { ran };
     // O4: Format for me keeps the document as it was, for Before and ⌥ compare.
     let before = (verb == Verb::FormatForMe).then(|| app.session.doc.clone());
     let (status, report, mut lines, notes, applied, answer) = match ran {
@@ -685,6 +711,7 @@ pub fn command(app: &mut WordApp, id: &str, p: &Value) -> Option<Result<Value, S
         "ui.assistant.alternatives" => crate::alternatives_view::control(app, p),
         "ui.assistant.stuckView" => crate::stuck_view::control(app, p),
         "ui.assistant.structureView" => crate::structure_view::control(app, p),
+        "ui.assistant.researchView" => crate::research_view::control(app, p),
         "ui.assistant.panel" => {
             let on = match p.get("value") {
                 None | Some(Value::Null) => !app.cowriter.margin,

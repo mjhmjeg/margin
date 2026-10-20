@@ -457,3 +457,49 @@ fn a_server_refusing_json_mode_is_asked_once_more_without_it() {
     assert!(seen[0].body.contains("response_format") && !seen[1].body.contains("response_format"));
     assert!(seen[1].body.contains("\"max_tokens\":8192"), "the budget stays");
 }
+
+/// Mistral's web search: the Conversations call, and its references and searched pages read back
+/// (the answer's shape as Mistral sent it on 2026-10-20).
+#[test]
+fn web_search_sends_the_tool_and_reads_references_and_pages() {
+    let result = json!({
+        "a1": {"url": "https://en.wikipedia.org/wiki/Albula_railway_line", "title": "Albula railway line", "date": null, "snippets": ["…"]},
+        "b2": {"url": "https://whc.unesco.org/en/list/1276/", "title": "UNESCO", "date": "2008-07-07"}
+    })
+    .to_string();
+    let answer = json!({"object": "conversation.response", "outputs": [
+        {"type": "tool.execution", "name": "web_search", "info": {"result": result}},
+        {"type": "message.output", "model": "mistral-medium-latest", "content": [
+            {"type": "text", "text": "- It opened on 1 July 1903"},
+            {"type": "tool_reference", "tool": "web_search", "title": "Albula railway line", "url": "https://en.wikipedia.org/wiki/Albula_railway_line"},
+            {"type": "text", "text": "."}
+        ]}
+    ]});
+    let (base, h) = serve(vec![ok_json(answer)]);
+    let mut ep = endpoint(Connector::OpenAi, &base, Some(KEY));
+    ep.provider = ProviderId::Mistral;
+    let mut req = chat_req();
+    req.max_tokens = Some(800);
+    let reply = http::web_search(&ep, &req, Duration::from_secs(5), &std::sync::atomic::AtomicBool::new(false)).unwrap();
+    let seen = h.join().unwrap();
+    assert!(seen[0].line.starts_with("POST /v1/conversations"), "{}", seen[0].line);
+    let body: Value = serde_json::from_str(&seen[0].body).unwrap();
+    assert_eq!(body["tools"], json!([{"type": "web_search"}]));
+    assert_eq!(body["store"], json!(false), "nothing is kept on Mistral's side");
+    assert_eq!(body["instructions"], json!("Be brief."));
+    assert_eq!(body["completion_args"]["max_tokens"], json!(800));
+    assert_eq!(seen[0].header("authorization"), Some(format!("Bearer {KEY}").as_str()));
+    assert_eq!(reply.text(), "- It opened on 1 July 1903.");
+    assert_eq!(reply.pieces.len(), 3);
+    assert!(matches!(&reply.pieces[1], WebPiece::Ref(p) if p.url.ends_with("Albula_railway_line")));
+    assert_eq!(reply.searched.len(), 2);
+    assert!(reply.searched.iter().any(|p| p.date == "2008-07-07"));
+    assert_eq!(reply.model, "mistral-medium-latest");
+    // Only Mistral searches; other providers are refused before anything is sent.
+    let other = endpoint(Connector::OpenAi, &base, Some(KEY));
+    assert!(matches!(
+        http::web_search(&other, &req, Duration::from_secs(1), &std::sync::atomic::AtomicBool::new(false)),
+        Err(AssistantError::Unsupported(_))
+    ));
+    assert!(wire::parse_web_search("{}").is_err());
+}
