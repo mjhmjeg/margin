@@ -64,6 +64,10 @@ pub fn prepare(s: &mut Session, at: Option<&Path>) -> Result<Pos, String> {
     s.sel = crate::Selection::caret(end_of(s, story, &path));
     s.run("text.newParagraph", &json!({})).map_err(|e| e.to_string())?;
     let now = s.sel.focus.clone();
+    // After a list the new line is plain text, not another "5.".
+    if s.doc.para_at(&now).is_some_and(|p| p.props.numbering.is_some_and(|n| n.num != 0)) {
+        s.run("para.style", &json!({"style": "Normal"})).map_err(|e| e.to_string())?;
+    }
     Ok(Pos { off: 0, ..now })
 }
 

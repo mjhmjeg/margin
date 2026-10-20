@@ -739,3 +739,22 @@ service and key, Martijn's call, and not needed while Mistral searches itself); 
 addresses the model writes (the reference must come from the provider's tool); asking for JSON
 in a web run (references arrive as chunks between the text, so lines with markers are the honest
 unit); landing findings at once (rule 2: options, never replacements).
+
+## 2026-10-20 — Optimo polish batch
+
+Four small fixes from the coordinator's screenshot reviews and the live Mistral pass.
+
+1. **I'm stuck after a list.** `stuck::prepare` resets the new empty paragraph to Normal when it
+   inherited a list item, so the placeholder sits on plain text, not "5.". Test in
+   `cowriter/stuck/tests.rs`.
+2. **Research units.** The research prompt asks for metric/SI units first (°C, km, kg), imperial
+   in brackets only when the source uses it. Prompt-only; test pins the wording.
+3. **Toolbar over the Alternatives card.** `mini_toolbar::visible` is false while the card is
+   open, so the heading above the selection stays readable. `ui.assistant.alternatives` gained
+   `{"answer": "<json>"}` (no model; like `ui.assistant.stuckView`) so the card can be rendered
+   for screenshots. Shot: `docs/design-handoff/polish/alternatives-no-toolbar-light.png`.
+4. **Comment balloon clash.** While the co-writer margin is open in the Optimo layout,
+   `markup_width` is 0: people's comments fall back to their quiet markers instead of a balloon
+   clipped under the margin, and the balloons return when the margin closes. Smallest change;
+   showing people's comments as notes in the margin was not done. Shot:
+   `docs/design-handoff/polish/stuck-comment-light.png`.

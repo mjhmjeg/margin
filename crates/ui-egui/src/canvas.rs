@@ -282,6 +282,11 @@ fn on_page_gap(rects: &[Rect], bands: &[(f32, f32)], p: Pos2) -> bool {
 
 /// Width of the markup area beside each page for comment and revision balloons (points), or 0.
 pub fn markup_width(app: &WordApp) -> f32 {
+    // While the co-writer margin is open (Optimo layout) it owns the right side: people's comments
+    // drop to their quiet markers instead of balloons clipped under it.
+    if crate::mac_ui::active(app) && app.cowriter.margin {
+        return 0.0;
+    }
     // Word shows comments either in balloons (contextual) or in the Comments pane (list); Track
     // Changes Options can put every revision inline (`Session::balloons_shown`).
     let s = &app.session;
