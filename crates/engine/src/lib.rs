@@ -20,6 +20,7 @@ pub mod keymap;
 pub mod looks;
 pub mod math_gallery;
 pub mod print;
+pub mod recovery;
 pub mod research;
 pub mod ribbon;
 pub mod sample;
@@ -36,7 +37,7 @@ pub use io::Password;
 pub use keymap::KeyMap;
 pub use ribbon::RibbonLayout;
 pub use session::{
-    ColumnBlock, EditSnapshot, FindState, MathEdit, Prefs, Selection, Session, UNDO_LIST_MAX, ViewState, blank_document, set_system_locale,
+    CellRange, ColumnBlock, EditSnapshot, FindState, MathEdit, Prefs, Selection, Session, UNDO_LIST_MAX, ViewState, blank_document, set_system_locale,
 };
 pub use wordcraft_doc as doc;
 pub use wordcraft_geom::Region;
@@ -181,6 +182,8 @@ mod tests_authorship;
 mod tests_bidi;
 #[cfg(test)]
 mod tests_fonts;
+#[cfg(test)]
+mod tests_revision_checks;
 #[cfg(test)]
 mod tests_typing;
 #[cfg(test)]

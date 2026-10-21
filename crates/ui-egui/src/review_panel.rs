@@ -860,7 +860,7 @@ fn comment_row(app: &mut WordApp, ui: &mut Ui, c: &CommentRow, cur: bool, people
         Some("edit") => {
             let editing = ui.data(|d| d.get_temp::<bool>(edit_key)).unwrap_or(false);
             if editing {
-                crate::panes::commit_comment(app, ui.ctx(), c.id);
+                let _ = crate::panes::commit_comment(app, c.id);
             }
             ui.data_mut(|d| d.insert_temp(edit_key, !editing));
             false

@@ -15,12 +15,20 @@ pub const PREVIOUS_DIRS: [&str; 2] = ["Margin", "WordCraft"];
 /// The app's settings folder (preferences, logs, key files): macOS
 /// `~/Library/Application Support/Optimo`, Windows `%APPDATA%\Optimo`, otherwise
 /// `$XDG_CONFIG_HOME/optimo` or `~/.config/optimo`.
+/// `WORDCRAFT_PROFILE_DIR` overrides the entire folder for isolated runs.
 pub fn settings_dir() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("WORDCRAFT_PROFILE_DIR").filter(|p| !p.is_empty()) {
+        return Some(PathBuf::from(path));
+    }
     settings_dir_named(APP_DIR)
 }
 
 /// The folders of [`PREVIOUS_DIRS`], newest first.
 pub fn previous_settings_dirs() -> Vec<PathBuf> {
+    // An isolated profile never inherits the real one's preferences.
+    if std::env::var_os("WORDCRAFT_PROFILE_DIR").is_some_and(|p| !p.is_empty()) {
+        return Vec::new();
+    }
     PREVIOUS_DIRS.iter().filter_map(|n| settings_dir_named(n)).collect()
 }
 

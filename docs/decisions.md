@@ -780,3 +780,77 @@ Four small fixes from the coordinator's screenshot reviews and the live Mistral 
    clipped under the margin, and the balloons return when the margin closes. Smallest change;
    showing people's comments as notes in the margin was not done. Shot:
    `docs/design-handoff/polish/stuck-comment-light.png`.
+
+## 2026-10-21 — Upstream sync (WordCraft `upstream/main` e05b7fe8)
+
+**Context.** Upstream WordCraft moved 637 commits in 9 days since the fork point 97ade895
+(2026-10-12): mostly layout, DOCX, tables, fonts, formats and engine fixes, plus new UI (Focus
+mode, document recovery, a "no document open" state, Tabs and Paragraph dialog rework, custom
+dialog close box, tiled tall pages). Merged on `sync/upstream-2026-10`; 52 files conflicted.
+The co-writer (`crates/engine/src/cowriter/`, `crates/assistant`, `margin_notes`, the `*_view.rs`
+files) merged cleanly.
+
+**Rule used.** Upstream wins on engine, layout, docx, formats, fonts, tables and tests; Optimo
+wins on the Mac UI it replaced (bare window, ⌘Y Anything, co-writer margin, Optimo naming).
+
+**How each conflict area was resolved.**
+- `Cargo.lock`: upstream's, then cargo. 18 i18n `.tsv`: union of both sides' keys (upstream's
+  rows after Optimo's in each block, duplicates dropped). `ATTRIBUTION.md`: both sides' rows.
+- `README.md`: Optimo's. `docs/control-protocol.md`: Optimo's settings folder plus upstream's
+  `WORDCRAFT_PROFILE_DIR` sentence. `docs/typing-parity.md`: both histories, merged status line.
+  `packaging/macos/package.sh`: upstream's `hdiutil create` with retries, volume name `$APP_NAME`.
+- `crates/control-key`: Optimo's folders plus upstream's `WORDCRAFT_PROFILE_DIR` override; an
+  isolated profile doesn't copy preferences from Margin/WordCraft folders.
+- `doc`, `docx` (read, embed), `engine` (lib, references, review, view, tests_typing),
+  `layout/tests.rs`: both sides kept (Optimo's authorship store, upstream's glossary,
+  bibliography, ink, recovery, interface-theme command, tests); footnote insertion uses
+  upstream's `try_add_part` with Optimo's tracked reference.
+- `layout/display.rs`: upstream's drawing (`text_bg`, `hide_object`, move colours) with Optimo's
+  author marks and Show Authorship on top; a tracked paragraph mark takes the author's colour.
+- `apps/wordcraft`: upstream's file pickers (multi-open, portal fallback) plus Optimo's folder
+  picker; native menu install kept.
+- `ui-egui/canvas.rs`: upstream's per-frame view key and tiled pages; Optimo's author marks and
+  authorship now ride in `CanvasState::page_marks`, set once a frame. Co-writer notes, formats
+  and moves still stay out of the balloons; upstream's floating comment card kept. The ruler
+  corner with upstream's new tab selector only shows with a vertical ruler, which the Mac layout
+  hides (Classic keeps it). Upstream now sizes Web Layout to the window; the Mac layout skips
+  that so pageless keeps the chosen Text width (caught by `mac_ui` tests).
+- `ui-egui/lib.rs`: Optimo's toolbar/status/inspector layout with upstream's Focus mode (hides
+  status bar, inspector and panes; the Mac toolbar stays as the title bar). Window title uses
+  `APP_NAME`. Appearance default is System on both sides now.
+- `ui-egui/dialogs*.rs`: upstream's content (Tabs dialog rework, Paragraph dialog "mixed"
+  values, Page Setup mirror margins and paper, link and font previews, table-style dialog moved
+  to `dialogs_table_style.rs`, close box, SaveChanges accessibility); Optimo's borderless Mac
+  dialog frame and buttons kept, and Optimo's form widgets (DragNum, combo, checkbox,
+  radio_value, group/form labels) re-applied to the merged code. `DragNum` gained
+  `clamp_existing_to_range` and `measure_blank`, `DialogCombo` gained `height`.
+- `backstage.rs`, `chrome.rs`, `theme.rs`, `mini_toolbar.rs`, `file_browser.rs`, `panes.rs`:
+  Optimo's look; upstream's additions where they fit (Quick Access hide setting, account button
+  opens Options, close-button colours, no toolbar while a table is dragged, multi-open).
+
+**Upstream additions Optimo hides or skips.**
+- The Search Commands dialog (Alt+Q, `tools.search` without a query, Help › Commands): Optimo
+  removed it in O2, so all of these open ⌘Y Anything. Upstream's dialog, its suggestions and
+  shortcut-text swallowing, and its tests were not taken.
+- "No document open" (#1129): only in the Classic ribbon. Optimo's launch Home still leaves a
+  blank document behind it (Esc goes to the editor).
+- The black navigation bar on the Recover page: Classic only.
+- Navigation pane headings wrapping (#3015): Optimo keeps one line with an ellipsis and the
+  full heading on hover.
+- The ruler's tab-type selector: no vertical ruler in the Mac layout, so no corner to put it in.
+
+**Tests.** Upstream's new UI tests run on the Classic ribbon (`classic_ribbon = true`, as on
+main) and with the ruler on (off by default in Optimo). Adjusted for Optimo: window title
+`APP_NAME`; no account button; ⌘Y Anything instead of the Search dialog; the contrast and
+equation-grey checks cover upstream's palette only; the navigation heading-wrap test and
+`ctrl_wheel_zoom_keeps_the_place_under_the_pointer` are `#[ignore]`d with a reason. The
+translation audit skips strings no catalog translates (Optimo's own, English everywhere) and
+exempts "AI ·", ⌘Y's footer keys and two SmartArt labels that wrap at Optimo's type size. Optimo's
+five authorship/Format keys were added to upstream's new Croatian, Swedish, Vietnamese and Korean
+catalogs.
+
+**Open for Martijn.** Whether Focus mode should also hide the Mac toolbar; whether the
+navigation pane should wrap long headings as upstream now does; Optimo's palette misses two of
+upstream's WCAG checks (dim text on a selected comment card 3.95:1, ruler numbers 3.26:1, both
+under 4.5:1); Ctrl+wheel zoom drifts sideways at 68% in the Classic layout (cause not found);
+Optimo's own strings are English in every language.
