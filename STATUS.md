@@ -23,7 +23,7 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - Weekly upstream merge (scheduled, Sonnet)
 
 ## Done
-- 2026-10-21 rename/optimo merged into main (Optimo O0–O9, polish, assistant/integrate); xtask ci green on main; not pushed
+- 2026-10-21 rename/optimo merged into main (Optimo O0–O9, polish, assistant/integrate); xtask ci green on main; pushed to origin (mjhmjeg/margin)
 - 2026-10-21 Optimo polish batch: I'm stuck after a list starts a plain paragraph; Research gives metric units first; selection toolbar hidden while the Alternatives card is open; no clipped comment balloons while the co-writer margin is open (comments show as quiet markers). Merged on rename/optimo, xtask ci green
 - 2026-10-20 Live Mistral pass in the app (Mistral Large, Keychain key) over Read as a reader, Check facts, Research (web search) and I'm stuck: all four worked, notes only, "Your words 100 %" kept; Research findings all carried real web sources
 - 2026-10-20 Optimo O8: Research (ask in the margin, findings each with a source from your files or Mistral's own web search, store off; unsourced findings refused; Add as footnote / quote = one tracked change with the source); merged on rename/optimo, xtask ci green. Not built: "Claims in this document" list (Check facts covers it), sources list at the end (each footnote carries its source). All Optimo phases O0–O9 are now on rename/optimo
@@ -51,7 +51,7 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 
 ## Open decisions
 - OPTIMO.md §13: (1) ⌘Y Repeat → ⇧⌘Y — decided 2026-10-15 (2) Look list Clean/Classic/Report/Letter, user-saved looks? (3) Research: provider web search or own search API key?
-- main holds Optimo O0–O9 + polish (and assistant/integrate) since 2026-10-21, not pushed: pushing / upstream PRs are Martijn's call ✋
+- Upstream PRs to storytold/wordcraft: Martijn's call ✋
 - Product name: Optimo (2026-10-14, replaces Margin). No formal trademark search done.
 
 ## Known bugs
