@@ -10,8 +10,7 @@ use wordcraft_engine::cmd::lists::{LEVELS, caret_list, level_json, levels_of};
 
 use crate::WordApp;
 use crate::dialogs::buttons;
-use crate::options::MeasureExt;
-use crate::theme::{Tokens, semibold};
+use crate::theme::Tokens;
 
 /// Number styles a level can have: OOXML name and a sample.
 const STYLES: [(&str, &str); 10] = [
@@ -164,12 +163,12 @@ impl ListForm {
 /// Define New Multilevel List. Returns true to close.
 pub fn define_list(app: &mut WordApp, ui: &mut Ui, f: &mut ListForm) -> bool {
     let unit = crate::options::unit();
-    fn len(v: &mut f32, unit: wordcraft_geom::Unit) -> egui::DragValue<'_> {
-        egui::DragValue::new(v).speed(0.01).range(-10.0..=22.0).measure(unit).max_decimals(2)
+    fn len(v: &mut f32, unit: wordcraft_geom::Unit) -> crate::dialogs::DragNum<'_, f32> {
+        crate::dialogs::DragNum::new(v).speed(0.01).range(-10.0..=22.0).measure(unit).max_decimals(2)
     }
     let heading = |ui: &mut Ui, s: &str| {
         ui.add_space(4.0);
-        ui.label(egui::RichText::new(tl!(s)).font(semibold(12.5)));
+        crate::dialogs::group_label(ui, tl!(s));
     };
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
@@ -190,12 +189,12 @@ pub fn define_list(app: &mut WordApp, ui: &mut Ui, f: &mut ListForm) -> bool {
     let Some(l) = f.levels.get_mut(i) else { return true };
     heading(ui, "Number format");
     egui::Grid::new("mll_number").num_columns(2).spacing(vec2(10.0, 6.0)).show(ui, |ui| {
-        ui.label(tl!("Enter formatting for number:"));
+        crate::dialogs::form_label(ui, tl!("Enter formatting for number:"));
         ui.text_edit_singleline(&mut l.text);
         ui.end_row();
-        ui.label(tl!("Number style for this level:"));
+        crate::dialogs::form_label(ui, tl!("Number style for this level:"));
         let current = STYLES.iter().find(|(k, _)| *k == l.format).map(|(_, s)| *s).unwrap_or("");
-        egui::ComboBox::from_id_salt("mll_style").selected_text(style_label(current)).show_ui(ui, |ui| {
+        crate::dialogs::combo("mll_style").selected_text(style_label(current)).show_ui(ui, |ui| {
             for (k, s) in STYLES {
                 if ui.selectable_label(l.format == k, style_label(s)).clicked() {
                     // A new style puts this level's number in the text if it had none (a bullet
@@ -212,7 +211,7 @@ pub fn define_list(app: &mut WordApp, ui: &mut Ui, f: &mut ListForm) -> bool {
         ui.end_row();
         if i > 0 {
             ui.label(tl!("Include level number from:"));
-            egui::ComboBox::from_id_salt("mll_include").selected_text("").show_ui(ui, |ui| {
+            crate::dialogs::combo("mll_include").selected_text("").show_ui(ui, |ui| {
                 for k in 0..i {
                     if ui.selectable_label(false, crate::i18n::fmt(tl!("Level {n}"), &[("n", &(k + 1).to_string())])).clicked() {
                         l.text.push_str(&format!("%{}", k + 1));
@@ -222,13 +221,13 @@ pub fn define_list(app: &mut WordApp, ui: &mut Ui, f: &mut ListForm) -> bool {
             ui.end_row();
         }
         ui.label(tl!("Start at:"));
-        ui.add(egui::DragValue::new(&mut l.start).range(0..=32_767));
+        ui.add(crate::dialogs::DragNum::new(&mut l.start).range(0..=32_767));
         ui.end_row();
         if i > 0 {
-            ui.checkbox(&mut l.restart, tl!("Restart list after:"));
+            crate::dialogs::checkbox(ui, &mut l.restart, tl!("Restart list after:"));
             ui.add_enabled_ui(l.restart, |ui| {
                 let shown = crate::i18n::fmt(tl!("Level {n}"), &[("n", &l.restart_after.clamp(1, i as u8).to_string())]);
-                egui::ComboBox::from_id_salt("mll_restart").selected_text(shown).show_ui(ui, |ui| {
+                crate::dialogs::combo("mll_restart").selected_text(shown).show_ui(ui, |ui| {
                     for k in 1..=i as u8 {
                         ui.selectable_value(&mut l.restart_after, k, crate::i18n::fmt(tl!("Level {n}"), &[("n", &k.to_string())]));
                     }
@@ -238,46 +237,46 @@ pub fn define_list(app: &mut WordApp, ui: &mut Ui, f: &mut ListForm) -> bool {
         }
         ui.label(tl!("Link level to style:"));
         let shown = styles.iter().find(|(id, _)| *id == l.style).map(|(_, n)| n.clone()).unwrap_or_else(|| tl!("(no style)").to_string());
-        egui::ComboBox::from_id_salt("mll_link").selected_text(shown).show_ui(ui, |ui| {
+        crate::dialogs::combo("mll_link").selected_text(shown).show_ui(ui, |ui| {
             ui.selectable_value(&mut l.style, String::new(), tl!("(no style)"));
             for (id, name) in &styles {
                 ui.selectable_value(&mut l.style, id.clone(), name);
             }
         });
         ui.end_row();
-        ui.label(tl!("Font:"));
+        crate::dialogs::form_label(ui, tl!("Font:"));
         ui.horizontal(|ui| {
             ui.add(egui::TextEdit::singleline(&mut l.font).desired_width(110.0));
-            ui.checkbox(&mut l.bold, tl!("Bold"));
-            ui.checkbox(&mut l.italic, tl!("Italic"));
+            crate::dialogs::checkbox(ui, &mut l.bold, tl!("Bold"));
+            crate::dialogs::checkbox(ui, &mut l.italic, tl!("Italic"));
         });
         ui.end_row();
         ui.label("");
-        ui.checkbox(&mut l.legal, tl!("Legal style numbering"));
+        crate::dialogs::checkbox(ui, &mut l.legal, tl!("Legal style numbering"));
         ui.end_row();
     });
     heading(ui, "Position");
     egui::Grid::new("mll_position").num_columns(2).spacing(vec2(10.0, 6.0)).show(ui, |ui| {
-        ui.label(tl!("Number alignment:"));
+        crate::dialogs::form_label(ui, tl!("Number alignment:"));
         ui.horizontal(|ui| {
             for (v, s) in [("left", "Left"), ("center", "Center"), ("right", "Right")] {
-                ui.radio_value(&mut l.align, v.to_string(), tl!(s));
+                crate::dialogs::radio_value(ui, &mut l.align, v.to_string(), tl!(s));
             }
         });
         ui.end_row();
-        ui.label(tl!("Aligned at:"));
+        crate::dialogs::form_label(ui, tl!("Aligned at:"));
         ui.add(len(&mut l.aligned_at, unit));
         ui.end_row();
-        ui.label(tl!("Text indent at:"));
+        crate::dialogs::form_label(ui, tl!("Text indent at:"));
         ui.add(len(&mut l.indent_at, unit));
         ui.end_row();
-        ui.label(tl!("Follow number with:"));
+        crate::dialogs::form_label(ui, tl!("Follow number with:"));
         let follow = |k: &str| match k {
             "space" => tl!("Space"),
             "nothing" => tl!("Nothing"),
             _ => tl!("Tab character"),
         };
-        egui::ComboBox::from_id_salt("mll_follow").selected_text(follow(&l.follow)).show_ui(ui, |ui| {
+        crate::dialogs::combo("mll_follow").selected_text(follow(&l.follow)).show_ui(ui, |ui| {
             for k in ["tab", "space", "nothing"] {
                 ui.selectable_value(&mut l.follow, k.to_string(), follow(k));
             }
@@ -407,7 +406,7 @@ impl TrackForm {
 /// A choice from `options` ((value, label)) in a drop-down.
 fn choice(ui: &mut Ui, id: &str, value: &mut String, options: &[(&str, &str)]) {
     let label = |k: &str| options.iter().find(|(v, _)| *v == k).map(|(_, l)| tl!(l).to_string()).unwrap_or_default();
-    egui::ComboBox::from_id_salt(id).selected_text(label(value)).width(150.0).show_ui(ui, |ui| {
+    crate::dialogs::combo(id).selected_text(label(value)).width(150.0).show_ui(ui, |ui| {
         for (v, l) in options {
             ui.selectable_value(value, v.to_string(), tl!(l));
         }
@@ -453,15 +452,15 @@ pub fn track_options(app: &mut WordApp, ui: &mut Ui, f: &mut TrackForm) -> bool 
     let theme = app.session.doc.settings.theme_colors.clone();
     let heading = |ui: &mut Ui, s: &str| {
         ui.add_space(4.0);
-        ui.label(egui::RichText::new(tl!(s)).font(semibold(12.5)));
+        crate::dialogs::group_label(ui, tl!(s));
     };
     heading(ui, "Show");
     egui::Grid::new("tco_show").num_columns(2).spacing(vec2(16.0, 4.0)).show(ui, |ui| {
-        ui.checkbox(&mut f.comments, tl!("Comments"));
-        ui.checkbox(&mut f.ink, tl!("Ink"));
+        crate::dialogs::checkbox(ui, &mut f.comments, tl!("Comments"));
+        crate::dialogs::checkbox(ui, &mut f.ink, tl!("Ink"));
         ui.end_row();
-        ui.checkbox(&mut f.insertions_deletions, tl!("Insertions and Deletions"));
-        ui.checkbox(&mut f.formatting, tl!("Formatting"));
+        crate::dialogs::checkbox(ui, &mut f.insertions_deletions, tl!("Insertions and Deletions"));
+        crate::dialogs::checkbox(ui, &mut f.formatting, tl!("Formatting"));
         ui.end_row();
     });
     heading(ui, "Balloons");
@@ -470,11 +469,11 @@ pub fn track_options(app: &mut WordApp, ui: &mut Ui, f: &mut TrackForm) -> bool 
         ("inline", "Show all revisions inline"),
         ("commentsAndFormatting", "Show only comments and formatting in balloons"),
     ] {
-        ui.radio_value(&mut f.balloons, v.to_string(), tl!(l));
+        crate::dialogs::radio_value(ui, &mut f.balloons, v.to_string(), tl!(l));
     }
     heading(ui, "Advanced");
     egui::Grid::new("tco_advanced").num_columns(3).spacing(vec2(10.0, 6.0)).show(ui, |ui| {
-        ui.label(tl!("Insertions:"));
+        crate::dialogs::form_label(ui, tl!("Insertions:"));
         choice(
             ui,
             "tco_ins",
@@ -491,7 +490,7 @@ pub fn track_options(app: &mut WordApp, ui: &mut Ui, f: &mut TrackForm) -> bool 
         );
         color(ui, &theme, &mut f.insert_color, "By author", None);
         ui.end_row();
-        ui.label(tl!("Deletions:"));
+        crate::dialogs::form_label(ui, tl!("Deletions:"));
         choice(
             ui,
             "tco_del",
@@ -508,7 +507,7 @@ pub fn track_options(app: &mut WordApp, ui: &mut Ui, f: &mut TrackForm) -> bool 
         );
         color(ui, &theme, &mut f.delete_color, "By author", None);
         ui.end_row();
-        ui.label(tl!("Changed lines:"));
+        crate::dialogs::form_label(ui, tl!("Changed lines:"));
         choice(
             ui,
             "tco_bar",
@@ -519,7 +518,7 @@ pub fn track_options(app: &mut WordApp, ui: &mut Ui, f: &mut TrackForm) -> bool 
         ui.end_row();
     });
     ui.add_space(4.0);
-    ui.checkbox(&mut f.track_formatting, tl!("Track formatting"));
+    crate::dialogs::checkbox(ui, &mut f.track_formatting, tl!("Track formatting"));
     let (ok, cancel) = buttons(ui, tl!("OK"));
     if ok && let Err(e) = app.run("review.trackingOptions", f.params()) {
         app.status(e);

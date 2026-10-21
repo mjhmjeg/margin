@@ -208,7 +208,13 @@ fn save(s: &mut Session, v: &Value) -> CmdResult {
         s.path = Some(path.clone());
         s.dirty = false;
     }
-    Ok(json!({"saved": true, "path": path.to_string_lossy(), "encrypted": encrypted}))
+    let mut r = json!({"saved": true, "path": path.to_string_lossy(), "encrypted": encrypted});
+    // Who wrote what (Optimo A5) travels only in Word's formats; say so when a copy drops it.
+    if !s.doc.authorship.is_empty() && !crate::io::keeps_authorship(&ext) {
+        r["authorshipDropped"] = json!(true);
+        s.status = format!("Saved as .{ext}: this format does not keep who wrote what");
+    }
+    Ok(r)
 }
 
 fn save_as(s: &mut Session, v: &Value) -> CmdResult {

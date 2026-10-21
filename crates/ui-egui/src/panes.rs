@@ -25,7 +25,14 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 crate::dialogs_smart_art::text_pane(app, ui);
             });
     }
-    if app.session.view.nav_pane {
+    if app.session.view.nav_pane && crate::mac_ui::active(app) {
+        // E21: Optimo's outline sidebar, 220 wide.
+        egui::Panel::left("nav_pane")
+            .exact_size(crate::mac_ui::OUTLINE_W)
+            .resizable(false)
+            .frame(egui::Frame::NONE.fill(t.panel).stroke(Stroke::new(1.0, t.border)))
+            .show(ui, |ui| crate::mac_ui::outline(app, ui));
+    } else if app.session.view.nav_pane {
         egui::Panel::left("nav_pane")
             .default_size(260.0)
             .resizable(true)
@@ -80,7 +87,10 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 crate::dialogs_review::restrict_pane(app, ui);
             });
     }
-    if app.session.view.comments_pane {
+    if app.session.view.comments_pane && crate::mac_ui::active(app) {
+        // R2–R9: Optimo's Review panel replaces the Comments pane (the Classic ribbon keeps its own).
+        crate::review_panel::show(app, ui);
+    } else if app.session.view.comments_pane {
         egui::Panel::right("comments_pane")
             .default_size(290.0)
             .resizable(true)
@@ -139,48 +149,9 @@ fn nav(app: &mut WordApp, ui: &mut Ui) {
                 }
             }
         }
-        "results" => {
-            let results = app.session.find.results.clone();
-            ui.label(egui::RichText::new(format!("{} results", results.len())).small().weak());
-            for (a, b) in results.iter().take(500) {
-                let Some(p) = app.session.doc.para_at(a) else { continue };
-                let from = p.clamp(a.off.saturating_sub(30));
-                let to = p.clamp((b.off + 40).min(p.len()));
-                let pre = p.text.get(from..a.off).unwrap_or("");
-                let hit = p.text.get(a.off..b.off).unwrap_or("");
-                let post = p.text.get(b.off..to).unwrap_or("");
-                let mut job = egui::text::LayoutJob::default();
-                let fmt = |c| egui::TextFormat { font_id: regular(12.0), color: c, ..Default::default() };
-                job.append(pre, 0.0, fmt(ui.visuals().text_color()));
-                // The match is marked the way Find marks it on the page, per theme (#656).
-                let mark = Tokens::get(ui.ctx()).find_highlight;
-                job.append(hit, 0.0, egui::TextFormat { font_id: semibold(12.0), background: mark, color: ui.visuals().text_color(), ..Default::default() });
-                job.append(post, 0.0, fmt(ui.visuals().text_color()));
-                job.wrap.max_width = ui.available_width();
-                if ui.add(egui::Button::new(job).frame(false)).clicked() {
-                    let _ = app.run("select.range", json!({"anchor": a, "focus": b}));
-                }
-                ui.separator();
-            }
-        }
+        "results" => nav_results(app, ui),
         _ => {
-            let caret = app.session.sel.focus.clone();
-            let mut current: Option<usize> = None;
-            let mut items = Vec::new();
-            for path in app.session.doc.para_paths(StoryRef::Body) {
-                let Some(p) = app.session.doc.para(StoryRef::Body, &path) else { continue };
-                let rp = app.session.doc.styles.resolve_para(&p.props);
-                if let Some(lv) = rp.outline_level {
-                    let txt = p.plain_text().trim().to_string();
-                    if txt.is_empty() || rp.style.starts_with("TOC") {
-                        continue;
-                    }
-                    if path <= caret.path {
-                        current = Some(items.len());
-                    }
-                    items.push((path, lv, txt));
-                }
-            }
+            let (items, current) = nav_items(app);
             if items.is_empty() {
                 ui.label(egui::RichText::new(tl!("Create an interactive outline of your document.\n\nIt's a great way to keep track of where you are or quickly move your content around.\n\nTo get started, go to the Home tab and apply Heading styles to the headings in your document.")).weak());
             }
@@ -196,6 +167,54 @@ fn nav(app: &mut WordApp, ui: &mut Ui) {
             }
         }
     });
+}
+
+/// The Results tab: one row per match with its context; clicking selects the match.
+pub(crate) fn nav_results(app: &mut WordApp, ui: &mut Ui) {
+    let results = app.session.find.results.clone();
+    ui.label(egui::RichText::new(format!("{} results", results.len())).small().weak());
+    for (a, b) in results.iter().take(500) {
+        let Some(p) = app.session.doc.para_at(a) else { continue };
+        let from = p.clamp(a.off.saturating_sub(30));
+        let to = p.clamp((b.off + 40).min(p.len()));
+        let pre = p.text.get(from..a.off).unwrap_or("");
+        let hit = p.text.get(a.off..b.off).unwrap_or("");
+        let post = p.text.get(b.off..to).unwrap_or("");
+        let mut job = egui::text::LayoutJob::default();
+        let fmt = |c| egui::TextFormat { font_id: regular(12.0), color: c, ..Default::default() };
+        job.append(pre, 0.0, fmt(ui.visuals().text_color()));
+        // The match is marked the way Find marks it on the page, per theme (#656).
+        let mark = Tokens::get(ui.ctx()).find_highlight;
+        job.append(hit, 0.0, egui::TextFormat { font_id: semibold(12.0), background: mark, color: ui.visuals().text_color(), ..Default::default() });
+        job.append(post, 0.0, fmt(ui.visuals().text_color()));
+        job.wrap.max_width = ui.available_width();
+        if ui.add(egui::Button::new(job).frame(false)).clicked() {
+            let _ = app.run("select.range", json!({"anchor": a, "focus": b}));
+        }
+        ui.separator();
+    }
+}
+
+/// The document's headings (path, outline level, text) and the index of the one the caret is under.
+pub(crate) fn nav_items(app: &WordApp) -> (Vec<(wordcraft_doc::Path, u8, String)>, Option<usize>) {
+    let caret = app.session.sel.focus.clone();
+    let mut current: Option<usize> = None;
+    let mut items = Vec::new();
+    for path in app.session.doc.para_paths(StoryRef::Body) {
+        let Some(p) = app.session.doc.para(StoryRef::Body, &path) else { continue };
+        let rp = app.session.doc.styles.resolve_para(&p.props);
+        if let Some(lv) = rp.outline_level {
+            let txt = p.plain_text().trim().to_string();
+            if txt.is_empty() || rp.style.starts_with("TOC") {
+                continue;
+            }
+            if path <= caret.path {
+                current = Some(items.len());
+            }
+            items.push((path, lv, txt));
+        }
+    }
+    (items, current)
 }
 
 /// Constrain each heading to the available pane width so long document text cannot
@@ -699,7 +718,7 @@ fn trim_num(x: f64) -> String {
 }
 
 /// `2026-10-12T04:44:00Z` → `2026-10-12 04:44` (date and time, no seconds) for comment cards.
-fn comment_stamp(iso: &str) -> String {
+pub(crate) fn comment_stamp(iso: &str) -> String {
     iso.chars().take(16).map(|c| if c == 'T' { ' ' } else { c }).collect()
 }
 

@@ -2,6 +2,9 @@
 
 WordCraft is a clean-room, open-source, Rust-native word processor targeting Microsoft Word parity — and going further on speed, openness and agent control. It runs natively on macOS, Windows, Linux and BSD, and on the web via WASM. Siblings with the same conventions: `../photocraft` (Photoshop), `../vectorcraft` (Illustrator), `../filmcraft` (Premiere), `../lightcraft` (Lightroom), `../pdfcraft` (Acrobat), `../effectcraft` (After Effects), `../designcraft` (InDesign). Shared rules and learnings: [`storytold/craftrules`](https://github.com/storytold/craftrules) (`../../craftrules`) — read its `AGENTS.md`.
 
+## This fork: Optimo (formerly Margin)
+This repo is **Optimo**, a Mac-native interface on WordCraft's engine (called Margin until 2026-10-14; see `docs/decisions.md`, "Product name: Optimo"). The product name lives in `skin::APP_NAME` (`crates/ui-egui/src/skin.rs`); bundle id `ai.spert.optimo`; settings in `~/Library/Application Support/Optimo` (copied once from `Margin/`, else `WordCraft/`); assistant keys in the Keychain service `ai.spert.optimo.assistant` (copied once from `ai.spert.margin.assistant`); authorship marks `_OptimoAI_<8 hex>` + `urn:optimo:authorship` (Margin's `_MarginAI_` / `urn:margin:authorship` still read, rewritten on save). Build and launch with `scripts/optimo-run.sh`; app icon from `packaging/macos/optimo-icon.sh`. "Margin" as a page-layout word (page margins, `MarginEdge`, `egui::Margin`) is not the product name.
+
 ## Start every session here
 1. Read `plan/STATUS.md` (current milestone, next task), then the task in `plan/execution-plan.md` and the relevant `plan/architecture.md` section. `plan/` is gitignored (local only); if it's missing, start from `ROADMAP.md`, `docs/gaps.md` and `docs/roadmap.md` (Current focus).
 2. Follow the autonomous operation protocol (`plan/execution-plan.md` §5). Don't stop to ask unless a decision is genuinely the owner's (licensing, publishing, pushing to new remotes, secrets).
@@ -32,6 +35,7 @@ People trust WordCraft with their writing; a crash loses their work. **This outr
 | Layer | Crate | Job |
 |---|---|---|
 | L0 | `geom` | units, rects, measurement parsing |
+| L0 | `assistant` | assistant connectors (Anthropic Messages, OpenAI-compatible), provider presets, keys in the system keychain; network and keychain native-only (standalone, no workspace deps) |
 | L1 | `doc`, `fonts` | document model + edit primitives; font DB, shaping, Word font substitution |
 | L2 | `layout`, `docx`, `formats` | line breaking, pagination, tables, headers/footers, hit testing; OOXML I/O; TXT/MD/HTML/RTF/ODT |
 | L3 | `render`, `pdf`, `proof` | vello_cpu rasteriser; krilla PDF; proofing |
@@ -53,7 +57,7 @@ Typing, Enter, Backspace, Tab, lists, AutoCorrect and AutoFormat follow Word's o
 
 ## Running and looking at the app
 - `cargo run --release -p wordcraft -- --sample --control 7981` (sample document + control channel).
-- Drive it with JSON lines on `127.0.0.1:7981`, each with the window's key from `~/.config/wordcraft/control-key.local-7981` (macOS: `~/Library/Application Support/WordCraft/`), e.g. `{"id":1,"key":"…","method":"engine.execute","params":{"command":"text.insert","params":{"text":"Hello"}}}` then `{"id":2,"key":"…","method":"ui.screenshot","params":{"path":"/tmp/shot.png"}}`. Methods: `crates/ui-egui/src/control.rs`; docs: `docs/control-protocol.md` (Keys).
+- Drive it with JSON lines on `127.0.0.1:7981`, each with the window's key from `~/.config/optimo/control-key.local-7981` (macOS: `~/Library/Application Support/Optimo/`), e.g. `{"id":1,"key":"…","method":"engine.execute","params":{"command":"text.insert","params":{"text":"Hello"}}}` then `{"id":2,"key":"…","method":"ui.screenshot","params":{"path":"/tmp/shot.png"}}`. Methods: `crates/ui-egui/src/control.rs`; docs: `docs/control-protocol.md` (Keys).
 - **Headless window screenshots** (no focus stealing, works with a locked screen): `cargo run --release -p wordcraft-ui-egui --example ui_shot -- script.jsonl` (see the example's header).
 - **For UI work, look at the result** (screenshot, read the PNG) and compare with Word side by side.
 - CLI: `wordcraft-cli convert in.docx out.pdf`, `wordcraft-cli run --template sample --cmd 'select.text={"text":"Studio"}' --cmd format.bold --save out.docx`, `wordcraft-cli commands`, `wordcraft-cli parity`.

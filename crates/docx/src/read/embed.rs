@@ -35,6 +35,10 @@ impl Reader<'_> {
                 if !self.doc.sources.is_empty() && self.xml(&rel.target).ok().flatten().is_some_and(|r| r.local() == "Sources") {
                     continue;
                 }
+                // Optimo's authorship store was read into the model and is rewritten from it.
+                if self.authorship_parts.contains(&rel.target) {
+                    continue;
+                }
                 if self.keep_part_tree(&rel.target) {
                     roots.push_str(&format!("{owner}\t{}\t{}\n", rel.kind, rel.target));
                 }

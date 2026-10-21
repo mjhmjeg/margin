@@ -144,6 +144,8 @@ fn load_user_dictionary(app: &mut WordApp) {
         wordcraft_proof::load_user_dictionary(&p);
         app.session.user_dict_path = Some(p);
     }
+    // O4: Format for me's saved looks, next to ui.json.
+    app.cowriter.looks_file = wordcraft_control_key::settings_dir().map(|b| b.join("looks.json"));
 }
 
 /// Runs without preferences (`WORDCRAFT_NO_PREFS`, agents' test runs) neither read nor write them.
@@ -202,7 +204,8 @@ fn save_prefs(app: &WordApp) {
 /// Native file dialogs, shown without blocking the window (`file_dialogs`, #94), File › Print
 /// through the system's PDF viewer (`print`, #15), the system clipboard's text, formatted copies,
 /// pictures and format names (`clipboard`, #45, #584, #687, #833), the system's animation setting
-/// (`animations`), and making WordCraft the default app for Word documents (`default_apps`, #295).
+/// (`animations`), making WordCraft the default app for Word documents (`default_apps`, #295),
+/// and the system keychain for assistant API keys (Settings › Co-writer).
 fn services(file_dialog: file_dialogs::Hook, ctx: &egui::Context) -> Services {
     Services {
         file_dialog: Some(file_dialog),
@@ -214,15 +217,40 @@ fn services(file_dialog: file_dialogs::Hook, ctx: &egui::Context) -> Services {
         clipboard_html: Some(Box::new(clipboard::html)),
         clipboard_rtf: Some(Box::new(clipboard::rtf)),
         clipboard_formats: Some(Box::new(clipboard::formats)),
+        key_store: Some(std::sync::Arc::new(wordcraft_assistant::keys::SystemKeys::default())),
         ..Default::default()
+    }
+}
+
+/// Once (a marker file in the settings folder): copy the assistant keys stored under Margin's
+/// keychain service to Optimo's, where Optimo has none. The old entries stay as a backup; a key
+/// removed later in Optimo is not brought back. Tried again at the next start while the keychain
+/// reported an error. Keys are never logged, only provider ids.
+fn migrate_keychain(settings: &std::path::Path) {
+    let marker = settings.join("keychain-migrated");
+    if marker.exists() {
+        return;
+    }
+    let accounts: Vec<&str> = wordcraft_assistant::ProviderId::ALL.iter().map(|p| p.id()).collect();
+    let (old, new) = (wordcraft_assistant::keys::SystemKeys::legacy(), wordcraft_assistant::keys::SystemKeys::default());
+    let (copied, complete) = wordcraft_assistant::keys::migrate(&old, &new, &accounts);
+    if !copied.is_empty() {
+        log::info!("keychain: copied the assistant key(s) for {} to {}", copied.join(", "), wordcraft_assistant::keys::SERVICE);
+    }
+    if !complete {
+        log::warn!("keychain: could not check every assistant key; trying again at the next start");
+        return;
+    }
+    if std::fs::create_dir_all(settings).and_then(|()| std::fs::write(&marker, b"margin -> optimo\n")).is_err() {
+        log::warn!("keychain: could not write {}", marker.display());
     }
 }
 
 /// Window, Dock and taskbar icon.
 fn app_icon() -> Option<egui::IconData> {
     #[cfg(target_os = "macos")]
-    // Margin fork: its own icon (assets/app-icon/margin.svg via packaging/macos/margin-icon.sh).
-    let png: &[u8] = include_bytes!("../../../assets/app-icon/margin-macos-512.png");
+    // Optimo fork: its own icon (assets/app-icon/optimo.svg, concept A, via packaging/macos/optimo-icon.sh).
+    let png: &[u8] = include_bytes!("../../../assets/app-icon/optimo-macos-512.png");
     #[cfg(not(target_os = "macos"))]
     let png: &[u8] = include_bytes!("../../../assets/app-icon/hicolor/256x256/apps/ai.storyteller.wordcraft.png");
     eframe::icon_data::from_png_bytes(png).map_err(|e| log::warn!("app icon: {e}")).ok()
@@ -256,6 +284,18 @@ fn main() -> eframe::Result {
     // arguments, so `--version` leaves no file behind. Records logged until now are written to it
     // first. Runs without preferences (agents' test runs) log to standard error only, so they
     // don't rotate away the user's own logs.
+    // Optimo's own settings folder: carry the newest previous one (Margin's, else the one shared
+    // with WordCraft) over once; then the assistant keys from Margin's keychain service.
+    if prefs_enabled()
+        && let Some(new) = wordcraft_control_key::settings_dir()
+    {
+        match wordcraft_control_key::migrate_from_previous(&wordcraft_control_key::previous_settings_dirs(), &new) {
+            Ok(None) => {}
+            Ok(Some((old, n))) => log::info!("settings: copied {n} file(s) from {} to {}", old.display(), new.display()),
+            Err(e) => log::warn!("settings: could not copy the previous preferences: {e}"),
+        }
+        migrate_keychain(&new);
+    }
     if let Some(logger) = logger {
         match log_dir().filter(|_| prefs_enabled()) {
             Some(dir) => match logger.attach_dir(&dir) {

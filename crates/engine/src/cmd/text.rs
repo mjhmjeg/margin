@@ -414,6 +414,9 @@ fn new_paragraph(s: &mut Session, _: &Value) -> CmdResult {
         super::tools::autocorrect_word(s, true)?;
         at = s.sel.focus.clone();
     }
+    // Enter at the end of an assistant's span splits after its bookmark end: the new paragraph
+    // is the person's (same rule as typing there).
+    let at = crate::authorship::past_span_end(&s.doc, &at);
     let new = split_para(s, &at)?;
     s.sel = Selection::caret(new);
     s.goal_x = None;

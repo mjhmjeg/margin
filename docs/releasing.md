@@ -23,7 +23,9 @@ Signing secrets live in the repository's `release` environment (deployment branc
 synced from the release manager's machine (`craftrules/release/signing-setup.md`). Missing secrets
 produce unsigned builds with a warning, so forks still build.
 
-Local packaging: `packaging/macos/package.sh --arch universal`, `packaging/windows/package.ps1`,
+Local packaging: `packaging/macos/package.sh --arch universal` (this fork's defaults: `Optimo.app`,
+bundle id `ai.spert.optimo`, `assets/app-icon/optimo.icns`, files `optimo-<version>-macos-<arch>.dmg`;
+until 2026-10-14 the app was Margin, `ai.spert.margin`), `packaging/windows/package.ps1`,
 `packaging/linux/package.sh` (then `packaging/linux/flatpak-bundle.sh` for the Flatpak), `packaging/web/package.sh`.
 
 Dry run: `gh workflow run release.yml --ref <branch>` builds the unsigned jobs (version, Linux,

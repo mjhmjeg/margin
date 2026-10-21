@@ -390,6 +390,34 @@ pub(crate) fn write_parts(doc: &Document, flavor: Flavor) -> Result<Vec<(String,
         push_part(&mut entries, &mut overrides, &name, bytes, &ct, prels);
     }
 
+    // Optimo's authorship store (accepted assistant text), related from the main document like
+    // Word's own stores; only while the document has any. Its item number is the first free one
+    // (the bibliography takes item1 below).
+    if let Some(xml) = crate::authorship::part_xml(doc) {
+        let taken =
+            |i: u32| (i == 1 && !doc.sources.is_empty()) || entries.iter().any(|(p, _)| p.eq_ignore_ascii_case(&format!("customXml/item{i}.xml")));
+        let n = (1..10_000).find(|i| !taken(*i)).unwrap_or(10_000);
+        rels.add(rt::CUSTOM_XML, &format!("../customXml/item{n}.xml"), false);
+        let mut item_rels = PartRels::default();
+        item_rels.add(rt::CUSTOM_XML_PROPS, &format!("itemProps{n}.xml"), false);
+        push_part(
+            &mut entries,
+            &mut overrides,
+            &format!("customXml/item{n}.xml"),
+            xml,
+            "application/vnd.openxmlformats-officedocument.customXml+xml",
+            item_rels,
+        );
+        push_part(
+            &mut entries,
+            &mut overrides,
+            &format!("customXml/itemProps{n}.xml"),
+            crate::authorship::props_xml(),
+            "application/vnd.openxmlformats-officedocument.customXmlProperties+xml",
+            PartRels::default(),
+        );
+    }
+
     // The macro project and the parts it relates to (VBA data, signatures…), verbatim. A
     // macro-free package can't hold them (Word drops them too).
     if let Some(vba) = doc.passthrough.get(VBA_PROJECT_PART).filter(|b| !b.is_empty()) {

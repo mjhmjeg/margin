@@ -1,6 +1,6 @@
 # Typing parity with Word
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (Correct TWo INitial CApitals, cAPS LOCK and table-cell capitals, #544; previously minor: right-to-left letters typed into an empty paragraph make it right-to-left, #713; previously trivial: grammar proofing: ellipses are not sentence boundaries; previously minor: AutoCorrect's English replacement list applies only to English text, #835; previously trivial: complex-script caret and Backspace, #604; Move Paragraph Up/Down, Promote/Demote, Go Back and Alt+X keys, #343; previously trivial: outline keys in Outline view, #493) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
+> **Last reviewed:** 2026-10-14 · **Last updated:** 2026-10-14 · **Change:** trivial (the app is now Optimo, formerly Margin; assistant marks are `_OptimoAI_`, Margin's `_MarginAI_` still read; previously minor: Margin: typing at the end of an accepted assistant span goes after its bookmark, Word's bookmark rule; previously minor: Correct TWo INitial CApitals, cAPS LOCK and table-cell capitals, #544; previously minor: right-to-left letters typed into an empty paragraph make it right-to-left, #713; previously trivial: grammar proofing: ellipses are not sentence boundaries; previously minor: AutoCorrect's English replacement list applies only to English text, #835; previously trivial: complex-script caret and Backspace, #604; Move Paragraph Up/Down, Promote/Demote, Go Back and Alt+X keys, #343; previously trivial: outline keys in Outline view, #493) · **Target:** Microsoft Word (Microsoft 365) for Mac 16.113.4
 
 What Word does when you type, observed black-box (same keystrokes typed into Word and
 WordCraft, results read back paragraph by paragraph) and pinned by tests in
@@ -31,7 +31,7 @@ overall picture is in [`target-app-parity.md`](target-app-parity.md).
 | Keys | Word's result | Test |
 |---|---|---|
 | type, select some of it, type over it | two undo steps: the first ⌘Z brings the selected text back (still selected), the second removes the typing. Uninterrupted typing stays one step | `typing_then_selecting_then_typing_are_two_undo_steps` |
-| ⌘B with nothing selected, ⌘Z, type | the text isn't bold (Undo takes the waiting caret formatting back too); ⌘Y brings it back | `undoing_bold_at_the_caret_turns_bold_typing_off_again` |
+| ⌘B with nothing selected, ⌘Z, type | the text isn't bold (Undo takes the waiting caret formatting back too); ⇧⌘Z brings it back | `undoing_bold_at_the_caret_turns_bold_typing_off_again` |
 
 ## Track Changes
 
@@ -127,6 +127,24 @@ Word.
   left-to-right whatever its text (`typing_rtl_letters_into_an_empty_paragraph_makes_it_rtl`).
   Word takes the direction from the keyboard language instead; not yet compared side by side.
 
+## Bookmarks and assistant spans (Optimo)
+
+Word's documented rule for bookmarks (Microsoft, *Troubleshoot bookmarks*): text added inside or
+right after the opening bracket is part of the bookmark, text added right after the closing
+bracket is not. Optimo applies it to the hidden `_OptimoAI_` bookmarks (and Margin's `_MarginAI_` ones in older files) that hold accepted
+assistant text (`docs/authorship-storage.md` §8.2), so a person's continuation never counts as
+the AI's. Every other bookmark keeps upstream's behaviour.
+
+| Keys | Result | Test |
+|---|---|---|
+| type with the caret at the end of an accepted assistant span | the text goes after the bookmark end: the span is unchanged, the typed text is the person's | `typing_at_the_end_of_an_ai_span_is_the_persons` |
+| type right after the span's start, or inside it | inside the span; the diff with the stored text counts the typed characters as the person's | `typing_at_the_end_of_an_ai_span_is_the_persons` |
+| Enter at the end of a span, then type | the split happens after the bookmark end; both markers stay in the first paragraph, the new paragraph is the person's | `enter_at_the_end_of_an_ai_span_starts_the_persons_paragraph` |
+| type at the end of an ordinary bookmark (`insert.bookmark`) | extends the bookmark, as before (upstream behaviour unchanged) | `typing_at_the_end_of_an_ordinary_bookmark_still_extends_it` |
+
+Not keystroke-compared with Word (Word is not installed on this Mac); from Microsoft's
+documented bookmark behaviour.
+
 ## Layout
 
 - No line break right after a slash (`and/or`, URLs) unless the word can't fit a line
@@ -167,6 +185,8 @@ Word.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-14 | trivial | Product renamed Margin → Optimo; the assistant marks are `_OptimoAI_` (Margin's `_MarginAI_` still read and renamed on load) |
+| 2026-10-13 | minor | Margin: typing, pasting or Enter at the end of an accepted assistant span goes after its `_MarginAI_` bookmark end (Word's bookmark rule); ordinary bookmarks unchanged |
 | 2026-10-12 | minor | AutoCorrect: Correct TWo INitial CApitals, accidental cAPS LOCK, capitalize first letter of table cells (#544) |
 | 2026-10-11 | minor | Text direction: right-to-left letters typed into an empty paragraph make it right-to-left; existing paragraphs keep theirs (#713) |
 | 2026-10-12 | trivial | AutoCorrect: untagged text follows the editing language; English decided as proofing does (#835 review) |

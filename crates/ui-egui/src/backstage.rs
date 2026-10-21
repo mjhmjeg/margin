@@ -19,13 +19,13 @@ const PAGES: [(&str, &str); 9] = [
 ];
 
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
-    // Margin: the Pages-style Home screen replaces the Backstage (Classic ribbon keeps it).
+    // Optimo: the Pages-style Home screen replaces the Backstage (Classic ribbon keeps it).
     if crate::mac_ui::active(app) {
         return crate::mac_home::show(app, ui);
     }
     let t = Tokens::get(ui.ctx());
     let mac = app.integrated_titlebar;
-    // Margin: a light Mac sidebar (like Finder or Pages) instead of Word's full-colour band.
+    // Optimo: a light Mac sidebar (like Finder or Pages) instead of Word's full-colour band.
     let skin = crate::skin::on();
     let (nav_fill, ink, sel, hov) = if skin {
         (t.panel, t.text, t.pressed, t.hover)
@@ -111,7 +111,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 }
             }
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                // Margin: no community button.
+                // Optimo: no community button.
                 let links: &[(&str, &str)] =
                     if crate::skin::on() { &[("About", "about")] } else { &[("About", "about"), ("Discord community", "discord")] };
                 for &(label, id) in links {
@@ -429,7 +429,7 @@ mod tests {
     #[test]
     fn home_and_new_show_different_sections() {
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
-        a.ui.margin.classic_ribbon = true; // upstream Backstage (Margin has its own Home)
+        a.ui.optimo.classic_ribbon = true; // upstream Backstage (Optimo has its own Home)
         a.run("ui.backstage", json!({"value": true, "page": "home"})).unwrap();
         let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
             |ui, app: &mut WordApp| {
@@ -467,7 +467,7 @@ mod tests {
             ..Default::default()
         };
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::from_text("XYZ")), services);
-        a.ui.margin.classic_ribbon = true; // upstream Backstage (Margin has its own Home)
+        a.ui.optimo.classic_ribbon = true; // upstream Backstage (Optimo has its own Home)
         a.session.author = "GAMMA".into();
         a.run("ui.backstage", json!({"value": true, "page": "info"})).unwrap();
         let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
@@ -516,7 +516,7 @@ mod tests {
     #[test]
     fn save_as_page_shows_browse_and_no_open_list() {
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
-        a.ui.margin.classic_ribbon = true; // upstream Backstage (Margin has its own Home)
+        a.ui.optimo.classic_ribbon = true; // upstream Backstage (Optimo has its own Home)
         a.run("ui.backstage", json!({"value": true, "page": "saveAs"})).unwrap();
         let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
             |ui, app: &mut WordApp| {
@@ -534,7 +534,7 @@ mod tests {
     #[test]
     fn backstage_save_navigates_to_save_as_when_unnamed() {
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
-        a.ui.margin.classic_ribbon = true; // upstream Backstage (Margin has its own Home)
+        a.ui.optimo.classic_ribbon = true; // upstream Backstage (Optimo has its own Home)
         a.run("ui.backstage", json!({"value": true, "page": "home"})).unwrap();
         let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
             |ui, app: &mut WordApp| {
@@ -564,7 +564,7 @@ mod tests {
             ..Default::default()
         };
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), services);
-        a.ui.margin.classic_ribbon = true; // upstream Backstage (Margin has its own Home)
+        a.ui.optimo.classic_ribbon = true; // upstream Backstage (Optimo has its own Home)
         a.run("ui.backstage", json!({"value": true, "page": "home"})).unwrap();
         let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
             |ui, app: &mut WordApp| {
@@ -594,7 +594,7 @@ mod tests {
             ..Default::default()
         };
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), services);
-        a.ui.margin.classic_ribbon = true; // upstream Backstage (Margin has its own Home)
+        a.ui.optimo.classic_ribbon = true; // upstream Backstage (Optimo has its own Home)
         a.run("ui.backstage", json!({"value": true, "page": "home"})).unwrap();
         let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
             |ui, app: &mut WordApp| {
@@ -613,7 +613,7 @@ mod tests {
     #[test]
     fn backstage_save_as_sidebar_opens_save_as_page() {
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
-        a.ui.margin.classic_ribbon = true; // upstream Backstage (Margin has its own Home)
+        a.ui.optimo.classic_ribbon = true; // upstream Backstage (Optimo has its own Home)
         a.run("ui.backstage", json!({"value": true, "page": "home"})).unwrap();
         let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
             |ui, app: &mut WordApp| {

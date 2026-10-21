@@ -8,7 +8,6 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::WordApp;
-use crate::theme::semibold;
 
 /// Number formats notes offer: OOXML name and a sample (not translated).
 const FORMATS: [(&str, &str); 5] = [
@@ -70,7 +69,7 @@ impl NoteForm {
 fn choice(ui: &mut Ui, id: &str, value: &mut String, options: &[(&str, &str)], tr: bool) {
     let show = |l: &str| if tr { tl!(l).to_string() } else { l.to_string() };
     let label = options.iter().find(|(v, _)| *v == value.as_str()).map(|(_, l)| show(l)).unwrap_or_default();
-    egui::ComboBox::from_id_salt(id).selected_text(label).width(170.0).show_ui(ui, |ui| {
+    crate::dialogs::combo(id).selected_text(label).width(170.0).show_ui(ui, |ui| {
         for (v, l) in options {
             ui.selectable_value(value, v.to_string(), show(l));
         }
@@ -81,17 +80,17 @@ fn choice(ui: &mut Ui, id: &str, value: &mut String, options: &[(&str, &str)], t
 pub fn note_options(app: &mut WordApp, ui: &mut Ui, f: &mut NoteForm) -> bool {
     let heading = |ui: &mut Ui, s: &str| {
         ui.add_space(4.0);
-        ui.label(egui::RichText::new(tl!(s)).font(semibold(12.5)));
+        crate::dialogs::group_label(ui, tl!(s));
     };
     heading(ui, "Location");
     let mut convert = None;
     egui::Grid::new("notes_location").num_columns(2).spacing(vec2(10.0, 6.0)).show(ui, |ui| {
-        ui.radio_value(&mut f.endnote, false, tl!("Footnotes"));
+        crate::dialogs::radio_value(ui, &mut f.endnote, false, tl!("Footnotes"));
         ui.add_enabled_ui(!f.endnote, |ui| {
             choice(ui, "notes_fpos", &mut f.pos[0], &[("pageBottom", "Bottom of Page"), ("beneathText", "Below text")], true);
         });
         ui.end_row();
-        ui.radio_value(&mut f.endnote, true, tl!("Endnotes"));
+        crate::dialogs::radio_value(ui, &mut f.endnote, true, tl!("Endnotes"));
         ui.add_enabled_ui(f.endnote, |ui| {
             choice(ui, "notes_epos", &mut f.pos[1], &[("sectEnd", "End of section"), ("docEnd", "End of document")], true);
         });
@@ -120,12 +119,12 @@ pub fn note_options(app: &mut WordApp, ui: &mut Ui, f: &mut NoteForm) -> bool {
             choice(ui, "notes_fmt", v, &FORMATS, false);
         }
         ui.end_row();
-        ui.label(tl!("Custom mark:"));
+        crate::dialogs::form_label(ui, tl!("Custom mark:"));
         ui.add(egui::TextEdit::singleline(&mut f.mark).desired_width(60.0).char_limit(10));
         ui.end_row();
-        ui.label(tl!("Start at:"));
+        crate::dialogs::form_label(ui, tl!("Start at:"));
         if let Some(v) = f.start.get_mut(k) {
-            ui.add(egui::DragValue::new(v).range(1..=32_767).speed(0.2));
+            ui.add(crate::dialogs::DragNum::new(v).range(1..=32_767).speed(0.2));
         }
         ui.end_row();
         ui.label(tl!("Numbering"));
@@ -136,7 +135,7 @@ pub fn note_options(app: &mut WordApp, ui: &mut Ui, f: &mut NoteForm) -> bool {
             choice(ui, "notes_restart", v, &options, true);
         }
         ui.end_row();
-        ui.label(tl!("Apply to:"));
+        crate::dialogs::form_label(ui, tl!("Apply to:"));
         let mut scope = if f.whole { "document" } else { "section" }.to_string();
         choice(ui, "notes_scope", &mut scope, &[("document", "Whole document"), ("section", "This section")], true);
         f.whole = scope == "document";

@@ -1,17 +1,27 @@
-//! Margin's Home screen, Pages-style: a light sidebar (New, Recent, Open…, Save As, Print, Export,
-//! More…) and a document chooser — large template cards or recent documents as page thumbnails,
-//! with Cancel / Create at the bottom. Shown at launch and on File › New. The document pages
-//! (Save As, Print, Export, Info, Options) are upstream's, shown in the same frame.
+//! Optimo's Home screen, Pages-style: a full-height sidebar (New, Recent, Open…, the document
+//! group, Settings) and a document chooser — template cards or recent documents as page
+//! thumbnails (grid or list), with Open… / Cancel / Create at the bottom. Shown at launch and on
+//! File › New. The document pages (Save As, Print, Export, Options) are upstream's, in the same frame.
 
 use egui::{Align2, Color32, Rect, Sense, Stroke, Ui, pos2, vec2};
 use serde_json::json;
 
 use crate::WordApp;
-use crate::theme::{Tokens, regular};
+use crate::mac_controls::{self as mc, Seg, font};
+use crate::theme::Tokens;
 
 const SIDEBAR_W: f32 = 220.0;
+/// Traffic lights sit in the sidebar's top band.
+const LIGHTS_BAND: f32 = 36.0;
 const CARD_W: f32 = 168.0;
 const CARD_H: f32 = (CARD_W - 2.0 * RING) * 11.0 / 8.5;
+const COL_GAP: f32 = 36.0;
+const ROW_GAP: f32 = 32.0;
+const INSET: i8 = 40;
+const HEADER_H: f32 = 52.0;
+const FOOTER_H: f32 = 60.0;
+const LIST_ROW_H: f32 = 44.0;
+const LIST_THUMB_H: f32 = 32.0;
 /// Paper corners: barely rounded, like a sheet, not a tile.
 const PAPER_RADIUS: f32 = 3.0;
 /// Selection ring: a gap from the paper, then the ring.
@@ -21,23 +31,26 @@ const RING: f32 = RING_GAP + RING_W;
 /// Recent files bigger than this show an icon instead of a rendered first page.
 const MAX_THUMB_BYTES: u64 = 20 << 20;
 
-fn font() -> egui::FontId {
-    regular(crate::skin::UI_SIZE)
-}
-
-/// Sidebar entries: page id and label. `More…` reveals the ones after it.
-const MAIN: [(&str, &str); 3] = [("new", "New"), ("recent", "Recent"), ("open", "Open…")];
-const DOC: [(&str, &str); 3] = [("saveAs", "Save As"), ("print", "Print"), ("export", "Export")];
-const MORE: [(&str, &str); 3] = [("info", "Info"), ("save", "Save"), ("options", "Options")];
+/// Sidebar entries: page id, label, icon.
+const MAIN: [(&str, &str, &str); 3] = [("new", "New", "newDocument"), ("recent", "Recent", "recent"), ("open", "Open…", "open")];
+const DOC: [(&str, &str, &str); 3] = [("saveAs", "Save As…", "saveAs"), ("print", "Print…", "print"), ("export", "Export…", "share")];
 
 /// What the chooser has selected, kept between frames.
 #[derive(Clone, Default)]
 struct Pick(Option<String>);
 
+/// "Came from a document": Home was opened while the editor showed a document (File › Home, the
+/// menu, a shortcut), whether or not it has a file or edits. Only Home at launch
+/// ([`WordApp::start_screen`]) has no document to go back to, save, print or export.
+fn came_from_document(app: &mut WordApp) -> bool {
+    let launch = app.launch_home;
+    *app.home_back.get_or_insert(!launch)
+}
+
 /// The Home screen in place of upstream's Backstage.
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
-    // Upstream's start page is "home"; Margin's is the template chooser.
+    // Upstream's start page is "home"; Optimo's is the template chooser.
     if app.ui.backstage_page == "home" {
         app.ui.backstage_page = "new".into();
     }
@@ -64,11 +77,46 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
 
 fn close(app: &mut WordApp) {
     app.ui.backstage = false;
+    app.home_back = None;
+    app.launch_home = false;
     app.canvas.want_focus = true;
+}
+
+/// "‹ Back to <document>": the top row of the sidebar when Home came from a document.
+fn back_row(app: &mut WordApp, ui: &mut Ui, t: &Tokens) {
+    let full = crate::i18n::fmt(tl!("Back to {name}"), &[("name", &app.title_stem())]);
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
+    // A long name is shortened with "…" to fit the row.
+    let room = r.width() - (12.0 + 16.0 + 10.0) - 6.0;
+    let stem = app.title_stem();
+    let mut label = full.clone();
+    for n in (1..=stem.chars().count()).rev() {
+        if ui.painter().layout_no_wrap(label.clone(), font(), t.accent).size().x <= room {
+            break;
+        }
+        label = crate::i18n::fmt(tl!("Back to {name}"), &[("name", &crate::review_panel::clip(&stem, n.saturating_sub(1)))]);
+    }
+    if resp.hovered() {
+        ui.painter().rect_filled(r, 6.0, t.hover);
+    }
+    crate::icons::paint(
+        ui.painter(),
+        Rect::from_center_size(pos2(r.min.x + 20.0, r.center().y), vec2(16.0, 16.0)),
+        "chevronLeft",
+        t.accent,
+        t.accent,
+    );
+    let clip = ui.painter().with_clip_rect(r.shrink2(vec2(4.0, 0.0)));
+    clip.text(pos2(r.min.x + 12.0 + 16.0 + 10.0, r.center().y), Align2::LEFT_CENTER, &label, font(), t.accent);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &full));
+    if resp.clicked() {
+        close(app);
+    }
 }
 
 fn sidebar(app: &mut WordApp, ui: &mut Ui, t: &Tokens) {
     let mac = app.integrated_titlebar;
+    let doc = came_from_document(app);
     egui::Panel::left("margin_home_nav")
         .exact_size(SIDEBAR_W)
         .resizable(false)
@@ -80,30 +128,27 @@ fn sidebar(app: &mut WordApp, ui: &mut Ui, t: &Tokens) {
         }))
         .show(ui, |ui| {
             // The traffic lights' band drags the window.
-            let (_, drag) =
-                ui.allocate_exact_size(vec2(SIDEBAR_W - 20.0, if mac { crate::chrome::MAC_TITLE_BAR + 12.0 } else { 12.0 }), Sense::click_and_drag());
+            let (_, drag) = ui.allocate_exact_size(vec2(SIDEBAR_W - 20.0, if mac { LIGHTS_BAND } else { 12.0 }), Sense::click_and_drag());
             if drag.drag_started() {
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
             }
             ui.spacing_mut().item_spacing.y = 2.0;
-            for (id, label) in MAIN {
-                nav_item(app, ui, t, id, label);
+            if doc {
+                back_row(app, ui, t);
+                divider(ui, t);
+            }
+            for (id, label, icon) in MAIN {
+                nav_item(app, ui, t, id, label, icon, true);
             }
             divider(ui, t);
-            for (id, label) in DOC {
-                nav_item(app, ui, t, id, label);
+            group_label(ui, t, "Document");
+            for (id, label, icon) in DOC {
+                nav_item(app, ui, t, id, label, icon, doc);
             }
-            let more_id = egui::Id::new("margin_home_more");
-            let mut more = ui.data(|d| d.get_temp::<bool>(more_id)).unwrap_or(false) || MORE.iter().any(|(id, _)| app.ui.backstage_page == *id);
-            if row(ui, t, if more { "Less" } else { "More…" }, false, t.text_dim).clicked() {
-                more = !more;
-                ui.data_mut(|d| d.insert_temp(more_id, more));
-            }
-            if more {
-                for (id, label) in MORE {
-                    nav_item(app, ui, t, id, label);
-                }
-            }
+            // Settings is pinned to the bottom.
+            let rest = ui.available_height() - 30.0;
+            ui.add_space(rest.max(0.0));
+            nav_item(app, ui, t, "options", "Settings", "settings", true);
         });
 }
 
@@ -114,104 +159,155 @@ fn divider(ui: &mut Ui, t: &Tokens) {
     ui.add_space(10.0);
 }
 
-fn nav_item(app: &mut WordApp, ui: &mut Ui, t: &Tokens, id: &str, label: &str) {
-    if row(ui, t, label, app.ui.backstage_page == id, t.text).clicked() {
+fn group_label(ui: &mut Ui, t: &Tokens, label: &str) {
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::hover());
+    ui.painter().text(pos2(r.min.x + 12.0, r.center().y), Align2::LEFT_CENTER, tl!(label), font(), t.text_dim);
+}
+
+fn nav_item(app: &mut WordApp, ui: &mut Ui, t: &Tokens, id: &str, label: &str, icon: &str, enabled: bool) {
+    if row(ui, t, label, icon, app.ui.backstage_page == id, enabled).clicked() && enabled {
         match id {
             "open" => {
                 let _ = app.run("ui.openFileDialog", json!({}));
-            }
-            "save" => {
-                let saved = app.run("file.save", json!({})).is_ok_and(|v| v.get("saved").and_then(serde_json::Value::as_bool) == Some(true));
-                if saved {
-                    close(app);
-                } else {
-                    app.ui.backstage_page = "saveAs".into();
-                }
             }
             _ => app.ui.backstage_page = id.into(),
         }
     }
 }
 
-/// A sidebar row: a soft grey pill when selected or hovered.
-fn row(ui: &mut Ui, t: &Tokens, label: &str, selected: bool, ink: Color32) -> egui::Response {
-    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
-    if selected {
-        ui.painter().rect_filled(r, 6.0, t.pressed);
-    } else if resp.hovered() {
+/// A sidebar row: 30 high, 16 pt icon + 10 gap; a `checked` pill when selected, `hover` on hover.
+/// A disabled row is `text_dim` and inert.
+fn row(ui: &mut Ui, t: &Tokens, label: &str, icon: &str, selected: bool, enabled: bool) -> egui::Response {
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), if enabled { Sense::click() } else { Sense::hover() });
+    if selected && enabled {
+        ui.painter().rect_filled(r, 6.0, t.checked);
+    } else if resp.hovered() && enabled {
         ui.painter().rect_filled(r, 6.0, t.hover);
     }
-    ui.painter().text(pos2(r.min.x + 12.0, r.center().y), Align2::LEFT_CENTER, tl!(label), font(), ink);
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, tl!(label)));
+    let ink = if enabled { t.text } else { t.text_dim };
+    crate::icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 20.0, r.center().y), vec2(16.0, 16.0)), icon, ink, ink);
+    ui.painter().text(pos2(r.min.x + 12.0 + 16.0 + 10.0, r.center().y), Align2::LEFT_CENTER, tl!(label), font(), ink);
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, selected, tl!(label)));
     resp
 }
 
-/// Templates or recent documents as cards, with a title bar and Cancel / Create.
+/// Recent order: by last change (newest first) or by name.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Sort {
+    Date,
+    Name,
+}
+
+/// Templates or recent documents, with a header (title, search), a footer and the grid or list.
 fn chooser(app: &mut WordApp, ui: &mut Ui, t: &Tokens, recent: bool) {
     let pick_id = egui::Id::new(("margin_home_pick", recent));
     let query_id = egui::Id::new("margin_home_query");
+    let sort_id = egui::Id::new("margin_home_sort");
+    let list_id = egui::Id::new("margin_home_list");
     let mut pick = ui.data(|d| d.get_temp::<Pick>(pick_id)).unwrap_or_default().0;
     let mut query = ui.data(|d| d.get_temp::<String>(query_id)).unwrap_or_default();
+    let mut sort = ui.data(|d| d.get_temp::<bool>(sort_id)).map_or(Sort::Date, |n| if n { Sort::Name } else { Sort::Date });
+    let mut list = recent && ui.data(|d| d.get_temp::<bool>(list_id)).unwrap_or(false);
     let mut open: Option<String> = None;
+    let doc = came_from_document(app);
 
     egui::Panel::top("margin_home_top")
-        .exact_size(52.0)
-        .frame(egui::Frame::NONE.fill(t.title_bar).stroke(Stroke::new(1.0, t.border)).inner_margin(egui::Margin::symmetric(28, 0)))
+        .exact_size(HEADER_H)
+        .frame(egui::Frame::NONE.fill(t.title_bar).inner_margin(egui::Margin::symmetric(INSET, 0)))
         .show(ui, |ui| {
+            let r = ui.max_rect();
+            ui.painter().hline(r.x_range().expand(INSET as f32), r.max.y, Stroke::new(1.0, t.border));
             ui.horizontal_centered(|ui| {
                 ui.label(egui::RichText::new(tl!(if recent { "Recent documents" } else { "Choose a template" })).font(font()).color(t.text));
-                if !recent {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let r = ui.add(egui::TextEdit::singleline(&mut query).hint_text(tl!("Search templates")).desired_width(240.0).font(font()));
-                        if r.changed() {
-                            ui.data_mut(|d| d.insert_temp(query_id, query.clone()));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 12.0;
+                    if search_field(ui, t, &mut query, if recent { "Search recent" } else { "Search templates" }) {
+                        ui.data_mut(|d| d.insert_temp(query_id, query.clone()));
+                    }
+                    if recent {
+                        let (seg, _) = ui.allocate_exact_size(vec2(72.0, mc::ROW_H), Sense::hover());
+                        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(seg));
+                        let items = [Seg::Icon("viewGrid", "Grid"), Seg::Icon("viewList", "List")];
+                        if let Some(i) = mc::segmented_one(&mut child, "home_view", &items, Some(usize::from(list))) {
+                            list = i == 1;
+                            ui.data_mut(|d| d.insert_temp(list_id, list));
                         }
-                    });
-                }
+                        let names = ["Date".to_string(), "Name".to_string()];
+                        if let Some(c) = mc::popup_button(ui, "home_sort", 96.0, if sort == Sort::Name { "Name" } else { "Date" }, &names, false) {
+                            sort = if c == "Name" { Sort::Name } else { Sort::Date };
+                            ui.data_mut(|d| d.insert_temp(sort_id, sort == Sort::Name));
+                        }
+                        ui.label(egui::RichText::new(tl!("Sort")).font(font()).color(t.text_dim));
+                    }
+                });
             });
         });
     egui::Panel::bottom("margin_home_footer")
-        .exact_size(56.0)
-        .frame(egui::Frame::NONE.fill(t.title_bar).stroke(Stroke::new(1.0, t.border)).inner_margin(egui::Margin::symmetric(24, 0)))
+        .exact_size(FOOTER_H)
+        .frame(egui::Frame::NONE.fill(t.title_bar).inner_margin(egui::Margin::symmetric(INSET, 0)))
         .show(ui, |ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 10.0;
-                let label = if recent { "Open" } else { "Create" };
-                let ok = egui::Button::new(egui::RichText::new(tl!(label)).font(font()).color(t.on_accent))
-                    .fill(t.accent)
-                    .min_size(vec2(84.0, 28.0))
-                    .corner_radius(7.0);
-                if ui.add_enabled(pick.is_some(), ok).clicked() {
-                    open = pick.clone();
+            let r = ui.max_rect();
+            ui.painter().hline(r.x_range().expand(INSET as f32), r.min.y, Stroke::new(1.0, t.border));
+            ui.horizontal_centered(|ui| {
+                ui.spacing_mut().item_spacing.x = 12.0;
+                if mc::button(ui, "Open…", false, true).clicked() {
+                    let _ = app.run("ui.openFileDialog", json!({}));
                 }
-                let cancel = egui::Button::new(egui::RichText::new(tl!("Cancel")).font(font())).min_size(vec2(84.0, 28.0)).corner_radius(7.0);
-                if ui.add(cancel).clicked() {
-                    close(app);
-                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 12.0;
+                    if mc::button(ui, if recent { "Open" } else { "Create" }, true, pick.is_some()).clicked() {
+                        open = pick.clone();
+                    }
+                    // H7/H10: Cancel (secondary) left of the primary button, with its key.
+                    if doc {
+                        if mc::button(ui, "Cancel", false, true).clicked() {
+                            close(app);
+                        }
+                        ui.label(egui::RichText::new("esc").font(font()).color(t.text_dim));
+                    }
+                });
             });
         });
     egui::CentralPanel::default()
-        .frame(egui::Frame::NONE.fill(t.canvas).inner_margin(egui::Margin { left: 28, right: 28, top: 24, bottom: 24 }))
+        .frame(egui::Frame::NONE.fill(t.canvas).inner_margin(egui::Margin { left: INSET, right: INSET, top: 32, bottom: 24 }))
         .show(ui, |ui| {
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                let items: Vec<(String, String, Option<String>)> = if recent {
-                    app.ui.recent.iter().take(24).map(|p| (p.clone(), file_name(p), Some(folder_and_date(p)))).collect()
-                } else {
-                    crate::backstage::matching_templates(&query)
-                        .into_iter()
-                        .map(|(label, id)| (id.to_string(), tl!(label).to_string(), None))
-                        .collect()
-                };
+                let items = chooser_items(app, recent, &query, sort);
                 if items.is_empty() {
-                    let msg = if recent { "Documents you open will show up here." } else { "No templates match your search." };
-                    ui.label(egui::RichText::new(tl!(msg)).font(font()).color(t.text_dim));
+                    if recent && query.trim().is_empty() {
+                        ui.add_space(60.0);
+                        ui.vertical_centered(|ui| {
+                            ui.label(egui::RichText::new(tl!("Documents you open will appear here.")).font(font()).color(t.text_dim));
+                            ui.add_space(12.0);
+                            if mc::button(ui, "Open…", false, true).clicked() {
+                                let _ = app.run("ui.openFileDialog", json!({}));
+                            }
+                        });
+                    } else {
+                        let msg = if recent { "No recent documents match your search." } else { "No templates match your search." };
+                        ui.label(egui::RichText::new(tl!(msg)).font(font()).color(t.text_dim));
+                    }
                     return;
                 }
                 if !recent && pick.is_none() {
                     pick = items.first().map(|(k, _, _)| k.clone());
                 }
+                if list {
+                    ui.spacing_mut().item_spacing.y = 2.0;
+                    for (key, label, sub) in &items {
+                        let selected = pick.as_deref() == Some(key.as_str());
+                        let resp = list_row(app, ui, t, key, label, sub.as_deref().unwrap_or(""), selected);
+                        if resp.clicked() {
+                            pick = Some(key.clone());
+                        }
+                        if resp.double_clicked() {
+                            open = Some(key.clone());
+                        }
+                    }
+                    return;
+                }
                 ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing = vec2(24.0, 28.0);
+                    ui.spacing_mut().item_spacing = vec2(COL_GAP - 2.0 * RING, ROW_GAP - 2.0 * RING);
                     for (key, label, sub) in &items {
                         let selected = pick.as_deref() == Some(key.as_str());
                         let resp = card(app, ui, t, key, label, sub.as_deref(), selected, recent);
@@ -235,6 +331,91 @@ fn chooser(app: &mut WordApp, ui: &mut Ui, t: &Tokens, recent: bool) {
             close(app);
         }
     }
+}
+
+/// Header search field: 240 × 28, search icon on the left; returns true when the text changed.
+fn search_field(ui: &mut Ui, t: &Tokens, query: &mut String, hint: &str) -> bool {
+    let m = crate::skin::OptimoTokens::get(ui.ctx());
+    let (r, _) = ui.allocate_exact_size(vec2(240.0, mc::ROW_H), Sense::hover());
+    ui.painter().rect(r, mc::RADIUS, m.field_bg, Stroke::new(1.0, t.input_border), egui::StrokeKind::Inside);
+    crate::icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 15.0, r.center().y), vec2(15.0, 15.0)), "search", t.text_dim, t.text_dim);
+    let inner = Rect::from_min_max(pos2(r.min.x + 28.0, r.min.y), pos2(r.max.x - 8.0, r.max.y));
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::left_to_right(egui::Align::Center)));
+    child
+        .add(
+            egui::TextEdit::singleline(query)
+                .frame(egui::Frame::NONE)
+                .hint_text(tl!(hint))
+                .font(font())
+                .text_color(t.text)
+                .desired_width(inner.width())
+                .vertical_align(egui::Align::Center),
+        )
+        .changed()
+}
+
+/// (key, caption, "folder · date") for what the chooser shows, filtered by the search text.
+fn chooser_items(app: &WordApp, recent: bool, query: &str, sort: Sort) -> Vec<(String, String, Option<String>)> {
+    if !recent {
+        return crate::backstage::matching_templates(query).into_iter().map(|(label, id)| (id.to_string(), tl!(label).to_string(), None)).collect();
+    }
+    let paths: Vec<String> = app.ui.recent.iter().take(24).cloned().collect();
+    let names = display_names(&paths);
+    let q = query.trim().to_lowercase();
+    let mut items: Vec<(i64, String, String, String)> = paths
+        .into_iter()
+        .zip(names)
+        .filter(|(_, n)| q.is_empty() || n.to_lowercase().contains(&q))
+        .map(|(p, n)| (modified_secs(&p), p.clone(), n, folder_and_date(&p)))
+        .collect();
+    match sort {
+        // The recent list is already newest-opened first; ties keep that order.
+        Sort::Date => items.sort_by_key(|i| std::cmp::Reverse(i.0)),
+        Sort::Name => items.sort_by_key(|i| i.2.to_lowercase()),
+    }
+    items.into_iter().map(|(_, p, n, s)| (p, n, Some(s))).collect()
+}
+
+/// Captions for recent files: the name without its extension, unless two files would then read
+/// the same ("Report.docx" and "Report.odt"), which keep the extension.
+fn display_names(paths: &[String]) -> Vec<String> {
+    let stem = |p: &str| std::path::Path::new(p).file_stem().map_or_else(|| p.to_string(), |n| n.to_string_lossy().to_string());
+    let stems: Vec<String> = paths.iter().map(|p| stem(p).to_lowercase()).collect();
+    paths.iter().zip(&stems).map(|(p, s)| if stems.iter().filter(|o| *o == s).count() > 1 { file_name(p) } else { stem(p) }).collect()
+}
+
+fn modified_secs(p: &str) -> i64 {
+    std::fs::metadata(p).and_then(|m| m.modified()).ok().and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs() as i64)
+}
+
+/// A recent document as a list row: 32 high thumbnail, name, then "folder · date" in `text_dim`.
+fn list_row(app: &mut WordApp, ui: &mut Ui, t: &Tokens, key: &str, label: &str, sub: &str, selected: bool) -> egui::Response {
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), LIST_ROW_H), Sense::click());
+    if selected {
+        ui.painter().rect_filled(r, 6.0, t.checked);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(r, 6.0, t.hover);
+    }
+    let th = Rect::from_min_size(pos2(r.min.x + 12.0, r.center().y - LIST_THUMB_H / 2.0), vec2(LIST_THUMB_H * 8.5 / 11.0, LIST_THUMB_H));
+    ui.painter().rect_filled(th, 2.0, Color32::WHITE);
+    match recent_thumb(app, ui, key) {
+        Some(h) => {
+            ui.painter().add(
+                egui::epaint::RectShape::filled(th, 2.0, Color32::WHITE).with_texture(h.id(), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))),
+            );
+        }
+        None => crate::icons::paint(ui.painter(), th.shrink(4.0), "printLayout", t.text_disabled, t.text_disabled),
+    }
+    ui.painter().rect_stroke(th, 2.0, Stroke::new(0.5, Color32::from_black_alpha(30)), egui::StrokeKind::Outside);
+    let x = th.max.x + 14.0;
+    let w = (r.max.x - x - 12.0).max(0.0);
+    let mut job = egui::text::LayoutJob::simple_singleline(label.to_string(), font(), t.text);
+    job.wrap = egui::text::TextWrapping::truncate_at_width(w * 0.5);
+    let g = ui.painter().layout_job(job);
+    ui.painter().galley(pos2(x, r.center().y - g.size().y / 2.0), g, t.text);
+    ui.painter().text(pos2(r.max.x - 12.0, r.center().y), Align2::RIGHT_CENTER, sub, font(), t.text_dim);
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, label));
+    resp
 }
 
 /// One page-shaped card with its label (and folder/date for recent documents) underneath.
@@ -280,12 +461,17 @@ fn card(app: &mut WordApp, ui: &mut Ui, t: &Tokens, key: &str, label: &str, sub:
         ui.add_space(6.0);
         // Up to two centred lines, then an ellipsis.
         let mut job = egui::text::LayoutJob::single_section(label.to_string(), egui::text::TextFormat::simple(font(), t.text));
-        job.wrap = egui::text::TextWrapping { max_width: CARD_W, max_rows: 2, break_anywhere: false, overflow_character: Some('…') };
+        job.wrap = egui::text::TextWrapping {
+            max_width: CARD_W,
+            max_rows: if recent { 1 } else { 2 },
+            break_anywhere: false,
+            overflow_character: Some('…'),
+        };
         job.halign = egui::Align::Center;
         ui.vertical_centered(|ui| {
             ui.label(job).on_hover_text(label);
             if let Some(s) = sub {
-                ui.label(egui::RichText::new(s).font(font()).color(t.group_label));
+                ui.label(egui::RichText::new(s).font(font()).color(t.text_dim));
             }
         });
         resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, label));
@@ -393,10 +579,98 @@ mod tests {
     use super::*;
 
     #[test]
+    fn captions_drop_extensions_unless_names_clash() {
+        let p = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(display_names(&p(&["/a/Report.docx", "/a/Notes.odt"])), ["Report", "Notes"]);
+        assert_eq!(display_names(&p(&["/a/Report.docx", "/b/report.odt", "/a/x.docx"])), ["Report.docx", "report.odt", "x"]);
+    }
+
+    #[test]
     fn dates() {
         assert_eq!(short_date(0), "1 Jan");
         assert_eq!(short_date(1_791_849_600), "13 Oct"); // 2026-10-13
         assert_eq!(folder_and_date("/nowhere/Folder/x.docx"), "Folder");
+    }
+
+    fn harness(app: WordApp) -> egui_kittest::Harness<'static, WordApp> {
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app,
+        );
+        h.run_steps(4);
+        h
+    }
+
+    /// The sample document, unsaved and clean, in the Optimo layout, with File › Home opened.
+    fn sample_then_home(page: &str) -> egui_kittest::Harness<'static, WordApp> {
+        let mut a = WordApp::new(crate::Session::new(wordcraft_engine::sample::sample_document()), crate::Services::default());
+        a.integrated_titlebar = true;
+        assert!(a.session.path.is_none() && !a.session.dirty);
+        let mut h = harness(a);
+        let act = crate::mac_menu::find("File/New…").expect("File › New… (Home)");
+        crate::mac_menu::perform(h.state_mut(), &act);
+        h.state_mut().ui.backstage_page = page.into();
+        h.run_steps(4);
+        assert!(h.state().ui.backstage);
+        h
+    }
+
+    fn back_label() -> String {
+        crate::i18n::fmt(tl!("Back to {name}"), &[("name", "The Open Studio Handbook")])
+    }
+
+    #[test]
+    fn home_from_a_document_has_a_back_row_that_returns_unchanged() {
+        use egui_kittest::kittest::Queryable;
+        let mut h = sample_then_home("new");
+        let before = h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body);
+        h.get_by_role_and_label(egui::accesskit::Role::Button, &back_label()).click();
+        h.run_steps(3);
+        assert!(!h.state().ui.backstage, "back in the document");
+        assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body), before, "unchanged");
+    }
+
+    #[test]
+    fn cancel_returns_on_new_and_on_recent_and_esc_too() {
+        use egui_kittest::kittest::Queryable;
+        for page in ["new", "recent"] {
+            let mut h = sample_then_home(page);
+            h.get_by_role_and_label(egui::accesskit::Role::Button, tl!("Cancel")).click();
+            h.run_steps(3);
+            assert!(!h.state().ui.backstage, "Cancel on {page}");
+        }
+        let mut h = sample_then_home("recent");
+        h.key_press(egui::Key::Escape);
+        h.run_steps(3);
+        assert!(!h.state().ui.backstage, "Esc");
+        // Opened again later: still from the document.
+        let act = crate::mac_menu::find("File/New…").expect("File › New… (Home)");
+        crate::mac_menu::perform(h.state_mut(), &act);
+        h.run_steps(3);
+        assert!(h.query_by_label(&back_label()).is_some());
+    }
+
+    #[test]
+    fn the_document_group_follows_came_from_document_and_launch_has_no_way_back() {
+        use egui_kittest::kittest::{NodeT, Queryable};
+        let h = sample_then_home("new");
+        for label in ["Save As…", "Print…", "Export…"] {
+            let n = h.get_by_role_and_label(egui::accesskit::Role::Button, tl!(label));
+            assert!(!n.accesskit_node().is_disabled(), "{label} is enabled for an unsaved, clean document");
+        }
+        // First launch: nothing to go back to.
+        let mut a = WordApp::new(crate::Session::new(wordcraft_doc::Document::new()), crate::Services::default());
+        a.integrated_titlebar = true;
+        assert!(a.start_screen());
+        let h = harness(a);
+        assert!(h.state().ui.backstage);
+        assert!(h.query_by_label(&crate::i18n::fmt(tl!("Back to {name}"), &[("name", tl!("Document1"))])).is_none());
+        assert!(h.query_by_role_and_label(egui::accesskit::Role::Button, tl!("Cancel")).is_none());
+        assert!(h.get_by_role_and_label(egui::accesskit::Role::Button, tl!("Print…")).accesskit_node().is_disabled());
     }
 
     /// Launch lands on the template chooser; Create opens the picked template and closes Home.

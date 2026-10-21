@@ -197,6 +197,56 @@ pub struct DisplayOptions {
     pub hide_ink: bool,
     /// How tracked changes and comments are marked when `markup` is on (Track Changes Options).
     pub revisions: MarkupOptions,
+    /// Per-author colours and line styles (Optimo's review marks). `None`: colours by order of
+    /// appearance, solid lines, thin change bars at the page edge (upstream's look).
+    pub author_marks: Option<AuthorMarks>,
+    /// View › Show Authorship (Optimo): accepted assistant text keeps its tint and dotted
+    /// underline. `None`: nothing of the kind is drawn (upstream's look).
+    pub authorship: Option<AuthorshipDisplay>,
+}
+
+/// How accepted assistant text is shown while View › Show Authorship is on: the split per
+/// paragraph (`wordcraft_doc::authorship::attribution`), the assistant colour for the dotted
+/// underline and the tint behind the text.
+#[derive(Clone, Debug)]
+pub struct AuthorshipDisplay {
+    pub shares: std::sync::Arc<wordcraft_doc::authorship::Attribution>,
+    pub color: Rgb,
+    /// Colour and opacity (0–255) of the tint.
+    pub tint: (Rgb, u8),
+}
+
+/// One author's marks on the page (Optimo: people solid in their colour, an assistant dotted).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct AuthorMark {
+    pub author: String,
+    pub color: Rgb,
+    /// Dotted lines (underline of insertions, strike of deletions, change bar) instead of solid.
+    pub dotted: bool,
+    /// Background behind this author's comment anchors: colour and opacity (0–255).
+    pub tint: (Rgb, u8),
+}
+
+/// The authors with their marks; an author not listed gets the by-order colour, solid.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct AuthorMarks(pub Vec<AuthorMark>);
+
+/// Distance of the change bar from the text with [`AuthorMarks`] (points).
+pub const AUTHOR_BAR_GAP: f32 = 22.0;
+
+impl AuthorMarks {
+    fn get(&self, author: &str) -> Option<&AuthorMark> {
+        self.0.iter().find(|m| m.author == author)
+    }
+}
+
+/// Colour and dotted flag of revision `rev`: its author's mark, else the by-order colour.
+fn rev_style(doc: &Document, opts: &DisplayOptions, rev: u32) -> (Rgb, bool) {
+    let author = doc.revisions.get(rev as usize).map(|v| v.author.as_str());
+    if let Some(m) = opts.author_marks.as_ref().and_then(|ms| author.and_then(|a| ms.get(a))) {
+        return (m.color, m.dotted);
+    }
+    (revision_color(author.map(|a| author_index(doc, a)).unwrap_or(0)), false)
 }
 
 impl Default for DisplayOptions {
@@ -210,6 +260,8 @@ impl Default for DisplayOptions {
             placeholders: false,
             hide_ink: false,
             revisions: MarkupOptions::default(),
+            author_marks: None,
+            authorship: None,
         }
     }
 }
@@ -385,7 +437,7 @@ pub fn page_display(doc: &Document, page: &Page, opts: &DisplayOptions) -> Vec<D
         }
     }
     if opts.markup && (opts.revisions.insertions_deletions || opts.revisions.formatting) && opts.revisions.changed_lines != ChangeBar::None {
-        change_bars(doc, page, &opts.revisions, ba, &mut out);
+        change_bars(doc, page, opts, ba, &mut out);
     }
     out
 }
@@ -458,14 +510,17 @@ pub const CHANGE_BAR: Rgb = Rgb(0x50, 0x50, 0x50);
 
 /// Bars in the margin beside body lines with tracked insertions or deletions, or (when shown)
 /// tracked formatting changes of their text, paragraph or paragraph mark.
-fn change_bars(doc: &Document, page: &Page, m: &MarkupOptions, alpha: f32, out: &mut Vec<Draw>) {
+fn change_bars(doc: &Document, page: &Page, opts: &DisplayOptions, alpha: f32, out: &mut Vec<Draw>) {
+    let m = &opts.revisions;
     // Outside: the left margin, or the outer one of a right-hand page with mirrored margins.
     let right = match m.changed_lines {
         ChangeBar::Right => true,
         ChangeBar::Outside => doc.settings.mirror_margins && page.number % 2 == 1,
         _ => false,
     };
-    let bx = if right { page.body.right() + 9.0 } else { page.body.x - 9.0 };
+    let marks = opts.author_marks.is_some();
+    let gap = if marks { AUTHOR_BAR_GAP } else { 9.0 };
+    let bx = if right { page.body.right() + gap } else { (page.body.x - gap).max(2.0) };
     let color = m.changed_lines_color.unwrap_or(CHANGE_BAR);
     for it in &page.items {
         let Placed::Lines { story, path, para: pl, l0, l1, y, turn, .. } = it else { continue };
@@ -487,7 +542,23 @@ fn change_bars(doc: &Document, page: &Page, m: &MarkupOptions, alpha: f32, out: 
                 || (mark_rev && line.end == LineEnd::Para);
             if changed {
                 let top = y + (line.top - first.top);
-                out.push(Draw::Line { x0: bx, y0: top, x1: bx, y1: top + line.height, width: 0.75, color, stroke: Stroke::Solid, alpha });
+                // With author marks: 2 pt, in the colour and line style of the line's first author.
+                let (color, width, stroke) = if marks {
+                    let rev = (line.c0..line.c1)
+                        .filter_map(|k| pl.clusters.get(k).and_then(|c| pl.styles.get(c.style as usize)))
+                        .find_map(|st| st.rc.ins.or(st.rc.del).or(st.rc.fmt))
+                        .or_else(|| para.and_then(|p| p.mark.ins.or(p.mark.del).or(p.mark.fmt_change.as_ref().map(|c| c.rev))));
+                    match rev {
+                        Some(r) => {
+                            let (c, dotted) = rev_style(doc, opts, r);
+                            (c, 2.0, if dotted { Stroke::Dotted } else { Stroke::Solid })
+                        }
+                        None => (color, 2.0, Stroke::Solid),
+                    }
+                } else {
+                    (color, 0.75, Stroke::Solid)
+                };
+                out.push(Draw::Line { x0: bx, y0: top, x1: bx, y1: top + line.height, width, color, stroke, alpha });
             }
         }
     }
@@ -598,28 +669,62 @@ fn lines(
             && opts.revisions.comments
             && let Some(p) = para
         {
-            let mut open: Option<usize> = None;
+            let mut open: Option<(usize, u32)> = None;
             let mut ranges = Vec::new();
             for off in p.object_offsets() {
                 match p.object_at(off) {
-                    Some(InlineObject::CommentStart { .. }) => open = open.or(Some(off)),
-                    Some(InlineObject::CommentEnd { .. }) => {
-                        ranges.push((open.take().unwrap_or(0), off));
+                    Some(InlineObject::CommentStart { id }) => open = open.or(Some((off, *id))),
+                    Some(InlineObject::CommentEnd { id }) => {
+                        let (a, id) = open.take().unwrap_or((0, *id));
+                        ranges.push((a, off, id));
                     }
                     _ => {}
                 }
             }
-            if let Some(o) = open {
-                ranges.push((o, p.len()));
+            if let Some((o, id)) = open {
+                ranges.push((o, p.len(), id));
             }
-            for (a, b) in ranges {
+            for (a, b, id) in ranges {
                 if b <= line.start || a >= line.stop {
                     continue;
                 }
+                // Author marks: the comment author's tint; else the soft purple shade.
+                let (tint, tint_alpha) = doc
+                    .comments
+                    .get(&id)
+                    .and_then(|c| opts.author_marks.as_ref().and_then(|ms| ms.get(&c.author)))
+                    .map(|m| (m.tint.0, f32::from(m.tint.1) / 255.0 * alpha))
+                    .unwrap_or((Rgb(0xEF, 0xE3, 0xF7), alpha));
                 for (x0, x1) in pl.x_spans(li, a.max(line.start), b.min(line.stop)) {
                     if x1 > x0 {
-                        out.push(Draw::Fill { rect: Rect::new(x + x0, top, x1 - x0, line.height), color: Rgb(0xEF, 0xE3, 0xF7), alpha });
+                        out.push(Draw::Fill { rect: Rect::new(x + x0, top, x1 - x0, line.height), color: tint, alpha: tint_alpha });
                     }
+                }
+            }
+        }
+        // Show Authorship: accepted assistant text keeps `assistant_tint` and a dotted underline.
+        if let Some(auth) = &opts.authorship
+            && let Some(share) = auth.shares.para(story, path)
+        {
+            let tint_alpha = f32::from(auth.tint.1) / 255.0 * alpha;
+            for (a0, b0) in &share.ai {
+                if *b0 <= line.start || *a0 >= line.stop {
+                    continue;
+                }
+                let (a, b) = ((*a0).max(line.start), (*b0).min(line.stop));
+                let size = (line.c0..line.c1)
+                    .filter_map(|k| pl.clusters.get(k))
+                    .find(|c| c.start < b && c.end > a)
+                    .and_then(|c| pl.styles.get(c.style as usize))
+                    .map_or(11.0, |st| st.size);
+                let uy = base + size * 0.12;
+                let width = (size / 18.0).max(0.6);
+                for (x0, x1) in pl.x_spans(li, a, b) {
+                    if x1 <= x0 {
+                        continue;
+                    }
+                    out.push(Draw::Fill { rect: Rect::new(x + x0, top, x1 - x0, line.height), color: auth.tint.0, alpha: tint_alpha });
+                    out.push(Draw::Line { x0: x + x0, y0: uy, x1: x + x1, y1: uy, width, color: auth.color, stroke: Stroke::Dotted, alpha });
                 }
             }
         }
@@ -773,7 +878,9 @@ fn lines(
             let shown = opts.markup && m.insertions_deletions;
             let del = rc.del.filter(|_| shown);
             let ins = rc.ins.filter(|_| shown && del.is_none());
-            let author = |r: u32| revision_color(doc.revisions.get(r as usize).map(|v| author_index(doc, &v.author)).unwrap_or(0));
+            let author = |r: u32| rev_style(doc, opts, r).0;
+            // The author's line style: dotted for an assistant (author marks only).
+            let dotted = ins.or(del).is_some_and(|r| rev_style(doc, opts, r).1);
             // Moved text: green, double strikethrough where it was, double underline where it went.
             let moved_to = doc.move_name(ins).is_some();
             let moved_from = del.is_some() && doc.move_name(del).is_some();
@@ -853,6 +960,7 @@ fn lines(
             }
             let thick = (st.size / 18.0).max(0.5);
             let underline = match (ins_mark, del_mark) {
+                (Some(InsertMark::Underline), _) | (_, Some(DeleteMark::Underline)) if dotted => Underline::Dotted,
                 (Some(InsertMark::Underline), _) | (_, Some(DeleteMark::Underline)) => Underline::Single,
                 (Some(InsertMark::DoubleUnderline), _) => Underline::Double,
                 _ => rc.underline,
@@ -884,7 +992,13 @@ fn lines(
                 }
                 if struck {
                     let sy = base - st.shift - st.size * 0.28;
-                    let stroke = if double { Stroke::Double } else { Stroke::Solid };
+                    let stroke = if double {
+                        Stroke::Double
+                    } else if dotted && del_mark == Some(DeleteMark::Strikethrough) {
+                        Stroke::Dotted
+                    } else {
+                        Stroke::Solid
+                    };
                     out.push(Draw::Line { x0, y0: sy, x1, y1: sy, width: thick, color, stroke, alpha });
                 }
             }
@@ -1060,14 +1174,8 @@ fn lines(
                 let m = &opts.revisions;
                 let color = para.filter(|_| opts.markup && m.insertions_deletions).and_then(|p| match (p.mark.ins, p.mark.del) {
                     (ins, del) if doc.move_name(del).is_some() || (del.is_none() && doc.move_name(ins).is_some()) => Some(MOVE_COLOR),
-                    (_, Some(r)) => Some(
-                        m.delete_color
-                            .unwrap_or_else(|| revision_color(doc.revisions.get(r as usize).map(|v| author_index(doc, &v.author)).unwrap_or(0))),
-                    ),
-                    (Some(r), None) => Some(
-                        m.insert_color
-                            .unwrap_or_else(|| revision_color(doc.revisions.get(r as usize).map(|v| author_index(doc, &v.author)).unwrap_or(0))),
-                    ),
+                    (_, Some(r)) => Some(m.delete_color.unwrap_or_else(|| rev_style(doc, opts, r).0)),
+                    (Some(r), None) => Some(m.insert_color.unwrap_or_else(|| rev_style(doc, opts, r).0)),
                     _ => None,
                 });
                 // The last paragraph of a section ends in a section break instead of a plain ¶.

@@ -1,0 +1,29 @@
+[package]
+name = "wordcraft-assistant"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Optimo's assistant connectors: provider presets, the Anthropic Messages and OpenAI-compatible chat APIs, model listing, API keys in the system keychain"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+
+# The network and the keychain exist on the desktop only. The browser build compiles the types
+# and presets but none of this (no sockets, no TLS, no keychain): `cargo xtask wasm` stays clean.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Small blocking HTTPS client; rustls (ring) with the Mozilla root certificates. No tokio, no OpenSSL.
+ureq = { version = "3.4.2", default-features = false, features = ["rustls"] }
+
+# The system keychain, only where keyring has a native store (elsewhere keys are not stored).
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.6.3", features = ["apple-native"] }
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3.6.3", features = ["windows-native"] }
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3.6.3", features = ["linux-native"] }

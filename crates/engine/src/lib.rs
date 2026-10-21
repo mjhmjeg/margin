@@ -6,18 +6,27 @@
 //! CLI, the JSON control channel and the MCP server all call [`Session::run`].
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+pub mod assistant;
+pub mod assistant_edits;
+pub mod assistant_source;
+pub mod authorship;
 pub mod catalog;
 pub mod cmd;
+pub mod cowriter;
 pub mod file_access;
 pub mod io;
 mod io_ext;
 pub mod keymap;
+pub mod looks;
 pub mod math_gallery;
 pub mod print;
+pub mod research;
 pub mod ribbon;
 pub mod sample;
 mod session;
 pub mod speech;
+pub mod structure;
+pub mod stuck;
 
 use std::collections::HashMap;
 
@@ -166,6 +175,8 @@ pub mod p {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_authorship;
 #[cfg(test)]
 mod tests_bidi;
 #[cfg(test)]

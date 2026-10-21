@@ -68,12 +68,16 @@ pub fn visible(app: &WordApp) -> bool {
     if app.session.view.read_mode {
         return false;
     }
-    // Never over a modal dialog or the Backstage.
-    if app.dialog.is_some() || app.colors.is_some() || app.ui.backstage {
+    // Never over a modal dialog, ⌘Y Anything or the Backstage.
+    if app.dialog.is_some() || app.colors.is_some() || app.ui.backstage || app.command_field.open {
         return false;
     }
     // Never while the right-click context menu is open: it owns the pointer and would double up.
     if app.canvas.context_menu_open {
+        return false;
+    }
+    // Never over the Alternatives card, which opens under this same selection.
+    if app.cowriter.alts.is_some() {
         return false;
     }
     // Never while a drag-select is in progress (Word shows it on mouse-up).
@@ -120,6 +124,7 @@ pub fn show(app: &mut WordApp, ctx: &egui::Context, selection: Rect, viewport: R
 /// The controls in two rows like Word's mini toolbar, reusing the ribbon's widgets so the bar
 /// matches the ribbon exactly.
 fn content(app: &mut WordApp, ui: &mut egui::Ui, t: &Tokens) {
+    let _legacy_icons = crate::icons::Legacy::enter();
     let st: Value = app.session.run("format.state", &json!({})).unwrap_or_default();
     let flag = |k: &str| st.get(k).and_then(Value::as_bool).unwrap_or(false);
     let align = app.session.doc.para_at(&app.session.sel.focus).map(|p| app.session.doc.styles.resolve_para(&p.props).align).unwrap_or_default();

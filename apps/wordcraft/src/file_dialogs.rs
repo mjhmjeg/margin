@@ -57,6 +57,7 @@ impl Launcher {
             let dialog = rfd::AsyncFileDialog::new().set_parent(parent);
             let picking: Picking = match req {
                 FileDialogRequest::Open { purpose } => Box::pin(open_filters(dialog, &purpose).pick_file()),
+                FileDialogRequest::Folder => Box::pin(dialog.pick_folder()),
                 FileDialogRequest::Save { name } => {
                     let exts = save_exts(&name);
                     Box::pin(dialog.set_file_name(name).add_filter("Documents", &exts).save_file())

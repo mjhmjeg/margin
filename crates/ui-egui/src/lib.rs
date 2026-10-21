@@ -22,13 +22,19 @@ macro_rules! tl {
 
 pub mod a11y;
 pub mod a11y_pane;
+pub mod alternatives_view;
+pub mod assistant;
+pub mod assistant_link;
+pub mod authorship_view;
 pub mod backstage;
 pub mod canvas;
 pub mod caret_glide;
 pub mod chrome;
 pub mod colors;
+pub mod command_field;
 pub mod content_controls;
 pub mod control;
+pub mod cowriter;
 pub mod credits;
 pub mod desktop_theme;
 pub mod dialogs;
@@ -50,15 +56,18 @@ pub mod equation_tab;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod file_browser;
 pub mod file_dialogs;
+pub mod format_view;
 pub mod frame;
 pub mod i18n;
 pub mod icons;
 pub mod ink;
 pub mod keys;
 pub mod keytips;
+pub mod mac_controls;
 pub mod mac_home;
 pub mod mac_menu;
 pub mod mac_ui;
+pub mod margin_notes;
 pub mod mini_toolbar;
 pub mod objects;
 pub mod options;
@@ -67,9 +76,14 @@ pub mod paste_picture;
 pub mod previews;
 pub mod print_page;
 pub mod read_aloud;
+pub mod reader_view;
+pub mod research_view;
+pub mod review_panel;
 pub mod ribbon;
 pub mod scroll;
 pub mod skin;
+pub mod structure_view;
+pub mod stuck_view;
 pub mod system_clipboard;
 pub mod table_pen;
 pub mod table_resize;
@@ -145,6 +159,10 @@ pub struct Services {
     /// `xdg-mime`. `None` (web, macOS) hides the button; macOS shows how to do it in Finder
     /// instead. An error means nothing changed.
     pub make_default_app: Option<Box<dyn Fn() -> Result<DefaultApp, String>>>,
+    /// Desktop: where assistant API keys are kept (the system keychain). `None` keeps them in
+    /// memory for this run only (tests, the screenshot tool, the browser, where the assistant
+    /// doesn't connect anyway).
+    pub key_store: Option<std::sync::Arc<dyn wordcraft_assistant::keys::KeyStore>>,
 }
 
 /// What [`Services::make_default_app`] did.
@@ -163,8 +181,9 @@ pub type Inbox = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct UiState {
-    /// Margin's Mac layout (toolbar, inspector, Classic ribbon, pageless width).
-    pub margin: mac_ui::MarginPrefs,
+    /// Optimo's Mac layout (toolbar, inspector, Classic ribbon, pageless width).
+    /// Saved as `optimo`; read from Margin's `margin` too ([`migrate_optimo_key`]).
+    pub optimo: mac_ui::OptimoPrefs,
     pub tab: String,
     pub backstage: bool,
     pub backstage_page: String,
@@ -253,6 +272,9 @@ pub struct UiState {
     pub update_fields_before_print: bool,
     /// The custom dictionary (File › Options › Proofing, Add to Dictionary), kept between runs.
     pub dictionary: Vec<String>,
+    /// File › Options › Co-writer (Optimo): the assistant's author name and whether assistants
+    /// outside Optimo may connect.
+    pub assistant: assistant::AssistantPrefs,
 }
 
 /// Most recent documents kept (File › Options › Advanced offers 0–50, as Word does).
@@ -263,7 +285,7 @@ pub const MAX_DICTIONARY: usize = 10_000;
 impl Default for UiState {
     fn default() -> Self {
         UiState {
-            margin: mac_ui::MarginPrefs::default(),
+            optimo: mac_ui::OptimoPrefs::default(),
             tab: "Home".into(),
             backstage: false,
             backstage_page: "home".into(),
@@ -272,7 +294,7 @@ impl Default for UiState {
             recent: Vec::new(),
             recent_symbols: Vec::new(),
             recent_colors: Vec::new(),
-            // Margin follows the macOS appearance out of the box, like a native Mac app.
+            // Optimo follows the macOS appearance out of the box, like a native Mac app.
             theme: if crate::skin::on() { theme::Appearance::System } else { theme::Appearance::default() },
             interface_size: theme::InterfaceSize::default(),
             animations: theme::Animations::default(),
@@ -304,6 +326,7 @@ impl Default for UiState {
             print_backgrounds: false,
             update_fields_before_print: false,
             dictionary: Vec::new(),
+            assistant: assistant::AssistantPrefs::default(),
         }
     }
 }
@@ -318,6 +341,7 @@ impl UiState {
             return None;
         }
         migrate_units(&mut v);
+        migrate_optimo_key(&mut v);
         Some(options::lenient(&v))
     }
 
@@ -342,6 +366,17 @@ fn migrate_units(v: &mut Value) {
     }
 }
 
+/// The app was called Margin until 2026-10-14 and saved its layout settings under `margin`; they
+/// now live under `optimo`. The old key is carried over when the new one is missing, and dropped.
+fn migrate_optimo_key(v: &mut Value) {
+    let Some(map) = v.as_object_mut() else { return };
+    if let Some(old) = map.remove("margin")
+        && !map.contains_key("optimo")
+    {
+        map.insert("optimo".into(), old);
+    }
+}
+
 /// The application.
 pub struct WordApp {
     pub session: Session,
@@ -351,11 +386,21 @@ pub struct WordApp {
     /// Content control frames, check boxes and lists on the page.
     pub controls: content_controls::ControlUi,
     pub dialog: Option<dialogs::Dialog>,
+    /// The toolbar's command field (HANDOFF §6): query, popover and highlighted row.
+    pub command_field: command_field::CommandField,
+    /// Home (File › Home) is showing and was opened from a document: Some(true) offers the way
+    /// back (Back row, Cancel, Esc). Taken when Home first shows; cleared while the editor shows.
+    pub home_back: Option<bool>,
+    /// Home was opened by [`WordApp::start_screen`] (launch): no document to go back to.
+    pub launch_home: bool,
     /// The Colors dialog (More Colors…), shown above any other dialog (#606).
     pub colors: Option<colors::ColorsDialog>,
     /// The Restrict Editing pane (#412).
     pub restrict: dialogs_review::RestrictPane,
     pub status_msg: Option<(String, f64)>,
+    /// View › Show Authorship: the split, computed once per (document, revision, assistant
+    /// names) by `authorship_view::attribution`.
+    pub authorship_cache: Option<((u64, u64, usize), std::sync::Arc<wordcraft_doc::authorship::Attribution>)>,
     pub previews: previews::Previews,
     /// Media key of the picture a pending Change Picture replaces (#147).
     pub change_picture_target: Option<String>,
@@ -415,6 +460,10 @@ pub struct WordApp {
     pub(crate) outline_prev_tab: Option<String>,
     /// Zotero commands in flight (`ui.zotero.*`).
     pub zotero: zotero::ZoteroLink,
+    /// Settings › Co-writer at work: keychain, model lists, connection tests (`ui.assistant.*`).
+    pub assistant_link: assistant_link::AssistantLink,
+    /// The in-app co-writer's runs and its margin view (`ui.assistant.ask` …).
+    pub cowriter: cowriter::CoWriter,
     /// The egui context, once the first frame has run (background work wakes the UI with it).
     pub(crate) ctx: Option<egui::Context>,
     /// Read Aloud: the start of the sentence the caret was last moved to, and the last error shown.
@@ -455,11 +504,17 @@ impl SaveChoice {
 }
 
 impl WordApp {
-    pub fn new(session: Session, services: Services) -> Self {
+    pub fn new(mut session: Session, services: Services) -> Self {
+        // Optimo (W): the ruler is off until View › Show Ruler.
+        if crate::skin::on() {
+            session.view.ruler = false;
+        }
         // Numeral › System follows the system locale, found here rather than in layout.
         if let Some(tag) = sys_locale::get_locale() {
             wordcraft_engine::set_system_locale(&tag);
         }
+        // Without a keychain from the host, keys are kept in memory only (tests, screenshots).
+        let key_store = services.key_store.clone().unwrap_or_else(|| std::sync::Arc::new(wordcraft_assistant::keys::MemoryKeys::default()));
         WordApp {
             session,
             ui: UiState::default(),
@@ -470,6 +525,7 @@ impl WordApp {
             colors: None,
             restrict: Default::default(),
             status_msg: None,
+            authorship_cache: None,
             previews: previews::Previews::default(),
             integrated_titlebar: false,
             control_rx: None,
@@ -501,6 +557,8 @@ impl WordApp {
             smart_art_typing: None,
             outline_prev_tab: None,
             zotero: zotero::ZoteroLink::default(),
+            assistant_link: assistant_link::AssistantLink::new(key_store),
+            cowriter: Default::default(),
             ctx: None,
             read_aloud_at: None,
             read_aloud_error: None,
@@ -513,6 +571,9 @@ impl WordApp {
             #[cfg(not(target_arch = "wasm32"))]
             file_browser: file_browser::State::default(),
             info_editing: None,
+            command_field: Default::default(),
+            home_back: None,
+            launch_home: false,
         }
     }
 
@@ -531,6 +592,8 @@ impl WordApp {
         if self.ui.start_screen {
             self.ui.backstage = true;
             self.ui.backstage_page = "home".into();
+            self.launch_home = true;
+            self.home_back = None;
         }
         self.ui.start_screen
     }
@@ -840,6 +903,7 @@ impl WordApp {
 
     fn after_command(&mut self, id: &str) {
         options::sync(self);
+        assistant_link::sync_policy(self);
         self.canvas.caret_visible_since = now_ms();
         if id == "view.outline" {
             self.ui.nav_tab = "headings".into();
@@ -965,6 +1029,15 @@ impl WordApp {
                 }
                 self.colors = Some(d);
                 json!({"dialog": "colors"})
+            }
+            "ui.dialog" if s("name") == Some("commands") => {
+                // Search Commands is ⌘Y Anything, in both layouts (the old dialog is gone, O2).
+                command_field::open(self, "");
+                json!({"dialog": "commands", "field": true})
+            }
+            "ui.commandField" => {
+                command_field::open(self, s("query").unwrap_or(""));
+                json!({"open": self.command_field.open})
             }
             "ui.dialog" => {
                 self.dialog = dialogs::Dialog::open(s("name").unwrap_or(""), self);
@@ -1108,6 +1181,23 @@ impl WordApp {
                     Some(_) => return Some(Err("`value` must be true or false".into())),
                 }
                 json!({"caretAnimation": self.ui.caret_animation})
+            }
+            // File › Options › Co-writer (HANDOFF §9): see [`assistant_link::settings_command`]. The
+            // person's command: assistants themselves are refused it
+            // (`wordcraft_engine::assistant::denied`). The key is write-only.
+            "ui.assistant" => return Some(assistant_link::settings_command(self, p)),
+            "ui.assistant.test" | "ui.assistant.models" => return assistant_link::command(self, id, p),
+            "ui.assistant.ask"
+            | "ui.assistant.run"
+            | "ui.assistant.stop"
+            | "ui.assistant.panel"
+            | "ui.assistant.log"
+            | "ui.assistant.formatView"
+            | "ui.assistant.alternatives"
+            | "ui.assistant.stuckView"
+            | "ui.assistant.structureView"
+            | "ui.assistant.researchView" => {
+                return cowriter::command(self, id, p);
             }
             "ui.startScreen" => {
                 // File › Options › General › Start-up (#766): `value` true or false turns showing
@@ -1356,6 +1446,8 @@ impl WordApp {
         }
         self.drain_control(ctx);
         zotero::poll(self, ctx);
+        assistant_link::poll(self);
+        cowriter::poll(self);
         read_aloud::poll(self, ctx);
         self.clear_stale_change_picture();
         let _ = self.poll_file_dialog();
@@ -1507,18 +1599,29 @@ impl WordApp {
         // Keytips are read before layout so the frame paints the new state; badges paint after
         // the ribbon so they sit on top of it.
         crate::keytips::logic(self, &ctx);
+        // Before the canvas: ⇧⌘F etc. must not reach the registry's bindings (Word's font key).
+        mac_ui::shortcuts(self, &ctx);
         if self.ui.backstage {
             backstage::show(self, ui);
         } else {
+            // The editor shows: the next Home comes from a document.
+            self.home_back = None;
+            self.launch_home = false;
             let mac = mac_ui::active(self);
             if mac {
                 mac_ui::toolbar(self, ui);
             } else {
+                let _legacy_icons = icons::Legacy::enter(); // the Classic layout keeps upstream's icons
                 chrome::title_bar(self, ui);
                 ribbon::show(self, ui);
             }
-            chrome::status_bar(self, ui);
-            if mac && self.ui.margin.inspector {
+            if mac {
+                mac_ui::status_bar(self, ui);
+            } else {
+                let _legacy_icons = icons::Legacy::enter();
+                chrome::status_bar(self, ui);
+            }
+            if mac && self.ui.optimo.inspector && !self.session.view.comments_pane {
                 mac_ui::inspector(self, ui);
             }
             panes::show(self, ui);
@@ -1529,13 +1632,13 @@ impl WordApp {
         }
         content_controls::popup(self, &ctx);
         dialogs::show(self, &ctx);
+        command_field::show_box(self, &ctx);
         #[cfg(not(target_arch = "wasm32"))]
         file_browser::show(self, &ctx);
         colors::show(self, &ctx);
         zotero::show_alert(self, &ctx);
         read_aloud::show(self, &ctx);
         crate::keytips::show(self, &ctx, ui);
-        mac_ui::shortcuts(self, &ctx);
         keys::global_shortcuts(self, &ctx);
         if let Some(url) = self.canvas.open_url.take() {
             ctx.open_url(egui::OpenUrl::new_tab(url));
@@ -1585,7 +1688,8 @@ impl WordApp {
         let Some(rx) = self.control_rx.take() else { return };
         while let Ok(req) = rx.try_recv() {
             let reply = req.reply.clone();
-            match control::handle(self, ctx, &req) {
+            let outcome = if req.outside { control::handle_outside(self, ctx, &req) } else { control::handle(self, ctx, &req) };
+            match outcome {
                 control::Outcome::Done(v) => {
                     let _ = reply.send(v);
                 }
@@ -1882,11 +1986,11 @@ mod tests {
         assert!(cjk.canvas.ime_faces.is_empty(), "CJK collections are not copied into the fallback list");
     }
 
-    /// Upstream's tests exercise the ribbon layout: run them with Margin's Classic ribbon on
+    /// Upstream's tests exercise the ribbon layout: run them with Optimo's Classic ribbon on
     /// (`mac_ui` tests the Mac layout).
     fn app() -> WordApp {
         let mut a = WordApp::new(Session::new(wordcraft_doc::Document::new()), Services::default());
-        a.ui.margin.classic_ribbon = true;
+        a.ui.optimo.classic_ribbon = true;
         a
     }
 
@@ -3152,7 +3256,7 @@ mod tests {
         h.event(egui::Event::Key { key: egui::Key::Q, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::ALT });
         h.event(egui::Event::Text("q".into()));
         h.step();
-        assert!(matches!(h.state().dialog, Some(dialogs::Dialog::Commands { .. })), "command search is open");
+        assert!(h.state().command_field.open && h.state().dialog.is_none(), "⌘Y Anything is open");
         assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Body), "Kilns");
     }
 

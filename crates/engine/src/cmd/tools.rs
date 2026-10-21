@@ -344,7 +344,8 @@ pub fn specs() -> Vec<CommandSpec> {
             let Some((id, params)) = s.last_command.clone() else { return Err(CmdError::Failed("nothing to repeat".into())) };
             s.run(&id, &params)
         })
-        .key("F4")
+        // Optimo: ⌘Y is ⌘Y Anything on macOS, so Repeat is ⇧⌘Y there (Word's F4 stays).
+        .key(if cfg!(target_os = "macos") { "F4 / Mod+Shift+Y" } else { "F4" })
         .pure(),
         CommandSpec::new("tools.recordMacro", "Record Macro", "View › Macros", |s, v| match s.recording.take() {
             Some((name, steps)) => {

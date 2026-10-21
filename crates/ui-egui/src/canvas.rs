@@ -282,15 +282,33 @@ fn on_page_gap(rects: &[Rect], bands: &[(f32, f32)], p: Pos2) -> bool {
 
 /// Width of the markup area beside each page for comment and revision balloons (points), or 0.
 pub fn markup_width(app: &WordApp) -> f32 {
+    // While the co-writer margin is open (Optimo layout) it owns the right side: people's comments
+    // drop to their quiet markers instead of balloons clipped under it.
+    if crate::mac_ui::active(app) && app.cowriter.margin {
+        return 0.0;
+    }
     // Word shows comments either in balloons (contextual) or in the Comments pane (list); Track
     // Changes Options can put every revision inline (`Session::balloons_shown`).
     let s = &app.session;
     let m = &s.prefs.markup;
-    let comments = m.comments && !s.doc.comments.is_empty();
-    let formats = m.formatting && wordcraft_engine::cmd::review::has_format_changes(&s.doc);
-    let moves = m.insertions_deletions && wordcraft_engine::cmd::moves::has_moves(&s.doc);
+    // In the Optimo layout the co-writer's notes live in the desk margin (O3), not in balloons.
+    let comments = m.comments && s.doc.comments.values().any(|c| !in_desk_margin(app, &c.author));
+    // Like its notes, the co-writer's formatting is summed up in the desk margin (O4), not in balloons.
+    let formats = m.formatting
+        && wordcraft_engine::cmd::review::has_format_changes(&s.doc)
+        && wordcraft_engine::cmd::review::format_changes(s).iter().any(|(_, author, _)| !in_desk_margin(app, author));
+    // O7: and so are its tracked heading moves (Structure's Shape shows them).
+    let moves = m.insertions_deletions
+        && wordcraft_engine::cmd::moves::has_moves(&s.doc)
+        && wordcraft_engine::cmd::review::move_changes(s).iter().any(|(_, author, _)| !in_desk_margin(app, author));
     let deletions = s.revisions_in_balloons() && wordcraft_engine::cmd::review::has_deletions(&s.doc);
     if s.balloons_shown() && (comments || formats || moves || deletions) { 216.0 } else { 0.0 }
+}
+
+/// Whether a comment by `author` is drawn in the desk margin (a co-writer note in the Optimo
+/// layout: quiet marker or margin note) rather than as a balloon.
+fn in_desk_margin(app: &WordApp, author: &str) -> bool {
+    crate::mac_ui::active(app) && crate::review_panel::is_assistant(author)
 }
 
 /// A page dimension (points) safe to lay out: finite, at least 1 pt, at most `cap`.
@@ -514,12 +532,21 @@ pub fn sync_fit_zoom(app: &mut WordApp, scale: f32) {
 }
 
 /// Fingerprint of a page's content for the texture cache.
-fn page_key(app: &WordApp, page: &Page, scale_px: f32, dim_body: bool) -> u64 {
+fn page_key(
+    app: &WordApp,
+    page: &Page,
+    scale_px: f32,
+    dim_body: bool,
+    marks: Option<&wordcraft_layout::display::AuthorMarks>,
+    authorship: Option<&wordcraft_layout::display::AuthorshipDisplay>,
+) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     scale_px.to_bits().hash(&mut h);
+    authorship.map(|a| std::sync::Arc::as_ptr(&a.shares) as usize).hash(&mut h);
     let v = &app.session.view;
     (v.marks, app.session.prefs.marks, v.show_markup, v.dark_mode, wordcraft_render::DARK_PAPER, v.hide_ink, v.draw.replay).hash(&mut h);
     app.session.prefs.markup.hash(&mut h);
+    marks.hash(&mut h);
     dim_body.hash(&mut h);
     format!("{:?}{:?}", app.session.doc.settings.page_color, app.session.doc.settings.watermark).hash(&mut h);
     (page.w.to_bits(), page.h.to_bits()).hash(&mut h);
@@ -655,8 +682,14 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let show_ruler = app.session.view.ruler && app.session.view.mode == wordcraft_layout::ViewMode::Print && !app.session.view.read_mode;
     let (hruler, vruler, area) = if show_ruler {
         let h = Rect::from_min_max(pos2(full.min.x + RULER, full.min.y), pos2(full.max.x, full.min.y + RULER));
-        let v = Rect::from_min_max(pos2(full.min.x, full.min.y + RULER), pos2(full.min.x + RULER, full.max.y));
-        (Some(h), Some(v), Rect::from_min_max(pos2(full.min.x + RULER, full.min.y + RULER), full.max))
+        if crate::mac_ui::active(app) {
+            // Optimo: horizontal ruler only (E13), the desk starts 12 pt below it.
+            let h = Rect::from_min_max(pos2(full.min.x, full.min.y), pos2(full.max.x, full.min.y + RULER));
+            (Some(h), None, Rect::from_min_max(pos2(full.min.x, full.min.y + RULER + 12.0), full.max))
+        } else {
+            let v = Rect::from_min_max(pos2(full.min.x, full.min.y + RULER), pos2(full.min.x + RULER, full.max.y));
+            (Some(h), Some(v), Rect::from_min_max(pos2(full.min.x + RULER, full.min.y + RULER), full.max))
+        }
     } else {
         (None, None, full)
     };
@@ -813,6 +846,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     if app.canvas.wheel.is_animating() {
         ui.ctx().request_repaint();
     }
+    // View › Show Authorship: the split the page marks and the desk chips read.
+    let authorship = crate::authorship_view::display(app);
     let out = scroll_area.show_viewport(&mut ui_area, |ui, viewport| {
         origin = ui.min_rect().min - viewport.min.to_vec2();
         let content = Rect::from_min_size(ui.min_rect().min, geo.size);
@@ -826,6 +861,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         let mut rendered = 0;
         let t0 = crate::now_ms();
         let mut rects = Vec::with_capacity(geo.rects.len());
+        // The Mac layout marks changes per author (colour, solid / dotted); Classic keeps upstream's marks.
+        let author_marks = crate::mac_ui::active(app).then(|| crate::review_panel::marks(&app.session.doc));
         let content_origin = ui.min_rect().min;
         for (i, pr) in geo.rects.iter().enumerate() {
             let sr = pr.translate(content_origin.to_vec2());
@@ -838,7 +875,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 rects.push(sr);
                 continue;
             }
-            let key = page_key(app, page, scale_px, dim_body);
+            let key = page_key(app, page, scale_px, dim_body, author_marks.as_ref(), authorship.as_ref());
             let mut fresh = app.canvas.textures.get(&i).is_some_and(|(k, _)| *k == key);
             // Hide White Space shows only a band of the page; everything below paints into it.
             let band_of = |r: Rect| Rect::from_min_max(pos2(r.min.x - 4.0, r.min.y + band_top), pos2(r.max.x + 4.0, r.min.y + band_bot));
@@ -854,6 +891,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 // Ink Replay draws the ink itself, stroke by stroke, over pages without it.
                 opts.display.hide_ink = app.session.view.hide_ink || app.session.view.draw.replay;
                 opts.display.revisions = app.session.prefs.markup.clone();
+                opts.display.author_marks = author_marks.clone();
+                opts.display.authorship = authorship.clone();
                 opts.dark = dark_page;
                 opts.dark_paper = dark_paper;
                 opts.display.dim_header = !dim_body;
@@ -892,9 +931,18 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             } else {
                 painter.with_clip_rect(painter.clip_rect().intersect(band))
             };
-            // Shadow and paper (Margin's pageless sheet has no edge to shadow).
+            // Shadow and paper (Optimo's pageless sheet has no edge to shadow).
             if !(crate::mac_ui::active(app) && crate::mac_ui::pageless(app)) {
-                painter.rect_filled(visual_sr.translate(vec2(0.0, 2.0)).expand(1.5), 1.0, t.page_shadow);
+                if crate::mac_ui::active(app) {
+                    // E13: the design's layered page shadow and a hairline edge.
+                    let m = crate::skin::OptimoTokens::get(ui.ctx());
+                    for sh in m.page_shadow.iter().filter(|s| s.color.a() > 0) {
+                        painter.add(sh.as_shape(visual_sr, 0.0));
+                    }
+                    painter.rect_stroke(visual_sr, 0.0, Stroke::new(0.5, m.page_edge), egui::StrokeKind::Outside);
+                } else {
+                    painter.rect_filled(visual_sr.translate(vec2(0.0, 2.0)).expand(1.5), 1.0, t.page_shadow);
+                }
             }
             painter.rect_filled(visual_sr, 0.0, if dark_page { Color32::from_gray(dark_paper) } else { Color32::WHITE });
             if let Some((_, tex)) = app.canvas.textures.get(&i) {
@@ -972,6 +1020,16 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         app.canvas.textures.retain(|k, _| *k < n);
         app.canvas.page_rects = rects.clone();
         balloons(app, ui, &painter, &rects, &layout, geo.scale);
+        comment_tags(app, ui, &painter, &rects, &layout, geo.scale);
+        // O3: the co-writer's notes in the right desk margin while its margin view is open.
+        crate::margin_notes::paint(app, ui, &painter, &rects, &layout, geo.scale);
+        // O5: the Alternatives card under the selected sentence.
+        crate::alternatives_view::paint(app, ui, &rects, &layout, geo.scale);
+        crate::stuck_view::paint_placeholder(app, &painter, &rects, &layout, geo.scale);
+        // A5: where the built-in assistant is working (removed when it stops).
+        crate::cowriter::paint_presence(app, &painter, &rects, &layout, geo.scale);
+        // V1 + V3: the authorship pill and the chips beside paragraphs.
+        crate::authorship_view::paint(app, ui, &painter, &rects, &layout, geo.scale);
         // Find › Reading Highlight.
         let marks: Vec<(Pos, Pos)> = app.session.find_highlights().iter().take(5000).cloned().collect();
         for (a, b) in &marks {
@@ -1216,8 +1274,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         crate::keys::canvas_events(app, ui.ctx());
     }
     let _ = origin;
-    if let (Some(h), Some(v)) = (hruler, vruler) {
-        rulers(app, ui, h, v, &rects, &layout, geo.scale);
+    if let Some(h) = hruler {
+        rulers(app, ui, h, vruler, &rects, &layout, geo.scale);
     }
     if let Some(sel) = app.canvas.mini_anchor
         && app.ui.mini_toolbar
@@ -1283,14 +1341,14 @@ fn balloons(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[Re
     let comments = if m.comments { wordcraft_engine::cmd::review::comment_list(&app.session) } else { Vec::new() };
     for (id, pos) in comments {
         let Some(pos) = pos else { continue };
-        if app.session.doc.comments.get(&id).is_some_and(is_reply) {
+        if app.session.doc.comments.get(&id).is_some_and(|c| is_reply(c) || in_desk_margin(app, &c.author)) {
             continue;
         }
         let Some(c) = layout.caret_on(&pos, app.session.page_hint) else { continue };
         by_page.entry(c.page).or_default().push((c.x, c.top + c.height, Balloon::Comment(id), pos));
     }
     let formats = if m.formatting { wordcraft_engine::cmd::review::format_changes(&app.session) } else { Vec::new() };
-    for (pos, author, props) in formats.into_iter().take(500) {
+    for (pos, author, props) in formats.into_iter().filter(|(_, a, _)| !in_desk_margin(app, a)).take(500) {
         let Some(c) = layout.caret_on(&pos, app.session.page_hint) else { continue };
         let what = crate::panes::describe_props(&props).join(", ");
         let text = if what.is_empty() { tl!("Formatted").to_string() } else { format!("{}: {what}", tl!("Formatted")) };
@@ -1298,7 +1356,7 @@ fn balloons(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[Re
     }
     // Each end of a tracked move.
     let moves = if m.insertions_deletions { wordcraft_engine::cmd::review::move_changes(&app.session) } else { Vec::new() };
-    for (pos, author, from) in moves.into_iter().take(500) {
+    for (pos, author, from) in moves.into_iter().filter(|(_, a, _)| !in_desk_margin(app, a)).take(500) {
         let Some(c) = layout.caret_on(&pos, app.session.page_hint) else { continue };
         let text = if from { tl!("Moved from") } else { tl!("Moved to") }.to_string();
         by_page.entry(c.page).or_default().push((c.x, c.top + c.height, Balloon::Format(author, text), pos));
@@ -1438,6 +1496,148 @@ fn balloons(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[Re
     if let Some((id, p)) = clicked {
         select_balloon(app, ui.ctx(), id);
         app.session.sel = wordcraft_engine::Selection::caret(p);
+    }
+}
+
+/// R8: a comment's marker in the right page margin of the Mac layout, a 24 × 22 tag with the
+/// author's initial: filled for a person, outlined for the assistant. Shown where there are no
+/// balloons (the Review panel lists the comments); a click opens the panel on that comment.
+fn comment_tags(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[Rect], layout: &DocLayout, scale: f32) {
+    if !crate::mac_ui::active(app) || !app.session.prefs.markup.comments {
+        return;
+    }
+    // People's comments have balloons when the markup area shows; the co-writer's notes never do.
+    let balloons = markup_width(app) > 0.0;
+    let people = crate::review_panel::authors(&app.session.doc);
+    let clip = ui.clip_rect();
+    // (page, y, id) of each top-level comment, top first. The co-writer's open notes are not
+    // tagged one by one: W3 shows a quiet marker per paragraph in the desk beside the page.
+    let mut tags: Vec<(usize, f32, u32)> = Vec::new();
+    let mut notes: Vec<Note> = Vec::new();
+    for (id, pos) in wordcraft_engine::cmd::review::comment_list(&app.session).into_iter().take(500) {
+        let Some(pos) = pos else { continue };
+        let Some(c) = app.session.doc.comments.get(&id) else { continue };
+        if c.parent.is_some_and(|p| app.session.doc.comments.contains_key(&p)) {
+            continue;
+        }
+        let Some(cp) = layout.caret_on(&pos, app.session.page_hint) else { continue };
+        if crate::review_panel::is_assistant(&c.author) {
+            if c.resolved {
+                continue;
+            }
+            match notes.iter_mut().find(|n| n.page == cp.page && n.para == pos.path && n.story == pos.story) {
+                Some(n) => n.count += 1,
+                None => {
+                    notes.push(Note { page: cp.page, y: cp.top + cp.height / 2.0, story: pos.story, para: pos.path.clone(), count: 1, first: id })
+                }
+            }
+            continue;
+        }
+        if !balloons {
+            tags.push((cp.page, cp.top + cp.height / 2.0, id));
+        }
+    }
+    if !app.cowriter.margin {
+        quiet_markers(app, ui, painter, rects, layout, scale, &mut notes);
+    }
+    tags.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
+    let mut last: Option<(usize, f32)> = None;
+    let mut clicked: Option<u32> = None;
+    for (pi, y, id) in tags {
+        let (Some(pr), Some(page)) = (rects.get(pi), layout.pages.get(pi)) else { continue };
+        let ps = page_screen_scale(*pr, page, scale);
+        let mut cy = pr.min.y + y * ps;
+        // Tags of one page don't overlap: a close one moves down.
+        if let Some((lp, ly)) = last
+            && lp == pi
+            && cy < ly + 24.0
+        {
+            cy = ly + 24.0;
+        }
+        last = Some((pi, cy));
+        let x0 = (pr.min.x + (page.body.right() + 12.0) * ps).min(pr.max.x - 28.0);
+        let r = Rect::from_min_size(pos2(x0, cy - 11.0), vec2(24.0, 22.0));
+        if !r.intersects(clip) {
+            continue;
+        }
+        let Some(c) = app.session.doc.comments.get(&id) else { continue };
+        let who = people.iter().find(|a| a.name == c.author.trim() || (c.author.trim().is_empty() && a.name == "Author")).cloned();
+        let who = who.unwrap_or(crate::review_panel::AuthorInfo {
+            name: c.author.clone(),
+            assistant: crate::review_panel::is_assistant(&c.author),
+            person: people.len(),
+        });
+        let color = crate::review_panel::page_color(&who);
+        let fade = if c.resolved { 0.45 } else { 1.0 };
+        let color = color.linear_multiply(fade);
+        let ink = if who.assistant {
+            painter.rect(r, 5.0, Color32::WHITE, Stroke::new(1.5, color), egui::StrokeKind::Inside);
+            color
+        } else {
+            painter.rect_filled(r, 5.0, color);
+            Color32::WHITE
+        };
+        painter.text(r.center(), egui::Align2::CENTER_CENTER, crate::review_panel::initial(&c.author), regular(11.0), ink);
+        let resp = ui.interact(r, ui.id().with(("comment_tag", id)), Sense::click());
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("{}: {}", tl!("Comment"), c.author)));
+        if resp.on_hover_text(crate::review_panel::tag_tip(c)).clicked() {
+            clicked = Some(id);
+        }
+    }
+    if let Some(id) = clicked {
+        crate::review_panel::open_on_comment(app, id);
+    }
+}
+
+/// The co-writer's open notes on one paragraph (W3).
+struct Note {
+    page: usize,
+    y: f32,
+    story: wordcraft_doc::StoryRef,
+    para: wordcraft_doc::Path,
+    count: usize,
+    first: u32,
+}
+
+/// W3: beside each paragraph with co-writer notes, in the desk right of the page: a 14 pt dotted
+/// line in the assistant colour + "2 notes" in `text_dim`. Nothing else while you type; a click
+/// opens the margin view (O3).
+fn quiet_markers(app: &mut WordApp, ui: &mut Ui, painter: &egui::Painter, rects: &[Rect], layout: &DocLayout, scale: f32, notes: &mut [Note]) {
+    let t = Tokens::get(ui.ctx());
+    let m = crate::skin::OptimoTokens::get(ui.ctx());
+    let clip = ui.clip_rect();
+    notes.sort_by(|a, b| a.page.cmp(&b.page).then(a.y.total_cmp(&b.y)));
+    let mut last: Option<(usize, f32)> = None;
+    let mut clicked: Option<u32> = None;
+    for n in notes.iter() {
+        let (Some(pr), Some(page)) = (rects.get(n.page), layout.pages.get(n.page)) else { continue };
+        let ps = page_screen_scale(*pr, page, scale);
+        let mut cy = pr.min.y + n.y * ps;
+        if let Some((lp, ly)) = last
+            && lp == n.page
+            && cy < ly + 20.0
+        {
+            cy = ly + 20.0;
+        }
+        last = Some((n.page, cy));
+        // Beside the balloons when people's comments have them.
+        let x = pr.max.x + markup_width(app) * scale + 20.0;
+        let label = if n.count == 1 { tl!("1 note").to_string() } else { crate::i18n::fmt(tl!("{n} notes"), &[("n", &n.count.to_string())]) };
+        let g = painter.layout_no_wrap(label.clone(), regular(crate::skin::UI_SIZE), t.text_dim);
+        let r = Rect::from_min_size(pos2(x, cy - 9.0), vec2(8.0 + g.size().x, 18.0));
+        if !r.intersects(clip) {
+            continue;
+        }
+        crate::review_panel::mark_line(painter, pos2(x + 1.0, cy - 7.0), pos2(x + 1.0, cy + 7.0), m.assistant, true);
+        painter.galley(pos2(x + 8.0, cy - g.size().y / 2.0), g, t.text_dim);
+        let resp = ui.interact(r, ui.id().with(("quiet_marker", n.first)), Sense::click());
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label.clone()));
+        if resp.clicked() {
+            clicked = Some(n.first);
+        }
+    }
+    if clicked.is_some() {
+        crate::mac_ui::set_margin(app, true);
     }
 }
 
@@ -1844,12 +2044,14 @@ fn mouse(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect], layo
 }
 
 /// Horizontal and vertical rulers for the caret's page and paragraph.
-fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Rect, rects: &[Rect], layout: &DocLayout, scale: f32) {
+fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Option<Rect>, rects: &[Rect], layout: &DocLayout, scale: f32) {
     let t = Tokens::get(ui.ctx());
     let p = ui.painter();
-    p.rect_filled(Rect::from_min_max(pos2(v.min.x, h.min.y), pos2(v.max.x, h.max.y)), 0.0, t.canvas);
     p.rect_filled(h, 0.0, t.canvas);
-    p.rect_filled(v, 0.0, t.canvas);
+    if let Some(v) = v {
+        p.rect_filled(Rect::from_min_max(pos2(v.min.x, h.min.y), pos2(v.max.x, h.max.y)), 0.0, t.canvas);
+        p.rect_filled(v, 0.0, t.canvas);
+    }
     let pi = app.session.page_hint.min(layout.pages.len().saturating_sub(1));
     let (Some(page), Some(pr)) = (layout.pages.get(pi), rects.get(pi)) else { return };
     let scale = page_screen_scale(*pr, page, scale);
@@ -1858,7 +2060,9 @@ fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Rect, rects: &[Rect], layo
     let hp = ui.painter_at(h);
     let x0 = pr.min.x;
     let bar = Rect::from_min_max(pos2(x0, h.min.y + 4.0), pos2(x0 + page.w * scale, h.max.y - 3.0));
-    hp.rect_filled(bar, 0.0, t.ruler_margin);
+    // Optimo shades the margins with `hover` (E13).
+    let margin_fill = if crate::mac_ui::active(app) { t.hover } else { t.ruler_margin };
+    hp.rect_filled(bar, 0.0, margin_fill);
     let text = Rect::from_min_max(pos2(x0 + page.body.x * scale, bar.min.y), pos2(x0 + page.body.right() * scale, bar.max.y));
     hp.rect_filled(text, 0.0, t.ruler);
     let rp = app.session.doc.para_at(&app.session.sel.focus).map(|para| app.session.doc.styles.resolve_para(&para.props));
@@ -1976,7 +2180,8 @@ fn rulers(app: &mut WordApp, ui: &mut Ui, h: Rect, v: Rect, rects: &[Rect], layo
             let _ = app.run("para.indents", json!({"right": (pt / 4.5).round() * 4.5}));
         }
     }
-    // Vertical.
+    // Vertical (not drawn in Optimo's layout).
+    let Some(v) = v else { return };
     let vp = ui.painter_at(v);
     let y0 = pr.min.y;
     let vbar = Rect::from_min_max(pos2(v.min.x + 4.0, y0), pos2(v.max.x - 3.0, y0 + page.h.min(20_000.0) * scale));
@@ -2321,6 +2526,11 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
     item(ui, app, "Paragraph…", "ui.dialog", json!({"name": "paragraph"}));
     item(ui, app, "Link…", "ui.dialog", json!({"name": "link"}));
     item(ui, app, "New Comment", "review.newComment", json!({}));
+    // O3: ⌘Y, scoped to the selection, for an ask (notes in the margin). Hidden until a co-writer is on.
+    if crate::review_panel::assistant_enabled() && crate::mac_ui::active(app) && ui.button(tl!("Ask the co-writer…")).clicked() {
+        crate::command_field::open_ask(app);
+        ui.close();
+    }
     if !wordcraft_engine::cmd::fields::selected(&app.session).is_empty() {
         ui.separator();
         item(ui, app, tl!("Update Field"), "references.updateFields", json!({}));
@@ -2904,6 +3114,7 @@ mod tests {
     fn setting_a_paragraph_rtl_mirrors_the_ruler_numbers() {
         let ctx = egui::Context::default();
         let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+        a.run("view.ruler", json!({"value": true})).unwrap(); // off by default in Optimo
         a.run("text.insert", json!({"text": "Hello"})).unwrap();
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1440.0, 900.0));
         let mut t = 0.0;
@@ -2921,7 +3132,7 @@ mod tests {
                 out.shapes
                     .iter()
                     .filter_map(|clipped| match &clipped.shape {
-                        egui::Shape::Text(text) if text.pos.y >= area.min.y - RULER && text.pos.y < area.min.y && text.pos.x >= area.min.x => {
+                        egui::Shape::Text(text) if text.pos.y >= area.min.y - RULER - 12.0 && text.pos.y < area.min.y && text.pos.x >= area.min.x => {
                             Some((text.galley.text().to_owned(), text.pos.x + text.galley.size().x / 2.0))
                         }
                         _ => None,

@@ -117,11 +117,28 @@ fn ui_shortcut(key: Key, m: Modifiers) -> Option<(&'static str, Value)> {
 
 /// Find and run the command bound to this key. Returns true if handled.
 fn dispatch(app: &mut WordApp, key: Key, m: Modifiers) -> bool {
-    if let Some((id, params)) = ui_shortcut(key, m) {
+    // In the Optimo layout Alt+Q focuses the command field (`mac_ui::shortcuts`).
+    if let Some((id, params)) = ui_shortcut(key, m).filter(|_| !crate::mac_ui::active(app)) {
         let _ = app.run(id, params);
         return true;
     }
     let Some(name) = key_name(key) else { return false };
+    // O3: a co-writer verb that has landed, on its own key (`Verb::shortcut`).
+    let pressed = wordcraft_engine::keymap::normalize(&combo(m, name, true));
+    let verb = wordcraft_engine::cowriter::Verb::GROUP
+        .into_iter()
+        .find(|v| v.available() && !v.shortcut().is_empty() && wordcraft_engine::keymap::normalize(v.shortcut()) == pressed);
+    if let Some(v) = verb {
+        let kind = if app.session.sel.is_collapsed() {
+            wordcraft_engine::assistant_edits::ScopeKind::Section
+        } else {
+            wordcraft_engine::assistant_edits::ScopeKind::Selection
+        };
+        if let Err(e) = crate::cowriter::start(app, v, kind, json!({})) {
+            app.status(e);
+        }
+        return true;
+    }
     let reg = app.session.registry.clone();
     if let Some(spec) = app.session.keymap.resolve(&reg, &combo(m, name, true)) {
         let _ = app.run(spec.id, json!({}));
@@ -194,6 +211,10 @@ fn is_paste_special_release(key: Key, modifiers: egui::Modifiers) -> bool {
 /// every key belongs to them (letters pick badges, Escape cancels), so nothing here runs.
 pub fn canvas_events(app: &mut WordApp, ctx: &egui::Context) {
     if app.ui.keytips != crate::keytips::Phase::Off {
+        return;
+    }
+    // O5: the Alternatives card takes 1–3, ⏎, ⇥, E, arrows and Esc while it is open.
+    if crate::alternatives_view::keys(app, ctx) {
         return;
     }
     let events = ctx.input(|i| i.events.clone());

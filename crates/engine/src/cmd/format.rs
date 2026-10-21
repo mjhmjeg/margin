@@ -144,7 +144,98 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("format.enclose", "Enclose Characters", "Home › Font", enclose)
             .params(r#"{"shape": "circle|square|triangle|diamond" | null, "style"?: "shrink|enlarge", "text"?: string}"#),
         CommandSpec::new("format.state", "Formatting at Selection", "Home › Font", |s, _| Ok(state(s))).pure(),
+        // O4 Format for me: typographic quotes, dashes and ellipses, list markers, spaces and
+        // empty paragraphs, never a word (`cowriter::same_words`).
+        CommandSpec::new("format.typography", "Typographic Fixes", "Home › Font", typography)
+            .params(r#"{"edits": [{"from": Pos, "to": Pos, "with": string}, …] (within one paragraph; or "with": "" from a paragraph to the start of an empty next one, which goes)}"#),
+        CommandSpec::new("format.clearFonts", "Clear Direct Fonts", "Home › Font", clear_fonts)
+            .params(r#"{"colours"?: bool (also clear direct colours)} (monospace fonts stay)"#),
     ]
+}
+
+/// Most edits one `format.typography` takes.
+const MAX_TYPO_EDITS: usize = 20_000;
+
+/// `format.typography`: replace characters in place where the words stay the same
+/// ([`crate::cowriter::same_words`]); an edit that would change a word is refused before
+/// anything changes. Edits land last first, so earlier positions stay valid; each is a tracked
+/// change while tracking is on.
+fn typography(s: &mut Session, v: &Value) -> CmdResult {
+    let list = v.get("edits").and_then(Value::as_array).ok_or_else(|| CmdError::Params("`edits` (list) is required".into()))?;
+    if list.len() > MAX_TYPO_EDITS {
+        return Err(CmdError::Params(format!("at most {MAX_TYPO_EDITS} edits")));
+    }
+    let mut edits = Vec::with_capacity(list.len());
+    for e in list {
+        let pos = |k: &str| -> Result<Pos, CmdError> {
+            e.get(k).cloned().and_then(|x| serde_json::from_value(x).ok()).ok_or_else(|| CmdError::Params(format!("bad `{k}`")))
+        };
+        let (from, to) = (pos("from")?, pos("to")?);
+        let with = e.get("with").and_then(Value::as_str).ok_or_else(|| CmdError::Params("`with` (string) is required".into()))?;
+        if from > to || from.story != to.story || with.contains(['\n', '\r']) {
+            return Err(CmdError::Params("bad edit range".into()));
+        }
+        let p = s.doc.para_at(&from).ok_or_else(|| CmdError::Params("no paragraph there".into()))?;
+        let (from, old) = if from.path == to.path {
+            let old = p.text.get(from.off..to.off).ok_or_else(|| CmdError::Params("not a character boundary".into()))?.to_string();
+            (from, old)
+        } else {
+            // A paragraph mark: a paragraph's end (wherever earlier edits left it) to the start
+            // of the next paragraph, which must be empty: joining two paragraphs with text would
+            // run their words together.
+            let next = s.doc.next_para(from.story, &from.path);
+            let empty = s.doc.para_at(&to).is_some_and(|n| n.text.is_empty());
+            if to.off != 0 || next.as_ref() != Some(&to.path) || !empty || !with.is_empty() {
+                return Err(CmdError::Params("an edit across paragraphs only removes an empty paragraph after another".into()));
+            }
+            (Pos { off: p.len(), ..from }, "\n".to_string())
+        };
+        if old.contains(wordcraft_doc::para::OBJ) || !crate::cowriter::same_words(&old, with).0 {
+            return Err(CmdError::Failed(format!("“{old}” → “{with}” would change words")));
+        }
+        edits.push((from, to, with.to_string()));
+    }
+    edits.sort_by(|a, b| b.0.cmp(&a.0));
+    let keep = s.sel.clone();
+    for (from, to, with) in edits {
+        s.sel = crate::Selection { anchor: from, focus: to };
+        // One undo step: the edits join this command's.
+        s.join_next_undo();
+        if with.is_empty() {
+            s.run("text.delete", &json!({}))?;
+        } else {
+            s.run("text.insert", &json!({"text": with, "raw": true}))?;
+        }
+    }
+    s.sel = keep;
+    s.clamp_selection();
+    sel_result(s)
+}
+
+/// Whether `font` is a fixed-width family (kept for code-like runs).
+pub fn is_mono(font: &str) -> bool {
+    let f = font.to_ascii_lowercase();
+    ["mono", "courier", "consol", "menlo", "monaco", "code", "typewriter"].iter().any(|m| f.contains(m))
+}
+
+/// `format.clearFonts`: the selection's text takes its style's font again (and colour, with
+/// `colours`); monospace fonts stay, so code keeps its look.
+fn clear_fonts(s: &mut Session, v: &Value) -> CmdResult {
+    let colours = p::bool(v, "colours").unwrap_or(false);
+    let (a, b) = s.sel.ordered();
+    if a == b {
+        return sel_result(s);
+    }
+    s.doc.format_range(&a, &b, &|c| {
+        if !c.font.as_deref().is_some_and(is_mono) {
+            c.font = None;
+            c.font_cs = None;
+        }
+        if colours {
+            c.color = None;
+        }
+    })?;
+    sel_result(s)
 }
 
 /// The selection to format: the selection, or the word around a collapsed caret (Word

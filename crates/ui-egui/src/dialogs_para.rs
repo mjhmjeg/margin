@@ -9,8 +9,7 @@ use wordcraft_doc::props::{Border, BorderStyle, Borders, Rgb, TabAlign, TabLeade
 
 use crate::WordApp;
 use crate::dialogs::{buttons, color_menu};
-use crate::options::MeasureExt;
-use crate::theme::{Tokens, semibold};
+use crate::theme::Tokens;
 
 /// Stops closer than this (points) are the same stop.
 const SAME_POS: f32 = 0.5;
@@ -124,7 +123,7 @@ pub fn tabs(app: &mut WordApp, ui: &mut Ui, f: &mut TabsForm) -> bool {
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
             ui.label(tl!("Tab stop position:"));
-            ui.add(egui::DragValue::new(&mut f.pos).speed(0.05).range(-22.0 * 72.0 / k..=22.0 * 72.0 / k).measure(u).max_decimals(2));
+            ui.add(crate::dialogs::DragNum::new(&mut f.pos).speed(0.05).range(-22.0 * 72.0 / k..=22.0 * 72.0 / k).measure(u).max_decimals(2));
             let mut pick = None;
             egui::Frame::new().stroke(Stroke::new(1.0, Tokens::get(ui.ctx()).input_border)).inner_margin(4.0).show(ui, |ui| {
                 ui.set_min_size(vec2(150.0, 96.0));
@@ -148,7 +147,7 @@ pub fn tabs(app: &mut WordApp, ui: &mut Ui, f: &mut TabsForm) -> bool {
         ui.add_space(12.0);
         ui.vertical(|ui| {
             ui.label(tl!("Default tab stops:"));
-            ui.add(egui::DragValue::new(&mut f.default_tab).speed(0.05).range(1.0 / k..=1584.0 / k).measure(u).max_decimals(2));
+            ui.add(crate::dialogs::DragNum::new(&mut f.default_tab).speed(0.05).range(1.0 / k..=1584.0 / k).measure(u).max_decimals(2));
             ui.add_space(8.0);
             ui.label(tl!("Tab stops to be cleared:"));
             let list = if f.clear_all {
@@ -164,7 +163,7 @@ pub fn tabs(app: &mut WordApp, ui: &mut Ui, f: &mut TabsForm) -> bool {
         });
     });
     ui.separator();
-    ui.label(egui::RichText::new(tl!("Alignment")).font(semibold(12.5)));
+    crate::dialogs::group_label(ui, tl!("Alignment"));
     ui.horizontal_wrapped(|ui| {
         for (a, l) in [
             (TabAlign::Left, "Left"),
@@ -173,10 +172,10 @@ pub fn tabs(app: &mut WordApp, ui: &mut Ui, f: &mut TabsForm) -> bool {
             (TabAlign::Decimal, "Decimal"),
             (TabAlign::Bar, "Bar"),
         ] {
-            ui.radio_value(&mut f.align, a, tl!(l));
+            crate::dialogs::radio_value(ui, &mut f.align, a, tl!(l));
         }
     });
-    ui.label(egui::RichText::new(tl!("Leader")).font(semibold(12.5)));
+    crate::dialogs::group_label(ui, tl!("Leader"));
     ui.horizontal_wrapped(|ui| {
         for (l, label) in [
             (TabLeader::None, "None"),
@@ -185,7 +184,7 @@ pub fn tabs(app: &mut WordApp, ui: &mut Ui, f: &mut TabsForm) -> bool {
             (TabLeader::Underscore, "3 ______"),
             (TabLeader::MiddleDot, "4 ······"),
         ] {
-            ui.radio_value(&mut f.leader, l, tl!(label));
+            crate::dialogs::radio_value(ui, &mut f.leader, l, tl!(label));
         }
     });
     ui.add_space(4.0);
@@ -435,29 +434,29 @@ pub fn borders(app: &mut WordApp, ui: &mut Ui, f: &mut BordersForm) -> bool {
             let to_text = f.to_text;
             lines(ui, "para", &mut f.para, &theme, Rgb::parse(&f.fill), Target::from(to_text));
             ui.horizontal(|ui| {
-                ui.label(tl!("Apply to:"));
-                ui.radio_value(&mut f.to_text, false, tl!("Paragraph"));
-                ui.radio_value(&mut f.to_text, true, tl!("Text"));
+                crate::dialogs::form_label(ui, tl!("Apply to:"));
+                crate::dialogs::radio_value(ui, &mut f.to_text, false, tl!("Paragraph"));
+                crate::dialogs::radio_value(ui, &mut f.to_text, true, tl!("Text"));
             });
         }
         1 => {
             lines(ui, "page", &mut f.page, &theme, None, Target::Page);
             ui.horizontal(|ui| {
-                ui.label(tl!("Apply to:"));
-                ui.radio_value(&mut f.whole_doc, true, tl!("Whole document"));
-                ui.radio_value(&mut f.whole_doc, false, tl!("This section"));
+                crate::dialogs::form_label(ui, tl!("Apply to:"));
+                crate::dialogs::radio_value(ui, &mut f.whole_doc, true, tl!("Whole document"));
+                crate::dialogs::radio_value(ui, &mut f.whole_doc, false, tl!("This section"));
             });
         }
         _ => {
-            ui.label(egui::RichText::new(tl!("Fill")).font(semibold(12.5)));
+            crate::dialogs::group_label(ui, tl!("Fill"));
             color_menu(ui, &theme, &mut f.fill);
             ui.add_space(6.0);
             let fill = Rgb::parse(&f.fill);
             preview(ui, &LineForm::read(None), fill, Target::from(f.fill_to_text));
             ui.horizontal(|ui| {
-                ui.label(tl!("Apply to:"));
-                ui.radio_value(&mut f.fill_to_text, false, tl!("Paragraph"));
-                ui.radio_value(&mut f.fill_to_text, true, tl!("Text"));
+                crate::dialogs::form_label(ui, tl!("Apply to:"));
+                crate::dialogs::radio_value(ui, &mut f.fill_to_text, false, tl!("Paragraph"));
+                crate::dialogs::radio_value(ui, &mut f.fill_to_text, true, tl!("Text"));
             });
         }
     }
@@ -488,7 +487,7 @@ fn lines(ui: &mut Ui, id: &str, l: &mut LineForm, theme: &[Rgb], fill: Option<Rg
     let between = target == Target::Paragraph;
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
-            ui.label(egui::RichText::new(tl!("Setting:")).font(semibold(12.5)));
+            crate::dialogs::group_label(ui, tl!("Setting:"));
             for (s, label) in
                 [(Setting::None, "None"), (Setting::Box, "Box"), (Setting::Shadow, "Shadow"), (Setting::ThreeD, "3-D"), (Setting::Custom, "Custom")]
             {
@@ -501,7 +500,7 @@ fn lines(ui: &mut Ui, id: &str, l: &mut LineForm, theme: &[Rgb], fill: Option<Rg
         ui.vertical(|ui| {
             ui.label(tl!("Style:"));
             let current = STYLES.iter().find(|(s, _)| *s == l.style).map(|(_, n)| *n).unwrap_or("Single");
-            egui::ComboBox::from_id_salt((id, "style")).selected_text(tl!(current)).width(120.0).show_ui(ui, |ui| {
+            crate::dialogs::combo((id, "style")).selected_text(tl!(current)).width(120.0).show_ui(ui, |ui| {
                 for (s, n) in STYLES {
                     ui.selectable_value(&mut l.style, s, tl!(n));
                 }
@@ -509,18 +508,18 @@ fn lines(ui: &mut Ui, id: &str, l: &mut LineForm, theme: &[Rgb], fill: Option<Rg
             ui.label(tl!("Color:"));
             color_menu(ui, theme, &mut l.color);
             ui.label(tl!("Width:"));
-            egui::ComboBox::from_id_salt((id, "width"))
-                .selected_text(crate::i18n::fmt(tl!("{n} pt"), &[("n", &l.width.to_string())]))
-                .width(120.0)
-                .show_ui(ui, |ui| {
+            crate::dialogs::combo((id, "width")).selected_text(crate::i18n::fmt(tl!("{n} pt"), &[("n", &l.width.to_string())])).width(120.0).show_ui(
+                ui,
+                |ui| {
                     for w in WIDTHS {
                         ui.selectable_value(&mut l.width, w, crate::i18n::fmt(tl!("{n} pt"), &[("n", &w.to_string())]));
                     }
-                });
+                },
+            );
         });
         ui.add_space(8.0);
         ui.vertical(|ui| {
-            ui.label(egui::RichText::new(tl!("Preview")).font(semibold(12.5)));
+            crate::dialogs::group_label(ui, tl!("Preview"));
             if let Some(side) = preview(ui, l, fill, target) {
                 l.toggle(side);
             }

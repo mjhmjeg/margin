@@ -514,18 +514,18 @@ fn note(s: &mut Session, v: &Value, kind: NoteKind) -> CmdResult {
         NoteKind::Footnote => (PartKind::Footnote, "FootnoteText", "FootnoteReference"),
         NoteKind::Endnote => (PartKind::Endnote, "EndnoteText", "EndnoteReference"),
     };
+    // With Track Changes on, the reference and the note's text are a tracked insertion (as in
+    // Word): rejecting it takes the note out again.
+    let at = delete_selection(s)?;
+    let ins = s.doc.settings.track_changes.then(|| super::new_revision(s, wordcraft_doc::RevisionKind::Insert));
+    let refp = CharProps { style: Some(refstyle.into()), ins, ..Default::default() };
     let mut para = Paragraph::new().styled(style);
     let id = s.doc.add_part(pk, Vec::new());
-    para.insert_object(
-        0,
-        InlineObject::NoteRef { kind, id, custom: custom.clone() },
-        &CharProps { style: Some(refstyle.into()), ..Default::default() },
-    )?;
+    para.insert_object(0, InlineObject::NoteRef { kind, id, custom: custom.clone() }, &refp)?;
     let len = para.len();
-    para.insert_text(len, &format!(" {text}"), &CharProps::default())?;
+    para.insert_text(len, &format!(" {text}"), &CharProps { ins, ..Default::default() })?;
     s.doc.set_story(StoryRef::Part(id), vec![para_block(para)])?;
-    let at = delete_selection(s)?;
-    s.doc.insert_object(&at, InlineObject::NoteRef { kind, id, custom }, &CharProps { style: Some(refstyle.into()), ..Default::default() })?;
+    s.doc.insert_object(&at, InlineObject::NoteRef { kind, id, custom }, &refp)?;
     // Like Word, the caret moves into the new note.
     s.sel = Selection::caret(s.doc.end_of(StoryRef::Part(id)));
     Ok(json!({"id": id}))

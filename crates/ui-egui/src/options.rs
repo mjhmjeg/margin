@@ -42,6 +42,7 @@ pub fn length(pt: f32) -> String {
 
 /// Copy the session's settings the UI reads without the app.
 pub(crate) fn sync(app: &WordApp) {
+    crate::assistant_link::sync_names(&app.ui.assistant);
     UNIT.set(app.session.units());
     DECIMAL.set(app.session.region().decimal());
 }
@@ -91,6 +92,7 @@ fn pane_label(id: &str) -> &'static str {
         "language" => "Language",
         "accessibility" => "Accessibility",
         "advanced" => "Advanced",
+        "agents" if crate::skin::on() => "Co-writer",
         "agents" => "Agents",
         _ => "General",
     }
@@ -135,6 +137,7 @@ pub fn page(app: &mut WordApp, ui: &mut Ui) {
                 "language" => language(app, ui),
                 "accessibility" => accessibility(app, ui),
                 "advanced" => advanced(app, ui),
+                "agents" if crate::skin::on() => assistant(app, ui),
                 "agents" => agents(ui),
                 _ => general(app, ui),
             }
@@ -434,6 +437,321 @@ fn advanced(app: &mut WordApp, ui: &mut Ui) {
 fn agents(ui: &mut Ui) {
     section(ui, "Agents");
     ui.label(tl!("Every command is available to scripts and AI agents: run `wordcraft-cli mcp` for an MCP server, or start the app with `--control <port>` for the JSON control channel."));
+}
+
+/// Options › Co-writer (Optimo, HANDOFF §9): the master switch (S1), provider and model (S2), the
+/// API key (S3), the name assistants write under (S4), the rule that their edits are always
+/// suggestions, comments and the folders they may read (S5), and whether assistants outside
+/// Optimo may connect (S6).
+fn assistant(app: &mut WordApp, ui: &mut Ui) {
+    use crate::mac_controls as mc;
+    // The connected count changes on other threads: look again soon.
+    ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
+    mc::section(ui, "Co-writer", |ui| {
+        if mc::switch(ui, "Let a co-writer work in Optimo", app.ui.assistant.enabled) {
+            let on = !app.ui.assistant.enabled;
+            let _ = app.run("ui.assistant", json!({"enabled": on}));
+        }
+        mc::hint(ui, "Off: nothing is sent anywhere, and ⌘Y has no Co-writer group or Ask row. You bring the provider and its key.");
+    });
+    assistant_provider(app, ui);
+    assistant_key(app, ui);
+    mc::section(ui, "Author", |ui| {
+        mc::labelled_row(ui, "Author name", |ui| {
+            // The prefix is fixed: shown before the field, never part of it.
+            ui.label(egui::RichText::new(wordcraft_engine::authorship::AI_PREFIX.trim_end()).font(mc::font()));
+            let hint = crate::i18n::fmt(tl!("{name} (from the model)"), &[("name", &app.ui.assistant.derived_name())]);
+            let before = app.ui.assistant.author_name.clone();
+            let r = ui.add(egui::TextEdit::singleline(&mut app.ui.assistant.author_name).desired_width(220.0).hint_text(hint));
+            if r.gained_focus() {
+                app.ui.assistant.remember_name(&before);
+            }
+            if r.lost_focus() {
+                let typed = crate::assistant::clean_name(&app.ui.assistant.author_name);
+                app.ui.assistant.author_name = typed.trim_start_matches(wordcraft_engine::authorship::AI_PREFIX).trim().to_string();
+            }
+            if r.changed() || r.lost_focus() {
+                crate::assistant_link::sync_names(&app.ui.assistant);
+            }
+        });
+        let shown = crate::i18n::fmt(tl!("Shown as: {name}"), &[("name", &app.ui.assistant.name())]);
+        ui.label(egui::RichText::new(shown).font(mc::font()).color(Tokens::get(ui.ctx()).text_dim));
+        mc::hint(
+            ui,
+            "Optional. Written into the changes and comments an assistant makes, always after “AI · ”, so they are recognised anywhere. Its mark is always dotted.",
+        );
+    });
+    mc::section(ui, "Permissions", |ui| {
+        // Required, so shown on and not changeable.
+        ui.add_enabled_ui(false, |ui| {
+            mc::checkbox(ui, "Always suggest as tracked changes", true);
+        });
+        mc::hint(ui, "An assistant's edits never change your text until you accept them in Review.");
+        ui.add_space(6.0);
+        if mc::checkbox(ui, "Add and reply to comments", app.ui.assistant.comments) {
+            let on = !app.ui.assistant.comments;
+            let _ = app.run("ui.assistant", json!({"comments": on}));
+        }
+        mc::hint(ui, "Off: the co-writer adds no notes, and assistants outside Optimo are refused new comments and replies.");
+        ui.add_space(6.0);
+        assistant_folders(app, ui);
+    });
+    mc::section(ui, "Outside Optimo", |ui| {
+        if mc::switch(ui, "Allow assistants outside Optimo to connect", app.ui.assistant.allow_outside) {
+            let on = !app.ui.assistant.allow_outside;
+            let _ = app.run("ui.assistant", json!({"allowOutside": on}));
+        }
+        let n = crate::assistant::outside::connected();
+        ui.horizontal(|ui| {
+            let t = Tokens::get(ui.ctx());
+            let line = crate::i18n::fmt(tl!("{n} connected now"), &[("n", &n.to_string())]);
+            ui.label(RichText::new(format!("{line} ·")).color(t.text_dim));
+            ui.add_enabled_ui(n > 0, |ui| {
+                if mc::link(ui, "Disconnect").clicked() {
+                    crate::assistant::outside::disconnect_all();
+                }
+            });
+        });
+        mc::hint(
+            ui,
+            "Claude Desktop, Claude Code and other MCP clients reach this window through `wordcraft-cli mcp --connect <port>`, once the app is started with `--control <port>`. Whatever they change arrives as a tracked change under the name above; they can't accept or reject changes, turn tracking off or change these settings.",
+        );
+        mc::hint(ui, "`wordcraft-cli mcp` without the app edits files directly. This setting doesn't cover it.");
+    });
+}
+
+/// S5: "Read files in these folders (read-only)": the folder list with + and −. The same list
+/// confines the files assistants outside Optimo can read (`control::handle_outside`).
+fn assistant_folders(app: &mut WordApp, ui: &mut Ui) {
+    use crate::mac_controls as mc;
+    let t = Tokens::get(ui.ctx());
+    ui.label(RichText::new(tl!("Read files in these folders (read-only)")).font(mc::font()).color(t.text));
+    let mut remove: Option<String> = None;
+    let folders = app.ui.assistant.folders.clone();
+    egui::Frame::NONE
+        .fill(t.input)
+        .stroke(egui::Stroke::new(1.0, t.input_border))
+        .corner_radius(6.0)
+        .inner_margin(egui::Margin::symmetric(10, 4))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            if folders.is_empty() {
+                ui.label(RichText::new(tl!("No folders: assistants can't read any file.")).font(mc::font()).color(t.text_dim));
+            }
+            let list_w = ui.available_width();
+            for f in &folders {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    let (r, resp) = ui.allocate_exact_size(vec2(list_w - 32.0, mc::ROW_H), egui::Sense::hover());
+                    // The folder's name, then where it is (dim, cut at the end).
+                    let path = std::path::Path::new(f);
+                    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| f.clone());
+                    let parent = path.parent().map(|p| tidy_home(&p.to_string_lossy())).unwrap_or_default();
+                    let clip = ui.painter().with_clip_rect(r);
+                    let used = clip.text(egui::pos2(r.min.x, r.center().y), egui::Align2::LEFT_CENTER, &name, mc::font(), t.text).width();
+                    clip.text(egui::pos2(r.min.x + used + 10.0, r.center().y), egui::Align2::LEFT_CENTER, parent, mc::font(), t.text_dim);
+                    resp.on_hover_text(f.as_str());
+                    if small_button(ui, "−", &crate::i18n::fmt(tl!("Remove {folder}"), &[("folder", f)])) {
+                        remove = Some(f.clone());
+                    }
+                });
+            }
+        });
+    if let Some(f) = remove {
+        let _ = app.run("ui.assistant", json!({"removeFolder": f}));
+    }
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        let full = app.ui.assistant.folders.len() >= crate::assistant::MAX_FOLDERS;
+        ui.add_enabled_ui(!full, |ui| {
+            if small_button(ui, "+", tl!("Add a folder…")) {
+                let _ = app.run("ui.assistant", json!({"pickFolder": true}));
+            }
+        });
+        ui.label(RichText::new(tl!("Add a folder…")).font(mc::font()).color(t.text_dim));
+    });
+    mc::hint(
+        ui,
+        "Optimo's co-writer can check facts against files in these folders, and assistants outside Optimo can read files only from them. Nothing is ever written, and links that lead out of a folder are not followed. No folders: no file access.",
+    );
+}
+
+/// `path` with the home folder written as `~`.
+fn tidy_home(path: &str) -> String {
+    match std::env::var("HOME").ok().filter(|h| h.len() > 1) {
+        Some(h) => match path.strip_prefix(h.as_str()) {
+            Some(rest) if rest.is_empty() || rest.starts_with('/') => format!("~{rest}"),
+            _ => path.to_string(),
+        },
+        None => path.to_string(),
+    }
+}
+
+/// A 24 × 24 square button with a glyph (+ or −); true when clicked.
+fn small_button(ui: &mut Ui, glyph: &str, tip: &str) -> bool {
+    use crate::mac_controls as mc;
+    let t = Tokens::get(ui.ctx());
+    let (r, resp) = ui.allocate_exact_size(vec2(24.0, 24.0), egui::Sense::click());
+    let fill = if resp.hovered() { t.hover } else { egui::Color32::TRANSPARENT };
+    ui.painter().rect(r, 6.0, fill, egui::Stroke::new(1.0, t.input_border), egui::StrokeKind::Inside);
+    ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, glyph, mc::font(), t.text);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), tip));
+    resp.on_hover_text(tip).clicked()
+}
+
+/// S2: provider radios, the model popup (filled live from the provider) and, for On this Mac and
+/// Other, the server address.
+fn assistant_provider(app: &mut WordApp, ui: &mut Ui) {
+    use crate::mac_controls as mc;
+    use wordcraft_assistant::ProviderId;
+    mc::section(ui, "Provider", |ui| {
+        let current = app.ui.assistant.provider_id();
+        for p in ProviderId::ALL {
+            if mc::radio(ui, p.label(), p == current) && p != current {
+                let _ = app.run("ui.assistant", json!({"provider": p.id()}));
+            }
+        }
+        let p = app.ui.assistant.provider_id();
+        if p.preset().editable_url {
+            mc::labelled_row(ui, "Address", |ui| {
+                let id = egui::Id::new(("assistant_url", p.id()));
+                let mut url: String =
+                    ui.data(|d| d.get_temp(id)).unwrap_or_else(|| app.ui.assistant.base_urls.get(p.id()).cloned().unwrap_or_default());
+                let hint = if p == ProviderId::Local { wordcraft_assistant::LOCAL_BASE_URL } else { "https://…/v1" };
+                let r = ui.add(egui::TextEdit::singleline(&mut url).desired_width(300.0).hint_text(hint));
+                if r.lost_focus() {
+                    ui.data_mut(|d| d.remove::<String>(id));
+                    if let Err(e) = app.run("ui.assistant", json!({"baseUrl": url})) {
+                        app.assistant_link.last = Some(crate::assistant_link::LastTest { provider: p, result: Err(e) });
+                    }
+                } else if r.changed() || r.has_focus() {
+                    ui.data_mut(|d| d.insert_temp(id, url));
+                }
+            });
+            if p == ProviderId::Local {
+                mc::hint(ui, "Ollama listens on http://localhost:11434/v1, LM Studio on http://localhost:1234/v1.");
+            }
+        }
+        mc::labelled_row(ui, "Model", |ui| {
+            let models = app.assistant_link.models.get(&p).cloned().unwrap_or_default();
+            let chosen = app.ui.assistant.model(p).map(str::to_string);
+            if models.is_empty() {
+                // Not listed (yet, or the listing failed): the id can be typed.
+                let mut m = chosen.clone().unwrap_or_default();
+                let r = ui.add(egui::TextEdit::singleline(&mut m).desired_width(220.0).hint_text(tl!("Model id")));
+                if r.changed() {
+                    let _ = app.run("ui.assistant", json!({"model": m}));
+                }
+            } else {
+                let shown = chosen
+                    .as_deref()
+                    .map(|id| models.iter().find(|x| x.id == id).map_or(id.to_string(), |x| x.name.clone()))
+                    .unwrap_or_else(|| tl!("Choose a model").to_string());
+                let names: Vec<String> = models.iter().map(|x| x.name.clone()).collect();
+                if let Some(name) = mc::popup_button(ui, "assistant_model", 260.0, &shown, &names, names.len() > 12)
+                    && let Some(m) = models.iter().find(|x| x.name == name)
+                {
+                    let _ = app.run("ui.assistant", json!({"model": m.id}));
+                }
+            }
+            let can = app.ui.assistant.enabled && !app.assistant_link.busy();
+            ui.add_enabled_ui(can, |ui| {
+                if mc::link(ui, "Refresh").clicked() {
+                    let _ = app.run("ui.assistant.models", json!({"refresh": true}));
+                }
+            });
+        });
+        mc::hint(ui, "The list comes from the provider once a key is set.");
+    });
+}
+
+/// S3: the API key (only `••••` and its last four characters are shown), Change… / Remove, and
+/// Test connection with its outcome.
+fn assistant_key(app: &mut WordApp, ui: &mut Ui) {
+    use crate::mac_controls as mc;
+    let p = app.ui.assistant.provider_id();
+    let needs = p.preset().needs_key;
+    mc::section(ui, "API key", |ui| {
+        let t = Tokens::get(ui.ctx());
+        let hint = app.assistant_link.hint(p);
+        if !app.assistant_link.keys_supported() {
+            mc::hint(ui, "This system has no keychain Optimo can use, so a key can't be stored here.");
+        } else if app.assistant_link.looking_up(p) {
+            mc::hint(ui, "Waiting for the keychain…");
+        } else if let Some(h) = hint.as_ref().filter(|_| !app.assistant_link.changing_key) {
+            mc::labelled_row(ui, "Key", |ui| {
+                ui.label(RichText::new(h).font(mc::font()).color(t.text));
+                ui.add_space(8.0);
+                if mc::link(ui, "Change…").clicked() {
+                    app.assistant_link.changing_key = true;
+                    app.assistant_link.key_draft.clear();
+                }
+                if mc::link(ui, "Remove").clicked() {
+                    let _ = app.run("ui.assistant", json!({"removeKey": true}));
+                }
+            });
+        } else {
+            mc::labelled_row(ui, "Key", |ui| {
+                let field = egui::TextEdit::singleline(&mut app.assistant_link.key_draft).password(true).desired_width(260.0).hint_text(if needs {
+                    tl!("Paste your API key")
+                } else {
+                    tl!("Not needed for most local servers")
+                });
+                let r = ui.add(field);
+                let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                let has_draft = !app.assistant_link.key_draft.trim().is_empty();
+                if (mc::button(ui, "Save", false, has_draft).clicked() || enter) && has_draft {
+                    crate::assistant_link::save_draft_key(app);
+                }
+                if app.assistant_link.changing_key && mc::link(ui, "Cancel").clicked() {
+                    app.assistant_link.changing_key = false;
+                    app.assistant_link.key_draft.clear();
+                }
+            });
+            if let Some(e) = app.assistant_link.key_error.clone() {
+                ui.label(RichText::new(sentence(&e)).font(mc::font()).color(t.red));
+            }
+        }
+        ui.horizontal(|ui| {
+            let on = app.ui.assistant.enabled;
+            let busy = app.assistant_link.busy();
+            if mc::button(ui, "Test connection", false, on && !busy).clicked()
+                && let Err(e) = app.run("ui.assistant.test", json!({}))
+            {
+                app.assistant_link.last = Some(crate::assistant_link::LastTest { provider: p, result: Err(e) });
+            }
+            ui.add_space(8.0);
+            if busy {
+                ui.add(egui::Spinner::new().size(14.0).color(t.text_dim));
+                ui.label(RichText::new(tl!("Connecting…")).font(mc::font()).color(t.text_dim));
+            } else if let Some(last) = app.assistant_link.last.as_ref().filter(|l| l.provider == p) {
+                match &last.result {
+                    Ok(n) => {
+                        let line = crate::i18n::fmt(tl!("Connected · {n} models"), &[("n", &n.to_string())]);
+                        ui.label(RichText::new(line).font(mc::font()).color(t.green));
+                    }
+                    Err(e) => {
+                        ui.add(egui::Label::new(RichText::new(sentence(e)).font(mc::font()).color(t.red)).wrap());
+                    }
+                }
+            } else if !on {
+                ui.label(RichText::new(tl!("Turn the assistant on to connect.")).font(mc::font()).color(t.text_dim));
+            }
+        });
+        let store = if cfg!(target_os = "macos") { "the macOS Keychain" } else { "the system keychain" };
+        let line = crate::i18n::fmt(tl!("Keys are kept in {store}, one per provider, never in Optimo's settings files."), &[("store", tl!(store))]);
+        mc::hint(ui, &line);
+    });
+}
+
+/// An error message as a sentence: capital first letter and a full stop.
+fn sentence(e: &str) -> String {
+    let mut c = e.chars();
+    let mut s: String = c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default();
+    if !s.ends_with(['.', '!', '?']) {
+        s.push('.');
+    }
+    s
 }
 
 /// Interface theme: Light, Dark, or follow the system's appearance (#115).

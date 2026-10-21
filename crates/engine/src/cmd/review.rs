@@ -28,8 +28,10 @@ pub fn specs() -> Vec<CommandSpec> {
         })
         .params(r#"{"value"?: bool (omit to toggle)}"#)
         .key("Mod+Shift+E"),
-        CommandSpec::new("review.acceptAll", "Accept All Changes", "Review › Changes", |s, _| resolve_all(s, true)),
-        CommandSpec::new("review.rejectAll", "Reject All Changes", "Review › Changes", |s, _| resolve_all(s, false)),
+        CommandSpec::new("review.acceptAll", "Accept All Changes", "Review › Changes", |s, v| resolve_all(s, v, true))
+            .params(r#"{"author"?: string}"#),
+        CommandSpec::new("review.rejectAll", "Reject All Changes", "Review › Changes", |s, v| resolve_all(s, v, false))
+            .params(r#"{"author"?: string}"#),
         CommandSpec::new("review.accept", "Accept", "Review › Changes", |s, _| resolve_sel(s, true)),
         CommandSpec::new("review.reject", "Reject", "Review › Changes", |s, _| resolve_sel(s, false)),
         CommandSpec::new("review.nextChange", "Next Change", "Review › Changes", |s, _| nav_change(s, 1)).pure(),
@@ -287,6 +289,14 @@ fn resolve_para(
     props: bool,
     accept: bool,
 ) -> Result<(), CmdError> {
+    // Accepted assistant text keeps its authorship: wrap it in a mark first (Optimo A5).
+    let (to, new_marks, mark_author) = if accept {
+        let author = crate::authorship::accepted_author(s, story, path, from, to);
+        let (to, names) = crate::authorship::wrap_before_accept(s, story, path, from, to)?;
+        (to, names, author)
+    } else {
+        (to, Vec::new(), None)
+    };
     let para = s.doc.para_mut(story, path)?;
     if props && (para.props.fmt_change.is_some() || para.props.num_change.is_some()) {
         fmt_revisions::resolve_para(&mut para.props, accept);
@@ -308,9 +318,14 @@ fn resolve_para(
             })?;
         }
     }
+    if !new_marks.is_empty() {
+        let at = now_iso();
+        crate::authorship::record_accepted(s, story, path, &new_marks, mark_author.as_deref().unwrap_or_default(), &at)?;
+    }
     if !mark {
         return Ok(());
     }
+    let para = s.doc.para_mut(story, path)?;
     if para.mark.fmt_change.is_some() || para.section.as_ref().is_some_and(|x| x.fmt_change.is_some()) {
         fmt_revisions::resolve_char(&mut para.mark, accept);
         if let Some(sec) = para.section.as_deref_mut() {
@@ -421,7 +436,55 @@ pub fn move_changes(s: &Session) -> Vec<(Pos, String, bool)> {
     out
 }
 
-fn resolve_all(s: &mut Session, accept: bool) -> CmdResult {
+/// Accept or reject every change, or with `author` only that author's (`{"author": "Claude"}`:
+/// Accept Claude's changes). Returns the selection and, for one author, how many were resolved.
+fn resolve_all(s: &mut Session, v: &Value, accept: bool) -> CmdResult {
+    if let Some(author) = p::str(v, "author") {
+        return resolve_author(s, author, accept);
+    }
+    resolve_everything(s, accept)
+}
+
+/// Changes by `author` (a change without a known revision has no author).
+fn changes_by(s: &Session, author: &str) -> Vec<Change> {
+    changes(s).into_iter().filter(|c| c.rev.and_then(|r| s.doc.revisions.get(r as usize)).is_some_and(|r| r.author == author)).collect()
+}
+
+/// Resolve one author's changes, last first, each as if selected and accepted / rejected by hand
+/// (so moves, paragraph marks and formatting changes resolve as they do there). Other authors'
+/// changes and the selection are left as they are.
+fn resolve_author(s: &mut Session, author: &str, accept: bool) -> CmdResult {
+    let saved = s.sel.clone();
+    let marks_before = crate::authorship::mark_names(&s.doc);
+    let mut resolved = 0usize;
+    // Bounded: a change that refuses to resolve ends the loop instead of spinning.
+    for _ in 0..MAX_AUTHOR_RESOLVES {
+        let mine = changes_by(s, author);
+        let Some(c) = mine.last() else { break };
+        s.sel = Selection { anchor: c.a.clone(), focus: c.b.clone() };
+        let before = mine.len();
+        resolve_sel(s, accept)?;
+        if changes_by(s, author).len() >= before {
+            break;
+        }
+        resolved += before - changes_by(s, author).len();
+    }
+    // The selection as it was, moved past the marks accepting put around assistant text.
+    s.sel = Selection {
+        anchor: crate::authorship::map_past_new_marks(&s.doc, &marks_before, &saved.anchor),
+        focus: crate::authorship::map_past_new_marks(&s.doc, &marks_before, &saved.focus),
+    };
+    s.clamp_selection();
+    let mut r = sel_result(s)?;
+    r["resolved"] = json!(resolved);
+    Ok(r)
+}
+
+/// At most this many changes of one author are resolved by one command.
+const MAX_AUTHOR_RESOLVES: usize = 20_000;
+
+fn resolve_everything(s: &mut Session, accept: bool) -> CmdResult {
+    let marks_before = crate::authorship::mark_names(&s.doc);
     let stories: Vec<StoryRef> = std::iter::once(StoryRef::Body).chain(s.doc.parts.keys().map(|k| StoryRef::Part(*k))).collect();
     for st in stories {
         for path in s.doc.para_paths(st).into_iter().rev() {
@@ -436,6 +499,12 @@ fn resolve_all(s: &mut Session, accept: bool) -> CmdResult {
     }
     fmt_revisions::resolve_section(&mut s.doc.last_section, accept);
     s.doc.revisions.clear();
+    if accept {
+        s.sel = Selection {
+            anchor: crate::authorship::map_past_new_marks(&s.doc, &marks_before, &s.sel.anchor),
+            focus: crate::authorship::map_past_new_marks(&s.doc, &marks_before, &s.sel.focus),
+        };
+    }
     s.clamp_selection();
     sel_result(s)
 }
@@ -1301,5 +1370,51 @@ mod tests {
         let p = body_para(&s);
         assert_eq!((p.props.align, p.props.fmt_change.is_none()), (Some(wordcraft_doc::props::Align::Center), true));
         assert!(s.run("review.changes", &json!({})).unwrap().as_array().unwrap().is_empty());
+    }
+
+    /// Accept / Reject all by one author leaves the others' changes (and the selection) alone.
+    #[test]
+    fn accept_and_reject_all_by_author() {
+        let build = || {
+            let mut s = Session::new(Document::new());
+            s.run("document.setText", &json!({"text": "keep gone more"})).unwrap();
+            s.run("review.trackChanges", &json!({"value": true})).unwrap();
+            s.author = "Ana".into();
+            s.run("caret.docStart", &json!({})).unwrap();
+            s.run("text.insert", &json!({"text": "ana "})).unwrap();
+            s.author = "Claude".into();
+            s.run("select.range", &json!({"anchor": {"block": 0, "off": 9}, "focus": {"block": 0, "off": 13}})).unwrap();
+            s.run("text.delete", &json!({})).unwrap();
+            s.run("select.range", &json!({"anchor": {"block": 0, "off": 18}, "focus": {"block": 0, "off": 18}})).unwrap();
+            s.run("text.insert", &json!({"text": " by claude"})).unwrap();
+            s
+        };
+        let authors = |s: &mut Session| -> Vec<String> {
+            let l = s.run("review.changes", &json!({})).unwrap();
+            l.as_array().unwrap().iter().map(|c| c["author"].as_str().unwrap_or("").to_string()).collect()
+        };
+        let mut s = build();
+        assert_eq!(authors(&mut s), ["Ana", "Claude", "Claude"]);
+        let r = s.run("review.acceptAll", &json!({"author": "Claude"})).unwrap();
+        assert_eq!(r["resolved"], 2);
+        assert_eq!(authors(&mut s), ["Ana"], "Ana's insertion is still pending");
+        // Optimo: "Claude" is the assistant's name, so its accepted text is wrapped in two
+        // zero-width marks; the end of the text is past them.
+        assert!(s.sel.is_collapsed() && s.sel.focus.off == body_para(&s).len(), "the caret stays at the end of the text");
+        assert_eq!(s.doc.plain_text(wordcraft_doc::StoryRef::Body), "ana keep  more by claude");
+
+        let mut s = build();
+        s.run("review.rejectAll", &json!({"author": "Claude"})).unwrap();
+        assert_eq!(authors(&mut s), ["Ana"]);
+        assert_eq!(s.doc.plain_text(wordcraft_doc::StoryRef::Body), "ana keep gone more");
+
+        // An author with no changes: nothing happens.
+        let mut s = build();
+        let r = s.run("review.acceptAll", &json!({"author": "Nobody"})).unwrap();
+        assert_eq!(r["resolved"], 0);
+        assert_eq!(authors(&mut s).len(), 3);
+        // No author: everything, as before.
+        s.run("review.acceptAll", &json!({})).unwrap();
+        assert!(authors(&mut s).is_empty());
     }
 }

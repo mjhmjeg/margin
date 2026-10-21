@@ -12,7 +12,6 @@ use serde_json::{Value, json};
 use crate::WordApp;
 use crate::dialogs::Dialog;
 use crate::dialogs_keyboard::{categories, commands, list};
-use crate::theme::semibold;
 
 /// The dialog's two pages.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -102,7 +101,7 @@ pub fn customize_ribbon(app: &mut WordApp, ui: &mut Ui, f: &mut RibbonForm) -> b
     let cmds: Vec<(String, String)> = commands(app, &f.category).into_iter().map(|(id, l)| (id.to_string(), l)).collect();
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
-            ui.label(egui::RichText::new(tl!("Choose a command")).font(semibold(12.5)));
+            crate::dialogs::group_label(ui, tl!("Choose a command"));
             ui.horizontal_top(|ui| {
                 if let Some(c) = list(ui, "rb_categories", vec2(left, h), &cats, &f.category) {
                     f.category = c;
@@ -237,7 +236,7 @@ fn ribbon_page(app: &mut WordApp, ui: &mut Ui, f: &mut RibbonForm, h: f32) {
     });
     ui.add_space(4.0);
     ui.vertical(|ui| {
-        ui.label(egui::RichText::new(tl!("Ribbon tabs")).font(semibold(12.5)));
+        crate::dialogs::group_label(ui, tl!("Ribbon tabs"));
         ui.horizontal_top(|ui| {
             tree(app, ui, f, &rows, h);
             ui.vertical(|ui| {
@@ -272,7 +271,7 @@ fn ribbon_page(app: &mut WordApp, ui: &mut Ui, f: &mut RibbonForm, h: f32) {
         let mut done = None;
         if let Some(name) = &mut f.renaming {
             ui.horizontal(|ui| {
-                ui.label(tl!("Name:"));
+                crate::dialogs::form_label(ui, tl!("Name:"));
                 let r = ui.add(egui::TextEdit::singleline(name).desired_width(140.0));
                 let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                 if ui.button(tl!("OK")).clicked() || enter {
@@ -321,7 +320,7 @@ fn tree_rows_ui(app: &mut WordApp, ui: &mut Ui, f: &mut RibbonForm, rows: &[Row]
             ui.add_space(if row.depth == 0 { 0.0 } else { 24.0 + f32::from(row.depth.saturating_sub(1)) * 16.0 });
             if let Some(shown) = row.shown {
                 let mut on = shown;
-                if ui.checkbox(&mut on, "").changed() {
+                if crate::dialogs::checkbox(ui, &mut on, "").changed() {
                     let key = if on { "show" } else { "hide" };
                     change(app, f, json!({ key: row.item.tab }));
                 }
@@ -354,7 +353,7 @@ fn qat_page(app: &mut WordApp, ui: &mut Ui, f: &mut RibbonForm, h: f32) {
     });
     ui.add_space(4.0);
     ui.vertical(|ui| {
-        ui.label(egui::RichText::new(tl!("Quick Access Toolbar")).font(semibold(12.5)));
+        crate::dialogs::group_label(ui, tl!("Quick Access Toolbar"));
         ui.horizontal_top(|ui| {
             let rows: Vec<(String, String)> = ids.iter().map(|id| (id.clone(), label_of(app, id))).collect();
             if let Some(id) = list(ui, "rb_qat", vec2(250.0, h), &rows, &f.qat_selected) {

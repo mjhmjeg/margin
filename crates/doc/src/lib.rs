@@ -10,6 +10,7 @@
 //! compare in document order.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+pub mod authorship;
 pub mod bidi;
 pub mod chart;
 mod cjk_numbers;
@@ -589,6 +590,10 @@ pub struct Document {
     /// Source-format parts we keep verbatim for round-trip (e.g. custom XML), by part name.
     #[serde(skip)]
     pub passthrough: BTreeMap<String, Arc<Vec<u8>>>,
+    /// Accepted assistant text: which `_OptimoAI_` bookmarks hold it and what was accepted
+    /// ([`authorship`]).
+    #[serde(default, skip_serializing_if = "authorship::Authorship::is_empty")]
+    pub authorship: authorship::Authorship,
 }
 
 impl Default for Document {
@@ -616,6 +621,7 @@ impl Document {
             endnote_separators: NoteSeparators::default(),
             media: BTreeMap::new(),
             passthrough: BTreeMap::new(),
+            authorship: authorship::Authorship::default(),
         }
     }
 
