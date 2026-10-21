@@ -13,16 +13,17 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 
 ## Next
 - Martijn: try ⌥⌘T Format for me on a messy document (the live look guess is untested) ✋
-- Martijn: try ⌘Y in the running app (scripts/optimo-run.sh on branch rename/optimo) ✋
+- Martijn: try ⌘Y in the running app (scripts/optimo-run.sh on main) ✋
 - Martijn: try branch assistant/integrate in the running app (Mistral key, ⌘Y on a selection, Show Authorship, Home › Back); clear the Author name field to get "AI · <model>" ✋
 - Run scripts/authorship-spike/run.sh on a Mac with Word (Word not installed here) ✋
-- Merge assistant/integrate to main, then upstream PRs per phase (Opus, high)
+- Upstream PRs per phase, once Martijn decides to push (Opus, high)
 - Translations for the new assistant/Home strings (18 catalogs) (Sonnet, low)
 
 ## Later
 - Weekly upstream merge (scheduled, Sonnet)
 
 ## Done
+- 2026-10-21 rename/optimo merged into main (Optimo O0–O9, polish, assistant/integrate); xtask ci green on main; not pushed
 - 2026-10-21 Optimo polish batch: I'm stuck after a list starts a plain paragraph; Research gives metric units first; selection toolbar hidden while the Alternatives card is open; no clipped comment balloons while the co-writer margin is open (comments show as quiet markers). Merged on rename/optimo, xtask ci green
 - 2026-10-20 Live Mistral pass in the app (Mistral Large, Keychain key) over Read as a reader, Check facts, Research (web search) and I'm stuck: all four worked, notes only, "Your words 100 %" kept; Research findings all carried real web sources
 - 2026-10-20 Optimo O8: Research (ask in the margin, findings each with a source from your files or Mistral's own web search, store off; unsourced findings refused; Add as footnote / quote = one tracked change with the source); merged on rename/optimo, xtask ci green. Not built: "Claims in this document" list (Check facts covers it), sources list at the end (each footnote carries its source). All Optimo phases O0–O9 are now on rename/optimo
@@ -50,7 +51,7 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 
 ## Open decisions
 - OPTIMO.md §13: (1) ⌘Y Repeat → ⇧⌘Y — decided 2026-10-15 (2) Look list Clean/Classic/Report/Letter, user-saved looks? (3) Research: provider web search or own search API key?
-- Branch rename/optimo (O0–O9 complete, built on assistant/integrate) not merged to main or pushed yet.
+- main holds Optimo O0–O9 + polish (and assistant/integrate) since 2026-10-21, not pushed: pushing / upstream PRs are Martijn's call ✋
 - Product name: Optimo (2026-10-14, replaces Margin). No formal trademark search done.
 
 ## Known bugs
