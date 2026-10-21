@@ -849,6 +849,10 @@ exempts "AI ·", ⌘Y's footer keys and two SmartArt labels that wrap at Optimo'
 five authorship/Format keys were added to upstream's new Croatian, Swedish, Vietnamese and Korean
 catalogs.
 
+**Screens checked** (`docs/design-handoff/upstream-sync/`, rendered with `ui_shot`): bare window
+light and dark, ⌘Y Anything empty and typed, co-writer margin notes, Format for me before and
+after. Each matches its O1–O4 counterpart; nothing regressed.
+
 **Open for Martijn.** Whether Focus mode should also hide the Mac toolbar; whether the
 navigation pane should wrap long headings as upstream now does; Optimo's palette misses two of
 upstream's WCAG checks (dim text on a selected comment card 3.95:1, ruler numbers 3.26:1, both
