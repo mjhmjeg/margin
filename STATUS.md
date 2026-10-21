@@ -12,6 +12,7 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - Phase 5: packaging works (Margin.app, ai.spert.margin, icon, README; package.sh takes APP_NAME/BUNDLE_ID/APP_ICNS/FILE_PREFIX/NOTARY_PROFILE). Waiting on Martijn: Developer ID identity name + notarytool keychain profile → signed universal build → draft GitHub release ✋
 
 ## Next
+- Martijn: three small calls from the upstream sync: (1) should Focus mode also hide the top bar; (2) wrap long headings in the navigation list (upstream) or keep one line with "…"; (3) fix two faint greys that miss accessibility contrast (recommended, cheap) ✋
 - Martijn: try ⌥⌘T Format for me on a messy document (the live look guess is untested) ✋
 - Martijn: try ⌘Y in the running app (scripts/optimo-run.sh on main) ✋
 - Martijn: try branch assistant/integrate in the running app (Mistral key, ⌘Y on a selection, Show Authorship, Home › Back); clear the Author name field to get "AI · <model>" ✋
@@ -23,6 +24,7 @@ WordCraft engine. Public on GitHub, offered back upstream as PRs. Plan: see docs
 - Weekly upstream merge (scheduled, Sonnet)
 
 ## Done
+- 2026-10-21 Upstream sync: latest WordCraft (e05b7fe8, 637 commits: layout, DOCX, tables, fonts, Focus mode, recovery, dialog rework) merged into Optimo; 52 conflicts resolved (upstream wins engine/layout/formats, Optimo wins the Mac UI); xtask ci green; key screens unchanged; pushed to origin
 - 2026-10-21 rename/optimo merged into main (Optimo O0–O9, polish, assistant/integrate); xtask ci green on main; pushed to origin (mjhmjeg/margin)
 - 2026-10-21 Optimo polish batch: I'm stuck after a list starts a plain paragraph; Research gives metric units first; selection toolbar hidden while the Alternatives card is open; no clipped comment balloons while the co-writer margin is open (comments show as quiet markers). Merged on rename/optimo, xtask ci green
 - 2026-10-20 Live Mistral pass in the app (Mistral Large, Keychain key) over Read as a reader, Check facts, Research (web search) and I'm stuck: all four worked, notes only, "Your words 100 %" kept; Research findings all carried real web sources
